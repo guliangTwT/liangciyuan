@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:mobx/mobx.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:kazumi/plugins/plugins.dart';
@@ -110,6 +111,34 @@ abstract class _PluginsController with Store {
       KazumiLogger().i('Plugin: Current Plugin number: ${pluginList.length}');
     } else {
       await _migrateLegacyPlugins(legacyDirectory);
+      await _installDefaultPlugin();
+    }
+  }
+
+  static const _defaultPluginAsset = 'assets/rules/giriGiriLove.json';
+
+  Future<void> _installDefaultPlugin() async {
+    try {
+      final raw = await rootBundle.loadString(_defaultPluginAsset);
+      final jsonData = json.decode(raw);
+      if (jsonData is! Map) {
+        throw const FormatException('Default plugin must be a JSON object');
+      }
+      final plugin = Plugin.fromJson(Map<String, dynamic>.from(jsonData));
+      if (pluginList.any(
+        (item) => pluginNameKey(item.name) == pluginNameKey(plugin.name),
+      )) {
+        return;
+      }
+      pluginList.add(plugin);
+      await _savePlugins();
+      KazumiLogger().i('Plugin: Installed default rule ${plugin.name}');
+    } catch (error, stackTrace) {
+      _errorReporter(
+        'Plugin: failed to install default rule',
+        error,
+        stackTrace,
+      );
     }
   }
 

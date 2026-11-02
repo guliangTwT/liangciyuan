@@ -201,7 +201,6 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
             ),
           const Divider(height: 24, indent: 20, endIndent: 20),
           for (final entry in const [
-            (Icons.public_rounded, '内置网页', '/web/'),
             (Icons.history_rounded, '观看历史', '/settings/history/'),
             (Icons.download_rounded, '下载管理', '/settings/download/'),
             (Icons.tune_rounded, '设置', '/settings/'),
@@ -299,7 +298,6 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
                       const Divider(height: 24, indent: 18, endIndent: 18),
                       for (final entry in const [
                         (Icons.search_rounded, '搜索', '/search/'),
-                        (Icons.public_rounded, '内置网页', '/web/'),
                         (Icons.history_rounded, '观看历史', '/settings/history/'),
                         (Icons.download_rounded, '下载管理', '/settings/download/'),
                         (Icons.tune_rounded, '设置', '/settings/'),

@@ -2,6 +2,13 @@
 
 所有对凉次元的显著变更都会记录在本文件中。
 
+## 3.0.2（2026-11-03）
+
+### 修复
+
+- **应用内更新的 Windows 安装器无法启动**：安装器清单要求管理员权限，`CreateProcess` 直接启动会得到 ERROR_ELEVATION_REQUIRED（740）。现改经 ShellExecute（`launchUrl`）启动，正常触发 UAC 并弹出安装向导；MSIX 分支合并为同一逻辑。
+- CI：为 Windows runner 安装 yq（flutter-action 解析 pubspec 需要）；中文安装界面语言文件随仓库分发（runner 预装的 Inno Setup 不含官方翻译）；安装包排除构建目录中的旧 setup 残留；将编译产物提升到工作区根目录以便 artifact 上传；pubspec 锁定精确的 Flutter 版本供 CI 解析。
+
 ## 3.0.1（2026-11-03）
 
 针对发布形态、国内网络访问与上游残留的集中修正。

@@ -511,10 +511,11 @@ class AutoUpdater {
       await Future.delayed(const Duration(seconds: 2));
 
       if (Platform.isWindows) {
-        if (installationType == InstallationType.windowsSetup) {
-          // 直接运行 Inno Setup 安装器；安装器会通过 AppMutex 等待本应用退出。
-          await Process.start(filePath, const [], runInShell: false);
-        } else if (installationType == InstallationType.windowsMsix) {
+        if (installationType == InstallationType.windowsSetup ||
+            installationType == InstallationType.windowsMsix) {
+          // 安装器清单要求管理员权限；CreateProcess 对此类可执行文件返回
+          // ERROR_ELEVATION_REQUIRED（740），launchUrl 走 ShellExecute
+          // 才能触发 UAC 弹出安装向导。
           final Uri fileUri = Uri.file(filePath);
           if (await canLaunchUrl(fileUri)) {
             await launchUrl(fileUri);

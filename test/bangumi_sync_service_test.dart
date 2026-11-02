@@ -82,7 +82,7 @@ void main() {
     expect(GStorage.getSetting(SettingsKeys.bangumiSyncEnable), isTrue);
   });
 
-  test('ECH image acceleration preserves Bangumi API mirror routing', () async {
+  test('default acceleration keeps Bangumi API on the official host', () async {
     final previousMode = GStorage.getSetting<String>(
       SettingsKeys.imageAcceleration,
     );
@@ -91,6 +91,25 @@ void main() {
     );
     await GStorage.putSetting(SettingsKeys.imageAcceleration, 'ech');
     await GStorage.putSetting(SettingsKeys.enableBangumiProxy, true);
+    // 默认加速模式为 ECH：请求保留官方 host，不依赖需要签名的镜像后端。
+    for (final url in [
+      'https://api.bgm.tv/v0/subjects/1',
+      'https://next.bgm.tv/p1/subjects/1?test=value',
+    ]) {
+      await BangumiClient.instance.get(url);
+      expect(adapter.requests.last.uri, Uri.parse(url));
+    }
+  });
+
+  test('explicit mirror acceleration routes Bangumi API to the mirror',
+      () async {
+    final previousMode = GStorage.getSetting<String>(
+      SettingsKeys.bangumiAcceleration,
+    );
+    addTearDown(
+      () => GStorage.putSetting(SettingsKeys.bangumiAcceleration, previousMode),
+    );
+    await GStorage.putSetting(SettingsKeys.bangumiAcceleration, 'mirror');
     for (final url in [
       'https://api.bgm.tv/v0/subjects/1',
       'https://next.bgm.tv/p1/subjects/1?test=value',

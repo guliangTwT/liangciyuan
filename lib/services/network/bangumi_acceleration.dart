@@ -10,7 +10,11 @@ enum BangumiAcceleration implements AccelerationMode {
       values.asNameMap()[GStorage.getSetting(
         SettingsKeys.bangumiAcceleration,
       )] ??
-      (GStorage.getSetting(SettingsKeys.enableBangumiProxy) ? mirror : direct);
+      // ECH 是国内直连 bgm.tv 的推荐默认：实测可访问条目/图片/搜索；
+      // 镜像后端不再转发条目详情且受保护接口需要签名，仅保留给手选用户。
+      (GStorage.getSetting(SettingsKeys.enableBangumiProxy)
+          ? BangumiAcceleration.ech
+          : BangumiAcceleration.direct);
 
   @override
   String get label => switch (this) {
@@ -22,7 +26,7 @@ enum BangumiAcceleration implements AccelerationMode {
   @override
   String get description => switch (this) {
     direct => '访问官方接口',
-    ech => '启用加密握手',
-    mirror => '镜像接口（默认）',
+    ech => '加密握手（推荐）',
+    mirror => '镜像接口',
   };
 }

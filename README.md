@@ -2,17 +2,14 @@
 
 <h1>凉次元</h1>
 
-<p>由 Kazumi 开源项目改编的跨平台番剧探索与播放应用。感谢原作者 Predidit 与所有贡献者。本项目继续遵循 GNU GPL-3.0；完整来源与许可证见下方。</p>
+<p>由 [Kazumi](https://github.com/Predidit/Kazumi) 开源项目改编的跨平台番剧探索与播放应用。感谢原作者 Predidit 与所有上游贡献者。本项目继续遵循 GNU GPL-3.0；完整来源与许可证见下方。</p>
 
 <img src="assets/images/logo/liangciyuan.png" width=200></img>
 
-<a href="https://github.com/GuLiang-I/liangciyuan"><img src="https://img.shields.io/badge/GitHub-GuangLiang-I%2Fliangciyuan-181717?style=for-the-badge&logo=github&logoColor=white"></img></a>
+<a href="https://github.com/GuLiang-I/liangciyuan"><img src="https://img.shields.io/badge/GitHub-GuLiang--I%2Fliangciyuan-181717?style=for-the-badge&logo=github&logoColor=white"></img></a>
 
 <img src="https://img.shields.io/badge/Flutter-03A9F4?style=for-the-badge&logo=flutter&logoColor=white"></img>
 <img src="https://img.shields.io/badge/Dart-00B4AB?style=for-the-badge&logo=Dart&logoColor=white"></img>
-
-<a href="https://trendshift.io/repositories/11432"><img src="https://trendshift.io/api/badge/trendshift/repositories/11432/yearly?language=Dart"></img></a>
-<a href="https://hellogithub.com/repository/Predidit/Kazumi" target="_blank"><img src="https://abroad.hellogithub.com/v1/widgets/recommend.svg?rid=68d824ea55ee4b07aba6fe1dd61ac939&claim_uid=J9Qu6aDd8LT1nU0"/></img></a>
 
 <p>使用 Flutter 开发的基于自定义规则的番剧采集与在线观看程序。使用最多五行基于 <code>Xpath</code> 语法的选择器构建自己的规则。支持规则导入与规则分享。支持基于 <code>Anime4K</code> 的实时超分辨率。绝赞开发中 (～￣▽￣)～</p>
 </div>
@@ -26,32 +23,40 @@ python tool/fix_ech_http_ca.py .
 flutter build windows --release
 ```
 
-Android 产物可直接用 `flutter build apk --release` 构建。源码中的 `android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java` 已移除无效的 dev-only splash 插件注册，避免 Android 编译失败。
+Android 产物可直接用 `flutter build apk --release --split-per-abi` 构建。
 
 ## 支持平台
 
-- Android 10 及以上
-- Windows 10 及以上
-- MacOS 10.15 及以上
-- Linux (实验性)
-- iOS 13 及以上 (需要 [侧载](https://kazumi.app/docs/misc/how-to-install-in-ios))
-- HarmonyOS 5.0 及以上 (位于 [分支仓库](https://github.com/ErBWs/Kazumi/releases/latest)，需要 [侧载](https://kazumi.app/docs/misc/how-to-install-in-ohos))
-- Web 浏览器 (位于 [分支仓库](https://github.com/0Chencc/KazumiWeb/releases/latest)，需要在 Windows / Linux / MacOS 电脑或通过 Docker 运行服务端，同一局域网内的设备通过浏览器访问)
+本项目目前发布以下平台的安装包：
+
+- Windows 10 及以上（x64，提供 Inno Setup 安装包与便携 zip）
+- Android 10 及以上（arm64，APK 分发）
+
+其余平台（macOS / Linux / iOS）的代码继承自上游 Kazumi，可自行从源码构建，本项目暂不提供对应安装包。
+
+> 注：与上游 Kazumi 的包名/数据目录完全独立，可以与官方 Kazumi 共存而不互相覆盖。
+
+## 下载
+
+唯一官方发布渠道是本仓库的 GitHub [Releases](https://github.com/GuLiang-I/liangciyuan/releases/latest) 页面：
+
+<a href="https://github.com/GuLiang-I/liangciyuan/releases">
+  <img src="static/svg/get_it_on_github.svg" alt="Get it on Github" width="200"/>
+</a>
+
+当前提供的发布资产：
+
+| 平台 | 文件 | 说明 |
+| --- | --- | --- |
+| Windows | `liangciyuan-<版本>-windows-x64-setup.exe` | 推荐安装方式，支持应用内自动更新 |
+| Windows | `liangciyuan-<版本>-windows-x64.zip` | 便携版，解压即用，不含自动更新引导 |
+| Android | `liangciyuan-<版本>-android-arm64.apk` | arm64 设备 |
+
+**安装包目前未做代码签名。** Windows 首次运行时若出现 SmartScreen 提示，点击“更多信息 → 仍要运行”即可；该提示仅表示发布者未经证书验证，不代表文件有问题。每个 Release 的资产均附有 SHA-256 校验值（GitHub `digest` 字段），应用内更新会自动校验。
 
 ## 屏幕截图
 
-<table>
-  <tr>
-    <td><img alt="homepage" src="static/screenshot/img_1.png"></td>
-    <td><img alt="timetable" src="static/screenshot/img_2.png"></td>
-    <td><img alt="details" src="static/screenshot/img_3.png"></td>
-  <tr>
-  <tr>
-    <td><img alt="selection-page" src="static/screenshot/img_4.png"></td>
-    <td><img alt="rules-mange" src="static/screenshot/img_5.png"></td>
-    <td><img alt="rules-edit" src="static/screenshot/img_6.png"></td>
-  <tr>
-</table>
+（待补：欢迎提交运行截图）
 
 ## 功能 / 开发计划
 
@@ -81,41 +86,9 @@ Android 产物可直接用 `flutter build apk --release` 构建。源码中的 `
 - [ ]  番剧更新提醒
 - [ ]  还有更多 (/・ω・＼)
 
-## 下载
-
-通过本页面 [Releases](https://github.com/Predidit/Kazumi/releases/latest) 选项卡下载：
-
-<a href="https://github.com/Predidit/Kazumi/releases">
-  <img src="static/svg/get_it_on_github.svg" alt="Get it on Github" width="200"/>
-</a>
-
-### Android
-
-<a href="https://f-droid.org/packages/com.predidit.kazumi">
-  <img src="https://fdroid.gitlab.io/artwork/badge/get-it-on-zh-hans.svg"
-  alt="Get it on F-Droid" width="200">
-</a>
-
-### GNU/Linux
-
-<a href="https://flathub.org/apps/io.github.Predidit.Kazumi">
-  <img src="https://flathub.org/api/badge?svg&locale=zh-Hans" alt="Get it on Flathub" width="175"/>
-</a>
-
-#### Arch Linux
-
-可以从 [AUR](http://aur.archlinux.org) 安装。
-
-##### AUR
-
-```bash
-[yay/paru] -S kazumi # 从源码构建
-[yay/paru] -S kazumi-bin # 二进制包
-```
-
 ## 贡献
 
-欢迎向我们的 [规则仓库](https://github.com/Predidit/KazumiRules) 提交您的自定义规则。您可以自由选择是否在规则中留下您的ID。详细的规则编写教程可以参考 [规则开发文档](https://kazumi.app/docs/rules/develop-rules)
+欢迎提交 Issue 与 PR。番剧采集规则目前与上游共用 [KazumiRules 规则仓库](https://github.com/Predidit/KazumiRules)（应用内“规则库”默认来源），规则编写教程可参考 [上游规则开发文档](https://kazumi.app/docs/rules/develop-rules)。
 
 ## Q&A
 
@@ -128,7 +101,7 @@ A: 本项目未插入任何广告。广告来自视频源, 请不要相信广告
 
 #### Q: 为什么我启用超分辨率功能后播放卡顿？
 
-A: 超分辨率功能对 GPU 性能要求较高, 如果没有在高性能独立显卡上运行 Kazumi, 尽量选择效率档而非质量档。对低分辨率视频源而非高分辨率视频源使用超分也可以降低性能消耗。
+A: 超分辨率功能对 GPU 性能要求较高, 如果没有在高性能独立显卡上运行, 尽量选择效率档而非质量档。对低分辨率视频源而非高分辨率视频源使用超分也可以降低性能消耗。
 
 #### Q: 为什么播放视频时内存占用较高？
 
@@ -136,11 +109,11 @@ A: 本程序在视频播放时, 会尽可能多地缓存视频到内存, 以提�
 
 #### Q: 为什么少数番剧无法通过外部播放器观看？
 
-A: 部分视频源的番剧使用了反盗链措施, 这可以被 Kazumi 解决, 但无法被外部播放器解决。
+A: 部分视频源的番剧使用了反盗链措施, 这可以被本应用解决, 但无法被外部播放器解决。
 
-#### Q: 为什么下载的 Linux 版本缺少图标和托盘功能？
+#### Q: 为什么下载的 Windows 便携版缺少图标和托盘功能？
 
-A: 使用 .deb 版本进行安装, tar.gz 版本仅为方便二次打包, 这一格式先天缺乏图标和托盘功能支持。
+A: 使用 setup.exe 安装包进行安装, zip 便携版仅为免安装场景准备, 这一格式先天缺乏快捷方式与卸载支持。
 
 </details>
 
@@ -162,13 +135,9 @@ A: 尝试关闭自定义规则的使用内置播放器选项, 这将尝试使用
 
 #### Q: 我在尝试自行编译该项目, 但编译没有成功。
 
-A: 本项目编译需要良好的网络环境, 除了由 Google 托管的 Flutter 相关依赖外, 本项目同样依赖托管在 MavenCentral/Github/SourceForge 上的资源。如果您位于中国大陆, 可能需要设置恰当的镜像地址。
+A: 本项目编译需要良好的网络环境, 除了由 Google 托管的 Flutter 相关依赖外, 本项目同样依赖托管在 MavenCentral/Github/SourceForge 上的资源。如果您位于中国大陆, 可能需要设置恰当的镜像地址；Windows 构建前请先运行 `python tool/fix_ech_http_ca.py .`。
 
 </details>
-
-## 开发
-
-欢迎您提交 PR！在开始之前, 请阅读 [贡献指引](static/doc/CONTRIBUTING.md) 以了解我们对 PR 和 AI 参与辅助开发的规定。
 
 ## 美术资源
 
@@ -185,19 +154,6 @@ A: 本项目编译需要良好的网络环境, 除了由 Google 托管的 Flutte
 ## 隐私政策
 
 我们不收集任何用户数据, 不使用任何遥测组件。
-
-## 代码签名策略
-
-提交者: [贡献者](https://github.com/Predidit/Kazumi/graphs/contributors)
-审阅者: [所有者](https://github.com/Predidit)
-
-## 赞助
-
-
-| ![signpath](https://signpath.org/assets/favicon-50x50.png)                                                                                                                      | Free code signing on Windows provided by[SignPath.io](https://about.signpath.io/), certficate by [SignPath Foundation](https://signpath.org/) |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| <img src="https://kilo.ai/favicon/favicon.svg" width="50">                                                                                                                      | **Automatic PR review provided by [Kilo Code](https://kilo.ai/), sponsored by the [Kilo OSS Program](https://kilo.ai/oss)**                   |
-| <a href="https://m.do.co/c/0062035db3e4"><img src="https://opensource.nyc3.cdn.digitaloceanspaces.com/attribution/assets/SVG/DO_Logo_icon_blue.svg" width="50" height="50"></a> | **Cloud infrastructure is supported by [DigitalOcean](https://m.do.co/c/0062035db3e4)**                                                       |
 
 ## 改编来源与许可证
 
@@ -217,7 +173,7 @@ A: 本项目编译需要良好的网络环境, 除了由 Google 托管的 Flutte
 
 特别感谢 [SyncPlay](https://github.com/Syncplay/syncplay) 本项目使用 SyncPlay 协议并通过 SyncPlay 公共服务器实现一起看功能。
 
-特别感谢 [所有贡献者](https://github.com/Predidit/Kazumi/graphs/contributors) 本项目因为你们变得更好。
+特别感谢 [所有上游贡献者](https://github.com/Predidit/Kazumi/graphs/contributors) 本项目因为你们变得更好。
 
 特别感谢 [trace.moe](https://trace.moe) 本项目使用了 trace.moe 提供的图片识别番剧功能。
 

@@ -8,6 +8,8 @@ class UpdateSourceStep extends StatelessWidget {
     required this.onChanged,
   });
 
+  /// 仅有一个官方发布渠道（GitHub Releases），因此本步骤只控制
+  /// 是否启用应用内自动检查更新；关闭后仍可随时手动检查。
   final bool useGithubUpdate;
   final ValueChanged<bool> onChanged;
 
@@ -17,63 +19,36 @@ class UpdateSourceStep extends StatelessWidget {
       icon: Icons.system_update_rounded,
       shape: OnboardingIconShape.cookie,
     ),
-    title: '以你的方式更新',
-    subtitle: '选择适合你的更新来源，让凉次元保持最新。',
-    child: RadioGroup<bool>(
-      groupValue: useGithubUpdate,
-      onChanged: (value) {
-        if (value != null) onChanged(value);
-      },
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _OptionCard(
-            icon: Icons.rocket_launch_rounded,
-            title: 'GitHub',
-            description: '在应用内检查并获取新版本，适合大多数用户。',
-            value: true,
-            selected: useGithubUpdate,
-            recommended: true,
-          ),
-          const SizedBox(height: 12),
-          _OptionCard(
-            icon: Icons.storefront_rounded,
-            title: 'F-Droid',
-            description: '由 F-Droid 商店管理更新，应用内不再自动检查。',
-            value: false,
-            selected: !useGithubUpdate,
-          ),
-          const OnboardingHint(text: '之后也可以在 关于 → 自动检查更新 中修改。'),
-        ],
-      ),
+    title: '保持最新',
+    subtitle: '选择是否让凉次元自动检查新版本。',
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _AutoUpdateCard(
+          selected: useGithubUpdate,
+          onChanged: onChanged,
+        ),
+        const SizedBox(height: 12),
+        const OnboardingHint(text: '之后也可以在 关于 → 自动检查更新 中修改。'),
+      ],
     ),
   );
 }
 
-class _OptionCard extends StatelessWidget {
-  const _OptionCard({
-    required this.icon,
-    required this.title,
-    required this.description,
-    required this.value,
+class _AutoUpdateCard extends StatelessWidget {
+  const _AutoUpdateCard({
     required this.selected,
-    this.recommended = false,
+    required this.onChanged,
   });
 
-  final IconData icon;
-  final String title;
-  final String description;
-  final bool value;
   final bool selected;
-  final bool recommended;
+  final ValueChanged<bool> onChanged;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final foreground = selected
-        ? colors.onSecondaryContainer
-        : colors.onSurface;
+    final foreground = selected ? colors.onSecondaryContainer : colors.onSurface;
     return AnimatedContainer(
       duration: MediaQuery.disableAnimationsOf(context)
           ? Duration.zero
@@ -81,9 +56,7 @@ class _OptionCard extends StatelessWidget {
       curve: Curves.easeInOutCubicEmphasized,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: selected
-            ? colors.secondaryContainer
-            : colors.surfaceContainerLow,
+        color: selected ? colors.secondaryContainer : colors.surfaceContainerLow,
         borderRadius: BorderRadius.circular(selected ? 20 : 28),
         border: Border.all(
           color: selected ? colors.secondary : Colors.transparent,
@@ -92,49 +65,48 @@ class _OptionCard extends StatelessWidget {
       ),
       child: Material(
         type: MaterialType.transparency,
-        child: RadioListTile<bool>(
-          value: value,
-          controlAffinity: ListTileControlAffinity.trailing,
+        child: SwitchListTile(
+          value: selected,
+          onChanged: onChanged,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 16,
           ),
-          secondary: Icon(icon, size: 28, color: foreground),
+          secondary: Icon(Icons.rocket_launch_rounded, size: 28, color: foreground),
           title: Wrap(
             spacing: 10,
             runSpacing: 6,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text(
-                title,
+                '应用内自动更新',
                 style: theme.textTheme.titleLarge?.copyWith(
                   color: foreground,
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              if (recommended)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: ShapeDecoration(
-                    color: colors.tertiaryContainer,
-                    shape: const StadiumBorder(),
-                  ),
-                  child: Text(
-                    '推荐',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: colors.onTertiaryContainer,
-                    ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: ShapeDecoration(
+                  color: colors.tertiaryContainer,
+                  shape: const StadiumBorder(),
+                ),
+                child: Text(
+                  '推荐',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: colors.onTertiaryContainer,
                   ),
                 ),
+              ),
             ],
           ),
           subtitle: Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text(
-              description,
+              '新版本通过 GitHub Releases 发布，开启后将自动检查并可在应用内下载安装；关闭后仍可随时在 设置 → 关于 手动检查。',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: selected ? foreground : colors.onSurfaceVariant,
                 height: 1.5,

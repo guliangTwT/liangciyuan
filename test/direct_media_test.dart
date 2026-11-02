@@ -46,5 +46,20 @@ void main() {
         isFalse,
       );
     });
+
+    test('keeps the container extension when saving direct media', () {
+      expect(
+        directMediaFileExtension('https://a.example.com/v/01.MP4?token=1'),
+        '.mp4',
+      );
+      expect(
+        directMediaFileExtension('https://a.example.com/v/01.mkv'),
+        '.mkv',
+      );
+      expect(
+        directMediaFileExtension('https://a.example.com/stream/master'),
+        '.mp4',
+      );
+    });
   });
 }

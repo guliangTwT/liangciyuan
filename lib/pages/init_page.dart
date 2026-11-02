@@ -77,9 +77,10 @@ class _InitPageState extends State<InitPage> {
     if (!mounted) {
       return;
     }
-    // Installs that predate the flag already have rules; don't re-onboard them.
+    // The bundled default rule means a fresh install still has rules, so the
+    // first-run signal comes from the controller rather than an empty list.
     if (!GStorage.getSetting(SettingsKeys.onboardingCompleted) &&
-        pluginsController.pluginList.isEmpty) {
+        pluginsController.isFirstRun) {
       context.navigate('/onboarding');
       return;
     }

@@ -9,6 +9,7 @@ import 'package:kazumi/repositories/download_repository.dart';
 import 'package:kazumi/services/download/background_download_service.dart';
 import 'package:kazumi/services/download/download_manager.dart';
 import 'package:kazumi/utils/format.dart';
+import 'package:kazumi/utils/media.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/services/video_source/services.dart';
@@ -571,17 +572,25 @@ abstract class _DownloadController with Store {
       KazumiLogger().i(
           'DownloadController: resolving video URL for episode ${request.episodeNumber} from $fullUrl');
 
-      String? m3u8Url;
+      String? videoUrl;
+      var isDirectMedia = false;
       try {
         if (lease.isCancelled) {
           throw const VideoSourceCancelledException();
         }
-        final source = await lease.resolve(
-          fullUrl,
-          useLegacyParser: plugin.useLegacyParser,
-          timeout: const Duration(seconds: 30),
-        );
-        m3u8Url = source.url;
+        // Rules can hand back final media links. Downloading them straight
+        // away skips a WebView page load, matching playback's fast path.
+        if (isDirectMediaUrl(fullUrl)) {
+          videoUrl = fullUrl;
+          isDirectMedia = true;
+        } else {
+          final source = await lease.resolve(
+            fullUrl,
+            useLegacyParser: plugin.useLegacyParser,
+            timeout: const Duration(seconds: 30),
+          );
+          videoUrl = source.url;
+        }
       } on VideoSourceTimeoutException {
         if (lease.isCancelled) {
           wasCancelled = true;
@@ -605,13 +614,13 @@ abstract class _DownloadController with Store {
         return;
       }
 
-      if (m3u8Url == null || m3u8Url.isEmpty) {
+      if (videoUrl == null || videoUrl.isEmpty) {
         _failEpisode(request.recordKey, request.episodeNumber, '解析视频源超时');
         return;
       }
 
       KazumiLogger().i(
-          'DownloadController: resolved M3U8 URL for episode ${request.episodeNumber}: $m3u8Url');
+          'DownloadController: resolved ${isDirectMedia ? 'direct media' : 'M3U8'} URL for episode ${request.episodeNumber}: $videoUrl');
 
       final freshRecord = _repository.getRecord(request.recordKey);
       if (freshRecord == null) return;
@@ -620,7 +629,7 @@ abstract class _DownloadController with Store {
 
       if (freshEpisode.status != DownloadStatus.resolving) return;
 
-      freshEpisode.networkM3u8Url = m3u8Url;
+      freshEpisode.networkM3u8Url = videoUrl;
       freshEpisode.status = DownloadStatus.downloading;
       await _repository.updateEpisode(
           request.recordKey, request.episodeNumber, freshEpisode);
@@ -637,7 +646,7 @@ abstract class _DownloadController with Store {
         bangumiId: request.bangumiId,
         pluginName: request.pluginName,
         episodeNumber: request.episodeNumber,
-        m3u8Url: m3u8Url,
+        m3u8Url: videoUrl,
         httpHeaders: httpHeaders,
         adBlockerEnabled: adBlockerEnabled,
         episode: freshEpisode,

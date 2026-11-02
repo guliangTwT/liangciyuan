@@ -9,6 +9,7 @@ import 'package:kazumi/utils/m3u8_parser.dart';
 import 'package:kazumi/utils/m3u8_ad_filter.dart';
 import 'package:kazumi/utils/format.dart' as fmt;
 import 'package:kazumi/utils/file_system.dart';
+import 'package:kazumi/utils/media.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/download/download_directory_service.dart';
 import 'package:kazumi/services/storage/storage.dart';
@@ -409,6 +410,21 @@ class DownloadManager implements IDownloadManager {
       episode.networkM3u8Url = m3u8Url;
       _notifyProgress(task, episode);
 
+      // A direct file link (MP4 and friends) needs no playlist probe. Fetching
+      // it as text just to discover it is not M3U8 would waste the first
+      // megabytes of the episode, so go straight to the ranged download.
+      if (isDirectMediaUrl(m3u8Url) && !isHlsMediaUrl(m3u8Url)) {
+        await _runDirectFileDownload(
+          task: task,
+          bangumiId: bangumiId,
+          pluginName: pluginName,
+          videoUrl: m3u8Url,
+          httpHeaders: httpHeaders,
+          episode: episode,
+        );
+        return;
+      }
+
       String m3u8Content;
       try {
         m3u8Content = await _fetchM3u8(m3u8Url, httpHeaders, task.cancelToken);
@@ -665,7 +681,8 @@ class DownloadManager implements IDownloadManager {
       final episodeDir = await _prepareEpisodeDir(
           episode, bangumiId, pluginName, task.episodeNumber);
 
-      final filePath = path.join(episodeDir, 'video.mp4');
+      final filePath =
+          path.join(episodeDir, 'video${directMediaFileExtension(videoUrl)}');
       final tmpPath = '$filePath.tmp';
 
       int existingBytes = 0;
@@ -715,6 +732,15 @@ class DownloadManager implements IDownloadManager {
       final contentLength = int.tryParse(
               response.headers.value(Headers.contentLengthHeader) ?? '') ??
           0;
+      // A server may ignore Range and reply 200 with the whole file. Appending
+      // that to the partial file would corrupt it, so restart from zero.
+      final rangeHonored = contentRange != null || response.statusCode == 206;
+      if (existingBytes > 0 && !rangeHonored) {
+        KazumiLogger().w(
+          'DownloadManager: server ignored Range, restarting direct download',
+        );
+        existingBytes = 0;
+      }
       int totalSize;
       if (contentRange != null) {
         final totalMatch = RegExp(r'/(\d+)').firstMatch(contentRange);

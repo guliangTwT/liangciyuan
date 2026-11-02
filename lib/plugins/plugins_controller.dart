@@ -95,6 +95,12 @@ abstract class _PluginsController with Store {
 
   static const _pluginsFileName = 'plugins.json';
   File? _pluginsFile;
+  bool _isFirstRun = false;
+
+  /// True when this run started with no stored rules at all. The bundled
+  /// default rule is installed in that case, so an empty list is no longer a
+  /// usable first-run signal.
+  bool get isFirstRun => _isFirstRun;
 
   Future<void> init() async {
     final supportDirectory = await getApplicationSupportDirectory();
@@ -105,14 +111,17 @@ abstract class _PluginsController with Store {
     final pluginsFile = File('${directory.path}/$_pluginsFileName');
     _pluginsFile = pluginsFile;
     pluginList.clear();
-    if (await pluginsFile.exists()) {
+    _isFirstRun = !await pluginsFile.exists();
+    if (!_isFirstRun) {
       final List<dynamic> json = jsonDecode(await pluginsFile.readAsString());
       pluginList.addAll([for (final item in json) Plugin.fromJson(item)]);
       KazumiLogger().i('Plugin: Current Plugin number: ${pluginList.length}');
-    } else {
-      await _migrateLegacyPlugins(legacyDirectory);
-      await _installDefaultPlugin();
+      return;
     }
+    await _migrateLegacyPlugins(legacyDirectory);
+    // Migrated rules mean this is an existing install, not a first run.
+    if (pluginList.isNotEmpty) _isFirstRun = false;
+    await _installDefaultPlugin();
   }
 
   static const _defaultPluginAsset = 'assets/rules/giriGiriLove.json';

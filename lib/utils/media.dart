@@ -26,6 +26,18 @@ bool isHlsMediaUrl(String url) {
   return path.toLowerCase().endsWith('.m3u8');
 }
 
+/// Container extension used when saving a direct-media episode to disk. Keeps
+/// the real type so offline playback and file managers see an honest name;
+/// unknown or missing extensions fall back to `.mp4`.
+String directMediaFileExtension(String url) {
+  const supported = {'.mp4', '.mkv', '.webm', '.flv', '.m4v', '.mov', '.ts'};
+  final path = (Uri.tryParse(url)?.path ?? '').toLowerCase();
+  final dot = path.lastIndexOf('.');
+  if (dot < 0) return '.mp4';
+  final extension = path.substring(dot);
+  return supported.contains(extension) ? extension : '.mp4';
+}
+
 bool _hasMediaExtension(String lowerPath) {
   for (final extension in const [
     '.m3u8',

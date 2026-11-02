@@ -6,6 +6,7 @@ import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/bean/widget/tonal_card.dart';
 import 'package:kazumi/services/update/auto_updater.dart';
 import 'package:kazumi/services/update/update_download_source.dart';
+import 'package:kazumi/services/update/update_downloader.dart';
 import 'package:kazumi/utils/date_time.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -43,11 +44,29 @@ class _UpdateAvailableDialogState extends State<UpdateAvailableDialog> {
     super.dispose();
   }
 
+  /// Sources that actually carry a URL for the selected installation type.
+  /// Releases built by this fork publish no mirror URL, so offering the option
+  /// would let the user pick a source that always fails.
+  List<UpdateDownloadSource> _sourcesFor(InstallationType type) {
+    final asset = getUpdateAssetForType(widget.updateInfo.assets, type);
+    return [
+      for (final source in UpdateDownloadSource.values)
+        if (getUpdateDownloadUrlFromAsset(asset, source).isNotEmpty) source,
+    ];
+  }
+
+  UpdateDownloadSource _effectiveSource() {
+    final sources = _sourcesFor(_type);
+    if (sources.isEmpty) return _source;
+    return sources.contains(_source) ? _source : sources.first;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final downloadInApp = _type.downloadsInApp;
+    final effectiveSource = _effectiveSource();
 
     return AlertDialog(
       constraints: const BoxConstraints(minWidth: 280, maxWidth: 440),
@@ -103,7 +122,7 @@ class _UpdateAvailableDialogState extends State<UpdateAvailableDialog> {
         StateActionButton(
           onPressed: () => KazumiDialog.dismiss(
             context: context,
-            popWith: (type: _type, source: _source),
+            popWith: (type: _type, source: effectiveSource),
           ),
           icon: downloadInApp
               ? Icons.download_rounded
@@ -225,26 +244,33 @@ class _UpdateAvailableDialogState extends State<UpdateAvailableDialog> {
 
   Widget _buildDownloadOptions() {
     final types = widget.updateInfo.availableInstallationTypes;
+    final sources = _sourcesFor(_type);
     return SettingsSection(
       margin: EdgeInsets.zero,
       tiles: [
-        SettingsDropdownTile<UpdateDownloadSource>(
-          leading: Icons.cloud_download_rounded,
-          title: const Text('下载源'),
-          value: _source,
-          options: {
-            for (final source in UpdateDownloadSource.values)
-              source: source.label,
-          },
-          onChanged: (source) => setState(() => _source = source),
-        ),
+        if (sources.length > 1)
+          SettingsDropdownTile<UpdateDownloadSource>(
+            leading: Icons.cloud_download_rounded,
+            title: const Text('下载源'),
+            value: _effectiveSource(),
+            options: {for (final source in sources) source: source.label},
+            onChanged: (source) => setState(() => _source = source),
+          ),
         if (types.length > 1)
           SettingsDropdownTile<InstallationType>(
             leading: Icons.inventory_2_rounded,
             title: const Text('安装类型'),
             value: _type,
             options: {for (final type in types) type: type.label},
-            onChanged: (type) => setState(() => _type = type),
+            onChanged: (type) {
+              final available = _sourcesFor(type);
+              setState(() {
+                _type = type;
+                if (available.isNotEmpty && !available.contains(_source)) {
+                  _source = available.first;
+                }
+              });
+            },
           ),
       ],
     );

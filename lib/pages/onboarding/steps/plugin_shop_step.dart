@@ -20,7 +20,7 @@ class PluginShopStep extends StatelessWidget {
             shape: OnboardingIconShape.flower,
           ),
           title: '添加番剧来源',
-          subtitle: '规则决定从哪些站点搜索和播放番剧，添加至少一条即可开始观看。',
+          subtitle: '已内置 giriGiriLove 规则，可直接开始观看；也可以再添加其他站点。',
           slivers: slivers,
         ),
       );

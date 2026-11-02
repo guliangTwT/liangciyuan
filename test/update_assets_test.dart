@@ -20,11 +20,28 @@ void main() {
         'digest':
             'sha256:d8351fba1cd359d6cc8758b4dd6ad8fb4442c2698a9d2259ebda918238b80685',
       },
+      {
+        'name': 'liangciyuan-3.0.0-windows-x64-setup.exe',
+        'browser_download_url':
+            'https://github.com/GuLiang-I/liangciyuan/releases/download/3.0.0/a.exe',
+        'digest':
+            'sha256:d8351fba1cd359d6cc8758b4dd6ad8fb4442c2698a9d2259ebda918238b80685',
+      },
     ];
 
     test('matches the Android APK asset', () {
       final asset = getUpdateAssetForType(assets, InstallationType.androidApk);
       expect(asset?['name'], 'liangciyuan-3.0.0-android-arm64.apk');
+    });
+
+    test('matches the Windows setup installer asset', () {
+      final asset = getUpdateAssetForType(assets, InstallationType.windowsSetup);
+      expect(asset?['name'], 'liangciyuan-3.0.0-windows-x64-setup.exe');
+      // 安装包为 Windows 默认推荐类型。
+      expect(
+        getUpdateFilePatterns(InstallationType.windowsSetup).isNotEmpty,
+        isTrue,
+      );
     });
 
     test('matches the Windows portable ZIP asset', () {

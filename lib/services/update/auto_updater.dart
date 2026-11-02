@@ -17,6 +17,7 @@ import 'package:kazumi/utils/device.dart';
 import 'package:kazumi/utils/version.dart';
 
 enum InstallationType {
+  windowsSetup('安装包'),
   windowsMsix('MSIX'),
   windowsPortable('ZIP'),
   linuxDeb('DEB'),
@@ -89,6 +90,9 @@ String getUpdateFileHashFromAsset(Map<String, dynamic> asset) {
 
 List<String> getUpdateFilePatterns(InstallationType installationType) {
   switch (installationType) {
+    case InstallationType.windowsSetup:
+      // 例：liangciyuan-3.0.0-windows-x64-setup.exe
+      return ['windows', 'x64-setup.exe'];
     case InstallationType.windowsMsix:
       return ['windows', '.msix'];
     case InstallationType.windowsPortable:
@@ -105,6 +109,13 @@ List<String> getUpdateFilePatterns(InstallationType installationType) {
   }
 }
 
+/// GitHub 直连在国内网络环境不可靠；gh-proxy.org 可以代理 API 与资产下载。
+Uri? githubFallbackUrl(String url) =>
+    url.startsWith('https://github.com/') ||
+            url.startsWith('https://api.github.com/')
+        ? Uri.parse('https://gh-proxy.org/$url')
+        : null;
+
 class AutoUpdater {
   static final AutoUpdater _instance = AutoUpdater._internal();
 
@@ -116,9 +127,13 @@ class AutoUpdater {
 
   List<InstallationType> _detectAvailableInstallationTypes() {
     if (Platform.isWindows) {
-      // Releases in this fork ship a portable ZIP; keep MSIX only as a
-      // fallback for users who installed the signed package.
-      return [InstallationType.windowsPortable, InstallationType.windowsMsix];
+      // Releases in this fork ship an Inno Setup installer; the portable ZIP
+      // and signed MSIX stay as fallbacks for users who installed those.
+      return [
+        InstallationType.windowsSetup,
+        InstallationType.windowsPortable,
+        InstallationType.windowsMsix,
+      ];
     }
     if (Platform.isLinux) {
       return [InstallationType.linuxDeb, InstallationType.linuxTar];
@@ -179,13 +194,25 @@ class AutoUpdater {
     }
   }
 
+  /// GitHub 直连在国内网络环境不可靠；gh-proxy.org 可以代理 API 与资产下载。
   Future<Map<String, dynamic>> _latestRelease() async {
-    final raw = await _downloadClient.getPlain(ApiEndpoints.latestAppMirror);
-    final data = json.decode(raw);
-    if (data is! Map) {
-      throw Exception('Invalid update response');
+    final primary = ApiEndpoints.latestAppMirror;
+    final fallback = githubFallbackUrl(primary);
+    Object? lastError;
+    for (final url in [primary, if (fallback != null) fallback.toString()]) {
+      try {
+        final raw = await _downloadClient.getPlain(url);
+        final data = json.decode(raw);
+        if (data is! Map) {
+          throw Exception('Invalid update response');
+        }
+        return Map<String, dynamic>.from(data);
+      } catch (e) {
+        lastError = e;
+        KazumiLogger().w('Update: release query failed for $url', error: e);
+      }
     }
-    return Map<String, dynamic>.from(data);
+    throw lastError ?? Exception('Update check failed');
   }
 
   Future<void> autoCheckForUpdates() async {
@@ -450,15 +477,28 @@ class AutoUpdater {
     CancelToken cancelToken,
   ) async {
     final tempDir = await getTemporaryDirectory();
-    return downloadUpdateFile(
-      url: url,
-      filePath: '${tempDir.path}/${_getFileNameFromUrl(url, version)}',
+    final filePath = '${tempDir.path}/${_getFileNameFromUrl(url, version)}';
+    Future<String> download(String target) => downloadUpdateFile(
+      url: target,
+      filePath: filePath,
       expectedHash: expectedHash,
       cancelToken: cancelToken,
       onReceiveProgress: (received, total) {
         _downloadProgress.value = total > 0 ? received / total : 0;
       },
     );
+    try {
+      return await download(url);
+    } catch (e) {
+      final fallback = githubFallbackUrl(url);
+      if (fallback == null || cancelToken.isCancelled) rethrow;
+      KazumiLogger().w(
+        'Update: retrying asset download via fallback mirror',
+        error: e,
+      );
+      _downloadProgress.value = 0;
+      return download(fallback.toString());
+    }
   }
 
   void _installUpdate(
@@ -471,7 +511,10 @@ class AutoUpdater {
       await Future.delayed(const Duration(seconds: 2));
 
       if (Platform.isWindows) {
-        if (installationType == InstallationType.windowsMsix) {
+        if (installationType == InstallationType.windowsSetup) {
+          // 直接运行 Inno Setup 安装器；安装器会通过 AppMutex 等待本应用退出。
+          await Process.start(filePath, const [], runInShell: false);
+        } else if (installationType == InstallationType.windowsMsix) {
           final Uri fileUri = Uri.file(filePath);
           if (await canLaunchUrl(fileUri)) {
             await launchUrl(fileUri);
@@ -549,7 +592,7 @@ class AutoUpdater {
     }
     String extension = '';
     if (Platform.isWindows) {
-      extension = '.msix';
+      extension = '.exe';
     } else if (Platform.isMacOS) {
       extension = '.dmg';
     } else if (Platform.isLinux) {

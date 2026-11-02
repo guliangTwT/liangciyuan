@@ -146,14 +146,14 @@
               --dart-define=KAZUMI_KEY=$KAZUMI_KEY
             shell: bash
           - name: Package android build output
-            run: cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk Kazumi_android_canary.apk
+            run: cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk liangciyuan-android-canary.apk
             shell: bash
 
           - name: Upload android outputs
             uses: actions/upload-artifact@v4
             with:
               name: android_outputs
-              path: Kazumi_android_*.apk
+              path: liangciyuan-android-canary.apk
 
       flutter-build-windows:
         needs: [flutter-test, flutter-analyze]
@@ -185,14 +185,14 @@
               --dart-define=DANDANAPI_KEY=$env:DANDANAPI_KEY
               --dart-define=KAZUMI_APPID=$env:KAZUMI_APPID
               --dart-define=KAZUMI_KEY=$env:KAZUMI_KEY
-          - run: Compress-Archive build/windows/x64/runner/Release/* Kazumi_windows_canary.zip
+          - run: Compress-Archive build/windows/x64/runner/Release/* liangciyuan-windows-canary.zip
           - name: Upload windows outputs
             id: unsigned-windows-packet-artifacts
             uses: actions/upload-artifact@v4
             with:
               name: windows_outputs
               path: |
-                Kazumi_windows_*.zip
+                liangciyuan-windows-canary.zip
           # - name: Build unsigned msix
           #   run: dart run msix:create
           # - name: Upload windows msix ouputs
@@ -256,12 +256,12 @@
               mkdir Payload
               cp -R build/ios/iphoneos/Runner.app Payload/Runner.app
               find Payload/Runner.app/Frameworks -type d -name "*.framework" -exec codesign --force --sign - --preserve-metadata=identifier,entitlements {} \;
-              zip -q -r Kazumi_ios_canary_no_sign.ipa Payload
+              zip -q -r liangciyuan-ios-canary-unsigned.ipa Payload
           - name: Upload iOS build
             uses: actions/upload-artifact@v4
             with:
               name: ios_outputs
-              path: Kazumi_ios_*.ipa
+              path: liangciyuan-ios-canary-*.ipa
 
       flutter-build-macos:
         needs: [flutter-test, flutter-analyze]
@@ -293,12 +293,12 @@
               create-dmg build/macos/Build/Products/Release/Kazumi.app
             continue-on-error: true
           - name: Rename DMG
-            run: mv Kazumi*.dmg Kazumi_macos_canary.dmg
+            run: mv Kazumi*.dmg liangciyuan-macos-canary.dmg
           - name: Upload MacOS build
             uses: actions/upload-artifact@v4
             with:
               name: macos_outputs
-              path: Kazumi_macos_*.dmg
+              path: liangciyuan-macos-canary*.dmg
 
       flutter-build-linux-amd64:
         needs: [flutter-test, flutter-analyze]
@@ -355,11 +355,11 @@
           - name: Package linux amd64 build output
             run: |
               # Tarball package
-              tar -zcvf Kazumi_linux_canary_amd64.tar.gz -C build/linux/x64/release/bundle .
+              tar -zcvf liangciyuan-linux-canary-amd64.tar.gz -C build/linux/x64/release/bundle .
 
               # Debian package
-              mkdir Kazumi_linux_canary_amd64
-              cd Kazumi_linux_canary_amd64
+              mkdir liangciyuan-linux-canary-amd64
+              cd liangciyuan-linux-canary-amd64
               mkdir -p opt/Kazumi
               mkdir -p usr/share/applications
               mkdir -p usr/share/icons/hicolor/512x512/apps
@@ -388,7 +388,7 @@
               cp ../assets/images/logo/logo_linux.png usr/share/icons/hicolor/512x512/apps/io.github.Predidit.Kazumi.png
 
               cd ..
-              dpkg-deb --build --root-owner-group Kazumi_linux_canary_amd64
+              dpkg-deb --build --root-owner-group liangciyuan-linux-canary-amd64
             shell: bash
 
           - name: Upload linux amd64 outputs
@@ -396,8 +396,8 @@
             with:
               name: linux_amd64_outputs
               path: |
-                Kazumi_linux_*.tar.gz
-                Kazumi_linux_*.deb
+                liangciyuan-linux-canary-*.tar.gz
+                liangciyuan-linux-canary-*.deb
 
       flutter-build-linux-arm64:
         needs: [flutter-test, flutter-analyze]
@@ -409,7 +409,7 @@
           - name: Clone repository
             uses: actions/checkout@v4
           - name: Echo build progress
-            run: echo "Kazumi_linux_canary_arm64 build progress"
+            run: echo "liangciyuan-linux-canary-arm64 build progress"
             shell: bash
           - name: Set up Flutter for ARM64
             uses: ./.github/actions/flutter-arm64-setup
@@ -436,11 +436,11 @@
           - name: Package linux arm64 build output
             run: |
               # Tarball package
-              tar -zcvf Kazumi_linux_canary_arm64.tar.gz -C build/linux/arm64/release/bundle .
+              tar -zcvf liangciyuan-linux-canary-arm64.tar.gz -C build/linux/arm64/release/bundle .
 
               # Debian package
-              mkdir Kazumi_linux_canary_arm64
-              cd Kazumi_linux_canary_arm64
+              mkdir liangciyuan-linux-canary-arm64
+              cd liangciyuan-linux-canary-arm64
               mkdir -p opt/Kazumi
               mkdir -p usr/share/applications
               mkdir -p usr/share/icons/hicolor/512x512/apps
@@ -469,7 +469,7 @@
               cp ../assets/images/logo/logo_linux.png usr/share/icons/hicolor/512x512/apps/io.github.Predidit.Kazumi.png
 
               cd ..
-              dpkg-deb --build --root-owner-group Kazumi_linux_canary_arm64
+              dpkg-deb --build --root-owner-group liangciyuan-linux-canary-arm64
             shell: bash
 
           - name: Upload linux arm64 outputs
@@ -477,5 +477,5 @@
             with:
               name: linux_arm64_outputs
               path: |
-                Kazumi_linux_*.tar.gz
-                Kazumi_linux_*.deb
+                liangciyuan-linux-canary-*.tar.gz
+                liangciyuan-linux-canary-*.deb

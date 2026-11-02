@@ -42,7 +42,8 @@ OutputBaseFilename=liangciyuan-{#AppVersion}-windows-x64-setup
 ChangesAssociations=yes
 
 [Languages]
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+; 中文语言文件随仓库分发（runner 预装的 Inno Setup 不含官方翻译）。
+Name: "chinesesimplified"; MessagesFile: "InnoLanguages\ChineseSimplified.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
@@ -50,7 +51,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; \
     GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-Source: "{#MyAppBuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#MyAppBuildDir}\*"; DestDir: "{app}"; Excludes: "*-setup.exe"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Registry]
 ; URL 协议注册（HKCU 无需管理员权限，卸载时一并删除）。

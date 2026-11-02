@@ -6,7 +6,7 @@
 
 <img src="assets/images/logo/liangciyuan.png" width=200></img>
 
-<a href="https://t.me/kazumi_app"><img src="https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white"></img></a>
+<a href="https://github.com/GuLiang-I/liangciyuan"><img src="https://img.shields.io/badge/GitHub-GuangLiang-I%2Fliangciyuan-181717?style=for-the-badge&logo=github&logoColor=white"></img></a>
 
 <img src="https://img.shields.io/badge/Flutter-03A9F4?style=for-the-badge&logo=flutter&logoColor=white"></img>
 <img src="https://img.shields.io/badge/Dart-00B4AB?style=for-the-badge&logo=Dart&logoColor=white"></img>
@@ -16,6 +16,17 @@
 
 <p>使用 Flutter 开发的基于自定义规则的番剧采集与在线观看程序。使用最多五行基于 <code>Xpath</code> 语法的选择器构建自己的规则。支持规则导入与规则分享。支持基于 <code>Anime4K</code> 的实时超分辨率。绝赞开发中 (～￣▽￣)～</p>
 </div>
+
+## 从源码构建
+
+Windows 构建 `ech_http` 的原生桥接时，MSVC 会拒绝其单个超长 CA 字符串。请先运行一次兼容脚本，再执行 Flutter 构建：
+
+```bash
+python tool/fix_ech_http_ca.py .
+flutter build windows --release
+```
+
+Android 产物可直接用 `flutter build apk --release` 构建。源码中的 `android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java` 已移除无效的 dev-only splash 插件注册，避免 Android 编译失败。
 
 ## 支持平台
 
@@ -161,7 +172,7 @@ A: 本项目编译需要良好的网络环境, 除了由 Google 托管的 Flutte
 
 ## 美术资源
 
-凉次元图标由本改编版提供，源自用户提交的“凉次元梦幻星轨头像.png”。上游 Kazumi 项目曾使用 Yuquanaaa 创作的图标；该图标版权归原作者所有且授权仅适用于原项目，本改编版已将其替换。
+本项目图标由凉次元改编版使用，源自用户提供的“凉次元梦幻星轨头像.png”。
 
 本项目内嵌字体为 [Mi Sans](https://hyperos.mi.com/font/zh/details/sc/) 字体, 由 [Xiaomi](https://www.mi.com/index.html) 开发和拥有版权。
 

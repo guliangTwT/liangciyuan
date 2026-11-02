@@ -115,7 +115,6 @@ dev_dependencies:
   mobx_codegen: ^2.7.5
   hive_ce_generator: ^1.10.0
   flutter_launcher_icons: ^0.14.3
-  flutter_native_splash: ^2.4.3
   msix: ^3.16.12
 
 flutter_launcher_icons:
@@ -144,6 +143,8 @@ flutter_native_splash:
   color_dark_ios: "#212121"
   image_ios: assets/images/logo/liangciyuan.png
   image_dark_ios: assets/images/logo/liangciyuan.png
+
+# Android 启动图已由原生资源提供；该生成器仅保留 iOS 配置。
 
 msix_config:
   display_name: 凉次元

@@ -16,6 +16,7 @@ import 'package:kazumi/pages/settings/settings_module.dart';
 import 'package:kazumi/pages/timeline/timeline_controller.dart';
 import 'package:kazumi/pages/timeline/timeline_module.dart';
 import 'package:kazumi/pages/video/video_module.dart';
+import 'package:kazumi/pages/web_portal/web_portal_page.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
 import 'package:kazumi/pages/collect/collect_controller.dart';
@@ -100,6 +101,11 @@ final indexModule = createModule(
       )
       ..module(tabModule)
       ..module(videoModule)
+      ..route(
+        '/web',
+        child: (context, state) => const WebPortalPage(),
+        transition: _imagePreviewTransition,
+      )
       ..route(
         ImageViewer.routePath,
         child: (context, state) {

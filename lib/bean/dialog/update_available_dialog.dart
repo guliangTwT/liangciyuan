@@ -33,7 +33,7 @@ class UpdateAvailableDialog extends StatefulWidget {
 
 class _UpdateAvailableDialogState extends State<UpdateAvailableDialog> {
   final _notesController = ScrollController();
-  var _source = UpdateDownloadSource.mirror;
+  var _source = UpdateDownloadSource.github;
   late var _type = widget.updateInfo.recommendedInstallationType;
   var _disableAutoUpdate = false;
 
@@ -149,8 +149,10 @@ class _UpdateAvailableDialogState extends State<UpdateAvailableDialog> {
                 runSpacing: 4,
                 children: [
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: colors.secondaryContainer,
                       borderRadius: BorderRadius.circular(8),
@@ -195,8 +197,10 @@ class _UpdateAvailableDialogState extends State<UpdateAvailableDialog> {
 
   Widget _buildReleaseNotes(BuildContext context) {
     final theme = Theme.of(context);
-    final maxHeight =
-        (MediaQuery.sizeOf(context).height * 0.22).clamp(96.0, 180.0);
+    final maxHeight = (MediaQuery.sizeOf(context).height * 0.22).clamp(
+      96.0,
+      180.0,
+    );
 
     return TonalCard(
       padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),

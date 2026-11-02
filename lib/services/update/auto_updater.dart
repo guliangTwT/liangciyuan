@@ -63,7 +63,9 @@ class UpdateInfo {
 }
 
 Map<String, dynamic>? getUpdateAssetForType(
-    List<dynamic> assets, InstallationType type) {
+  List<dynamic> assets,
+  InstallationType type,
+) {
   final patterns = getUpdateFilePatterns(type).map((p) => p.toLowerCase());
 
   try {
@@ -114,7 +116,9 @@ class AutoUpdater {
 
   List<InstallationType> _detectAvailableInstallationTypes() {
     if (Platform.isWindows) {
-      return [InstallationType.windowsMsix, InstallationType.windowsPortable];
+      // Releases in this fork ship a portable ZIP; keep MSIX only as a
+      // fallback for users who installed the signed package.
+      return [InstallationType.windowsPortable, InstallationType.windowsMsix];
     }
     if (Platform.isLinux) {
       return [InstallationType.linuxDeb, InstallationType.linuxTar];
@@ -123,6 +127,19 @@ class AutoUpdater {
     if (Platform.isIOS) return [InstallationType.ios];
     if (Platform.isAndroid) return [InstallationType.androidApk];
     return [InstallationType.unknown];
+  }
+
+  /// Drops installation types that have no matching asset in this release.
+  /// This keeps the dialog from offering a type the repository does not publish.
+  List<InstallationType> _installationTypesWithAssets(
+    List<InstallationType> types,
+    List<dynamic> assets,
+  ) {
+    final available = [
+      for (final type in types)
+        if (getUpdateAssetForType(assets, type) != null) type,
+    ];
+    return available.isEmpty ? types : available;
   }
 
   Future<UpdateInfo?> checkForUpdates() async {
@@ -137,7 +154,11 @@ class AutoUpdater {
       final currentVersion = ApiEndpoints.version;
 
       if (needUpdate(currentVersion, remoteVersion)) {
-        final availableTypes = _detectAvailableInstallationTypes();
+        final assets = (data['assets'] as List<dynamic>?) ?? const [];
+        final availableTypes = _installationTypesWithAssets(
+          _detectAvailableInstallationTypes(),
+          assets,
+        );
 
         return UpdateInfo(
           version: remoteVersion,
@@ -147,7 +168,7 @@ class AutoUpdater {
           publishedAt: data['published_at'] ?? '',
           installationType: availableTypes.first,
           availableInstallationTypes: availableTypes,
-          assets: data['assets'] ?? [],
+          assets: assets,
         );
       }
 
@@ -194,14 +215,17 @@ class AutoUpdater {
     }
   }
 
-  Future<void> _showUpdateDialog(UpdateInfo updateInfo,
-      {bool isAutoCheck = false}) async {
+  Future<void> _showUpdateDialog(
+    UpdateInfo updateInfo, {
+    bool isAutoCheck = false,
+  }) async {
     var disableAutoUpdate = false;
     final choice = await KazumiDialog.show<UpdateDialogChoice>(
       builder: (context) => UpdateAvailableDialog(
         updateInfo: updateInfo,
-        onDisableAutoUpdateChanged:
-            isAutoCheck ? (value) => disableAutoUpdate = value : null,
+        onDisableAutoUpdateChanged: isAutoCheck
+            ? (value) => disableAutoUpdate = value
+            : null,
       ),
     );
     if (disableAutoUpdate) {
@@ -214,8 +238,10 @@ class AutoUpdater {
   }
 
   Future<void> _downloadUpdateWithType(
-      UpdateInfo updateInfo, InstallationType selectedType,
-      UpdateDownloadSource source) async {
+    UpdateInfo updateInfo,
+    InstallationType selectedType,
+    UpdateDownloadSource source,
+  ) async {
     try {
       if (!selectedType.downloadsInApp) {
         String releaseUrl = updateInfo.releaseNotes;
@@ -253,69 +279,79 @@ class AutoUpdater {
   }
 
   Future<void> _downloadUpdate(
-      UpdateInfo updateInfo, String expectedHash) async {
+    UpdateInfo updateInfo,
+    String expectedHash,
+  ) async {
     if (_downloadDialogs.isRunning) return;
-    await _downloadDialogs.run((task) async {
-      _downloadProgress.value = 0;
-      final cancelToken = CancelToken();
-      final downloadPath = await task.loading(
-        action: () => _downloadFile(updateInfo.downloadUrl, updateInfo.version,
-            expectedHash, cancelToken),
-        onCancel: cancelToken.cancel,
-        builder: (context) {
-          return AlertDialog(
-            title: const Text('正在下载更新'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ValueListenableBuilder<double>(
-                  valueListenable: _downloadProgress,
-                  builder: (context, value, child) {
-                    return Column(
-                      children: [
-                        LinearProgressIndicator(value: value),
-                        const SizedBox(height: 8),
-                        Text('${(value * 100).toStringAsFixed(1)}%'),
-                      ],
-                    );
-                  },
+    await _downloadDialogs.run(
+      (task) async {
+        _downloadProgress.value = 0;
+        final cancelToken = CancelToken();
+        final downloadPath = await task.loading(
+          action: () => _downloadFile(
+            updateInfo.downloadUrl,
+            updateInfo.version,
+            expectedHash,
+            cancelToken,
+          ),
+          onCancel: cancelToken.cancel,
+          builder: (context) {
+            return AlertDialog(
+              title: const Text('正在下载更新'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ValueListenableBuilder<double>(
+                    valueListenable: _downloadProgress,
+                    builder: (context, value, child) {
+                      return Column(
+                        children: [
+                          LinearProgressIndicator(value: value),
+                          const SizedBox(height: 8),
+                          Text('${(value * 100).toStringAsFixed(1)}%'),
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => KazumiDialog.dismiss(context: context),
+                  child: const Text('取消'),
                 ),
               ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => KazumiDialog.dismiss(context: context),
-                child: const Text('取消'),
-              ),
-            ],
-          );
-        },
-      );
+            );
+          },
+        );
 
-      _showDownloadCompleteDialog(downloadPath, updateInfo);
-    }, onError: (e, stackTrace) {
-      final errorMessage = getUpdateDownloadErrorMessage(e);
+        _showDownloadCompleteDialog(downloadPath, updateInfo);
+      },
+      onError: (e, stackTrace) {
+        final errorMessage = getUpdateDownloadErrorMessage(e);
 
-      KazumiDialog.show(
-        builder: (context) {
-          return AlertDialog(
-            title: const Text('下载失败'),
-            content: Text(errorMessage),
-            actions: [
-              TextButton(
-                onPressed: () => KazumiDialog.dismiss(context: context),
-                child: const Text('确定'),
-              ),
-            ],
-          );
-        },
-      );
+        KazumiDialog.show(
+          builder: (context) {
+            return AlertDialog(
+              title: const Text('下载失败'),
+              content: Text(errorMessage),
+              actions: [
+                TextButton(
+                  onPressed: () => KazumiDialog.dismiss(context: context),
+                  child: const Text('确定'),
+                ),
+              ],
+            );
+          },
+        );
 
-      KazumiLogger().e(
+        KazumiLogger().e(
           'Update: download failed | source=${updateInfo.downloadUrl} | '
           '${describeUpdateDownloadError(e, stackTrace)}',
-          error: e);
-    });
+          error: e,
+        );
+      },
+    );
   }
 
   final ValueNotifier<double> _downloadProgress = ValueNotifier(0.0);
@@ -338,9 +374,7 @@ class AutoUpdater {
                     size: 20,
                   ),
                   const SizedBox(width: 8),
-                  Expanded(
-                    child: Text('新版本 ${updateInfo.version} 已下载完成'),
-                  ),
+                  Expanded(child: Text('新版本 ${updateInfo.version} 已下载完成')),
                 ],
               ),
               const SizedBox(height: 12),
@@ -368,9 +402,9 @@ class AutoUpdater {
                     const SizedBox(height: 4),
                     SelectableText(
                       filePath,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            fontFamily: 'monospace',
-                          ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
                     ),
                   ],
                 ),
@@ -397,7 +431,9 @@ class AutoUpdater {
               onPressed: () {
                 KazumiDialog.dismiss();
                 _installUpdate(
-                    filePath, updateInfo.recommendedInstallationType);
+                  filePath,
+                  updateInfo.recommendedInstallationType,
+                );
               },
               child: const Text('立即安装'),
             ),
@@ -407,8 +443,12 @@ class AutoUpdater {
     );
   }
 
-  Future<String> _downloadFile(String url, String version, String expectedHash,
-      CancelToken cancelToken) async {
+  Future<String> _downloadFile(
+    String url,
+    String version,
+    String expectedHash,
+    CancelToken cancelToken,
+  ) async {
     final tempDir = await getTemporaryDirectory();
     return downloadUpdateFile(
       url: url,
@@ -422,7 +462,9 @@ class AutoUpdater {
   }
 
   void _installUpdate(
-      String filePath, InstallationType installationType) async {
+    String filePath,
+    InstallationType installationType,
+  ) async {
     try {
       KazumiDialog.showToast(message: '准备安装更新，应用即将退出...');
 
@@ -477,9 +519,9 @@ class AutoUpdater {
           final arg = '/select,${filePath.replaceAll('/', r'\')}';
           await Process.start('explorer.exe', [arg], runInShell: true);
         } else {
-          await Process.start(
-              'explorer.exe', [targetDirOrFile.replaceAll('/', r'\')],
-              runInShell: true);
+          await Process.start('explorer.exe', [
+            targetDirOrFile.replaceAll('/', r'\'),
+          ], runInShell: true);
         }
       } else if (Platform.isMacOS) {
         if (type == FileSystemEntityType.file) {

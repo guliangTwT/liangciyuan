@@ -86,6 +86,12 @@ const List<_SettingsGroup> _settingsGroups = [
         path: '/settings/interface',
       ),
       _SettingsCategory(
+        label: '网页设置',
+        description: '内置网页与备用站点',
+        icon: Icons.language_rounded,
+        path: '/settings/web-portal',
+      ),
+      _SettingsCategory(
         label: '同步设置',
         description: '追番状态与多设备同步',
         icon: Icons.cloud_rounded,
@@ -184,9 +190,7 @@ class _SettingsPageState extends State<SettingsPage> {
   void _replaceCategory(String path) {
     final outlet = _outletKey.currentState!;
     // Nested pushes leave _location unchanged, so check the stack as well.
-    if (!outlet.canPop &&
-        !_isSecondaryRoute &&
-        _selectedCategoryPath == path) {
+    if (!outlet.canPop && !_isSecondaryRoute && _selectedCategoryPath == path) {
       return;
     }
     _categoryNavigation = null;
@@ -220,59 +224,61 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, constraints) {
-      final wide = constraints.maxWidth > LayoutBreakpoint.compact['width']!;
-      return NavigatorPopHandler<Object?>(
-        onPopWithResult: (_) => _goBack(),
-        child: Scaffold(
-          appBar: wide
-              ? SysAppBar(
-                  title: const Text('设置'),
-                  leading: BackButton(onPressed: _exitSettings),
-                )
-              : null,
-          body: SafeArea(
-            top: false,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Keep the outlet at the same tree position on resize.
-                SizedBox(
-                  width: wide ? 280 : 0,
-                  child: Offstage(
-                    offstage: !wide,
-                    child: _SettingsMenu(
-                      wide: true,
-                      selectedPath: _selectedCategoryPath,
-                      onSelect: _replaceCategory,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: SettingsPaneScope(
-                    embedded: wide,
-                    showBackButton: _isSecondaryRoute,
-                    onBack: _goBack,
-                    child: NotificationListener<_SettingsCategorySelected>(
-                      onNotification: (notification) {
-                        _pushCategory(notification.path);
-                        return true;
-                      },
-                      child: Theme(
-                        data: Theme.of(context).copyWith(
-                          pageTransitionsTheme: settingsPageTransitionsTheme,
-                        ),
-                        child: RouterOutlet(key: _outletKey),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth > LayoutBreakpoint.compact['width']!;
+        return NavigatorPopHandler<Object?>(
+          onPopWithResult: (_) => _goBack(),
+          child: Scaffold(
+            appBar: wide
+                ? SysAppBar(
+                    title: const Text('设置'),
+                    leading: BackButton(onPressed: _exitSettings),
+                  )
+                : null,
+            body: SafeArea(
+              top: false,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Keep the outlet at the same tree position on resize.
+                  SizedBox(
+                    width: wide ? 280 : 0,
+                    child: Offstage(
+                      offstage: !wide,
+                      child: _SettingsMenu(
+                        wide: true,
+                        selectedPath: _selectedCategoryPath,
+                        onSelect: _replaceCategory,
                       ),
                     ),
                   ),
-                ),
-              ],
+                  Expanded(
+                    child: SettingsPaneScope(
+                      embedded: wide,
+                      showBackButton: _isSecondaryRoute,
+                      onBack: _goBack,
+                      child: NotificationListener<_SettingsCategorySelected>(
+                        onNotification: (notification) {
+                          _pushCategory(notification.path);
+                          return true;
+                        },
+                        child: Theme(
+                          data: Theme.of(context).copyWith(
+                            pageTransitionsTheme: settingsPageTransitionsTheme,
+                          ),
+                          child: RouterOutlet(key: _outletKey),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
   }
 }
 
@@ -287,9 +293,11 @@ class SettingsIndexPage extends StatelessWidget {
     return Scaffold(
       appBar: SysAppBar(
         title: const Text('设置'),
-        leading: BackButton(onPressed: () {
-          if (!context.maybePop()) context.navigate('/tab/my');
-        }),
+        leading: BackButton(
+          onPressed: () {
+            if (!context.maybePop()) context.navigate('/tab/my');
+          },
+        ),
       ),
       body: _SettingsMenu(
         wide: false,

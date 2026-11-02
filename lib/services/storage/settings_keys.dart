@@ -103,6 +103,7 @@ class SettingsKeys {
     true,
     group: SettingGroup.danmaku,
   );
+
   /// Off on desktop and on on mobile, like the B 站 client.
   static final pauseOnDanmakuEdit = SettingKey<bool>(
     'pauseOnDanmakuEdit',
@@ -525,6 +526,20 @@ class SettingsKeys {
     false,
     group: SettingGroup.misc,
   );
+
+  /// Web portal home. The default keeps the bundled browsing entry usable on
+  /// first launch while still allowing a different site in settings.
+  static const webPortalUrl = SettingKey<String>(
+    'webPortalUrl',
+    'https://ani.girigirilove.com',
+    group: SettingGroup.interface,
+  );
+
+  static const webPortalSites = SettingKey<String>(
+    'webPortalSites',
+    '',
+    group: SettingGroup.interface,
+  );
   static const bangumiSyncEnable = SettingKey<bool>(
     _SettingBoxKey.bangumiSyncEnable,
     false,
@@ -677,6 +692,8 @@ class SettingsKeys {
     shortcutDialogShown,
     onboardingCompleted,
     upstreamAttributionShown,
+    webPortalUrl,
+    webPortalSites,
     bangumiSyncEnable,
     bangumiAccessToken,
     bangumiSyncPriority,
@@ -693,7 +710,7 @@ class SettingsKeys {
   static List<SettingKey<Object?>> byGroup(SettingGroup group) {
     return [
       for (final key in all)
-        if (key.group == group) key
+        if (key.group == group) key,
     ];
   }
 

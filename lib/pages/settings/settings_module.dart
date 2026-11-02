@@ -23,6 +23,7 @@ import 'package:kazumi/pages/settings/sync/webdav_server_page.dart';
 import 'package:kazumi/pages/settings/sync/webdav_sync_page.dart';
 import 'package:kazumi/pages/settings/theme_settings_page.dart';
 import 'package:kazumi/pages/settings/update_settings.dart';
+import 'package:kazumi/pages/settings/web_portal_settings.dart';
 import 'package:kazumi/request/config/api_endpoints.dart';
 import 'package:kazumi/services/sync/danmaku_shield_sync_service.dart';
 
@@ -86,6 +87,10 @@ final settingsModule = createModule(
           ..route(
             '/interface',
             child: (context, state) => const InterfaceSettingsPage(),
+          )
+          ..route(
+            '/web-portal',
+            child: (context, state) => const WebPortalSettingsPage(),
           )
           ..module(proxyModule)
           ..route(

@@ -86,12 +86,6 @@ const List<_SettingsGroup> _settingsGroups = [
         path: '/settings/interface',
       ),
       _SettingsCategory(
-        label: '网页设置',
-        description: '内置网页与备用站点',
-        icon: Icons.language_rounded,
-        path: '/settings/web-portal',
-      ),
-      _SettingsCategory(
         label: '同步设置',
         description: '追番状态与多设备同步',
         icon: Icons.cloud_rounded,

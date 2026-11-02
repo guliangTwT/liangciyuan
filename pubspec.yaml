@@ -5,8 +5,8 @@ version: 3.0.1+30001
 
 environment:
   sdk: ">=3.10.0 <4.0.0"
-  # CI 按 flutter-version-file 安装工具链；下限放宽以便解析到已发布的 stable。
-  flutter: ">=3.46.0 <4.0.0"
+  # CI 的 flutter-action 仅支持精确版本；与本地构建工具链保持一致。
+  flutter: 3.47.9
 
 dependencies:
   flutter:

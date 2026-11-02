@@ -143,6 +143,8 @@
             run: |
               $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
               & $iscc /DAppVersion=$env:tag /Q assets\windows\installer.iss
+              # upload-artifact 的根级通配不递归子目录，把安装包提到仓库根目录。
+              Copy-Item build\windows\x64\runner\Release\liangciyuan-*-setup.exe .
           - name: Upload windows outputs
             uses: actions/upload-artifact@v4
             with:

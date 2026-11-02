@@ -11,6 +11,7 @@ import 'package:kazumi/modules/history/history_module.dart';
 import 'package:kazumi/repositories/download_repository.dart';
 import 'package:kazumi/services/download/download_manager.dart';
 import 'package:kazumi/services/video_source/services.dart';
+import 'package:kazumi/services/video_source/video_source_format.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:mobx/mobx.dart';
 import 'package:kazumi/services/logging/logger.dart';
@@ -464,6 +465,20 @@ abstract class _VideoPageController with Store implements Disposable {
       resolvedEpisode.pageUrl,
     );
 
+    // Rules such as giriGiriLove return final MP4/HLS links from the chapter
+    // API. Opening them directly avoids a WebView page load and script wait,
+    // which is the dominant startup latency for those sources.
+    if (isDirectMediaUrl(urlItem)) {
+      await _playResolvedDirectMedia(
+        urlItem,
+        offset,
+        resolvedEpisode: resolvedEpisode,
+        session: session,
+        playerController: playerController,
+      );
+      return;
+    }
+
     await _resolveWithVideoSourceService(
       urlItem,
       offset,
@@ -471,6 +486,74 @@ abstract class _VideoPageController with Store implements Disposable {
       session: session,
       playerController: playerController,
     );
+  }
+
+  PlaybackInitParams _playbackParamsFor({
+    required String videoUrl,
+    required int offset,
+    required VideoSourceFormat format,
+    required EpisodeRef resolvedEpisode,
+    required bool adBlockerEnabled,
+  }) {
+    return PlaybackInitParams(
+      videoUrl: videoUrl,
+      offset: offset,
+      isLocalPlayback: false,
+      videoSourceFormat: format,
+      bangumiId: bangumiItem.id,
+      pluginName: currentPlugin.name,
+      episode: resolvedEpisode.listIndex,
+      danmakuEpisodeNumber: resolvedEpisode.danmakuEpisodeNumber,
+      pageUrl: resolvedEpisode.pageUrl,
+      sortNumber: resolvedEpisode.sortNumber,
+      httpHeaders: {
+        'user-agent': currentPlugin.userAgent.isEmpty
+            ? getRandomUA()
+            : currentPlugin.userAgent,
+        if (currentPlugin.referer.isNotEmpty) 'referer': currentPlugin.referer,
+      },
+      adBlockerEnabled: adBlockerEnabled,
+      episodeTitle: resolvedEpisode.displayTitle,
+      referer: currentPlugin.referer,
+      currentRoad: resolvedEpisode.roadIndex,
+      coverUrl: bangumiItem.images['large'],
+      bangumiName:
+          bangumiItem.nameCn.isNotEmpty ? bangumiItem.nameCn : bangumiItem.name,
+    );
+  }
+
+  Future<void> _playResolvedDirectMedia(
+    String mediaUrl,
+    int offset, {
+    required EpisodeRef resolvedEpisode,
+    required AsyncSession session,
+    required PlayerController playerController,
+  }) async {
+    if (session.isStale) return;
+    _finishLoading();
+    KazumiLogger().i('VideoPageController: direct media URL: ');
+
+    final forceAdBlocker = GStorage.getSetting(SettingsKeys.forceAdBlocker);
+    final params = _playbackParamsFor(
+      videoUrl: mediaUrl,
+      offset: offset,
+      format: mediaUrl.toLowerCase().split('?').first.endsWith('.m3u8')
+          ? VideoSourceFormat.hls
+          : VideoSourceFormat.auto,
+      resolvedEpisode: resolvedEpisode,
+      adBlockerEnabled: forceAdBlocker || currentPlugin.adBlocker,
+    );
+
+    final initialized = await playerController.init(params);
+    if (session.isActive && initialized) {
+      playingEpisode = VideoEpisodeSelection(
+        episode: resolvedEpisode.listIndex,
+        road: resolvedEpisode.roadIndex,
+      );
+      unawaited(_loadPlaybackDanmaku(playerController, params, session));
+    } else if (session.isActive) {
+      _playbackSessions.cancel();
+    }
   }
 
   Future<void> _changeOfflineEpisode(

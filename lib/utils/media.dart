@@ -3,6 +3,37 @@ import 'dart:io';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
+/// True when [url] already points at a media resource the player can open
+/// directly. Rules whose episode entries are MP4/HLS links can skip the
+/// WebView round trip entirely.
+bool isDirectMediaUrl(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null || !uri.hasScheme) return false;
+  if (uri.scheme != 'http' && uri.scheme != 'https') return false;
+  final lower = uri.path.toLowerCase();
+  return _hasMediaExtension(lower);
+}
+
+bool isDirectMediaPath(String value) {
+  final lower = value.toLowerCase().split('?').first.split('#').first;
+  return _hasMediaExtension(lower);
+}
+
+bool _hasMediaExtension(String lowerPath) {
+  for (final extension in const [
+    '.m3u8',
+    '.mp4',
+    '.mkv',
+    '.webm',
+    '.flv',
+    '.m4v',
+    '.ts',
+  ]) {
+    if (lowerPath.endsWith(extension)) return true;
+  }
+  return false;
+}
+
 String decodeVideoSource(String iframeUrl) {
   final decodedUrl = Uri.decodeFull(iframeUrl);
   final regExp = RegExp(

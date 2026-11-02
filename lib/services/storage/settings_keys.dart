@@ -526,20 +526,6 @@ class SettingsKeys {
     false,
     group: SettingGroup.misc,
   );
-
-  /// Web portal home. The default keeps the bundled browsing entry usable on
-  /// first launch while still allowing a different site in settings.
-  static const webPortalUrl = SettingKey<String>(
-    'webPortalUrl',
-    'https://ani.girigirilove.com',
-    group: SettingGroup.interface,
-  );
-
-  static const webPortalSites = SettingKey<String>(
-    'webPortalSites',
-    '',
-    group: SettingGroup.interface,
-  );
   static const bangumiSyncEnable = SettingKey<bool>(
     _SettingBoxKey.bangumiSyncEnable,
     false,
@@ -692,8 +678,6 @@ class SettingsKeys {
     shortcutDialogShown,
     onboardingCompleted,
     upstreamAttributionShown,
-    webPortalUrl,
-    webPortalSites,
     bangumiSyncEnable,
     bangumiAccessToken,
     bangumiSyncPriority,

@@ -120,6 +120,9 @@
               echo "tag=$tag" >> $env:GITHUB_ENV
           - name: Enable Git longpaths
             run: git config --system core.longpaths true
+          # flutter-action 在 Windows 上用 yq 读取 pubspec 的 flutter-version-file。
+          - name: Install yq
+            run: choco install yq -y
           - name: Set up Flutter
             uses: subosito/flutter-action@v2.16.0
             with:

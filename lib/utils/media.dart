@@ -19,6 +19,13 @@ bool isDirectMediaPath(String value) {
   return _hasMediaExtension(lower);
 }
 
+/// HLS needs a demuxer hint; MP4 must not get one or mpv may mis-detect it.
+bool isHlsMediaUrl(String url) {
+  final uri = Uri.tryParse(url);
+  final path = uri?.path ?? url;
+  return path.toLowerCase().endsWith('.m3u8');
+}
+
 bool _hasMediaExtension(String lowerPath) {
   for (final extension in const [
     '.m3u8',

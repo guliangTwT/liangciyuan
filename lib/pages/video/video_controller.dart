@@ -531,13 +531,13 @@ abstract class _VideoPageController with Store implements Disposable {
   }) async {
     if (session.isStale) return;
     _finishLoading();
-    KazumiLogger().i('VideoPageController: direct media URL: ');
+    KazumiLogger().i('VideoPageController: direct media URL: $mediaUrl');
 
     final forceAdBlocker = GStorage.getSetting(SettingsKeys.forceAdBlocker);
     final params = _playbackParamsFor(
       videoUrl: mediaUrl,
       offset: offset,
-      format: mediaUrl.toLowerCase().split('?').first.endsWith('.m3u8')
+      format: isHlsMediaUrl(mediaUrl)
           ? VideoSourceFormat.hls
           : VideoSourceFormat.auto,
       resolvedEpisode: resolvedEpisode,

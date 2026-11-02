@@ -31,5 +31,20 @@ void main() {
     test('does not mistake page paths for media', () {
       expect(isDirectMediaPath('/play/123.mp4.html'), isFalse);
     });
+
+    test('distinguishes HLS from MP4 for the demuxer hint', () {
+      expect(
+        isHlsMediaUrl(
+          'https://akua.girigirilove.com/zijian/41/playlist.m3u8?token=1',
+        ),
+        isTrue,
+      );
+      expect(
+        isHlsMediaUrl(
+          'https://ana.girigirilove.com/zijian/oldanime/2002/04/01.mp4',
+        ),
+        isFalse,
+      );
+    });
   });
 }

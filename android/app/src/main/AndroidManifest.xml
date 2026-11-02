@@ -44,6 +44,9 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="kazumi" android:host="bangumi"/>
                 <data android:scheme="kazumi" android:host="search"/>
+                <!-- 凉次元专属 scheme；保留 kazumi:// 以兼容上游分享链接。 -->
+                <data android:scheme="liangciyuan" android:host="bangumi"/>
+                <data android:scheme="liangciyuan" android:host="search"/>
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

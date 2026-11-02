@@ -43,8 +43,8 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId "com.predidit.kazumi"
+        // 凉次元独立包名，避免与上游 Kazumi（com.predidit.kazumi）互相覆盖安装。
+        applicationId "com.liangciyuan.app"
         // You can update the following values to match your application needs.
         // For more information, see: https://docs.flutter.dev/deployment/android#reviewing-the-gradle-build-configuration.
         minSdkVersion flutter.minSdkVersion

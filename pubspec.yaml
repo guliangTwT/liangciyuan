@@ -148,7 +148,10 @@ flutter_native_splash:
 
 msix_config:
   display_name: 凉次元
-  publisher: CN=SignPath Foundation, O=SignPath Foundation, L=Lewes, S=Delaware, C=US
+  identity_name: GuLiang-I.Liangciyuan
+  publisher_display_name: Liangciyuan
+  # 未购买签名证书，仅用于本地未签名 MSIX 打包测试；正式分发走 GitHub Releases。
+  publisher: CN=Liangciyuan
   logo_path: assets/images/logo/liangciyuan.png
   sign_msix: false
   install_certificate: false

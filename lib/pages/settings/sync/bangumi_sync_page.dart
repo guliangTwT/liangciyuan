@@ -168,7 +168,9 @@ class _BangumiSyncPageState extends State<BangumiSyncPage> {
                   const SyncPageIntro(
                     icon: Icons.bookmarks_rounded,
                     title: 'Bangumi',
-                    description: '同步想看、在看、看过等追番状态。',
+                    description: '同步想看、在看、看过等追番状态（不含观看进度）。'
+                        'Bangumi 不开放账号密码登录，需要先在官网获取授权码；'
+                        '若官网打不开，可在其他设备获取后粘贴到这里。',
                   ),
                   _accountCard(configured),
                   _syncControls(configured, enabled),

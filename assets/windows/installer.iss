@@ -12,6 +12,10 @@
 #define MyAppBuildDir "..\..\build\windows\x64\runner\Release"
 
 [Setup]
+; 凉次元在运行时会 mmap data\app.so；让安装器请求 Restart Manager 关闭并重启应用，
+; 避免用户忽略“文件被占用”后出现新旧文件混装。
+CloseApplications=yes
+RestartApplications=yes
 ; 独立 AppId（GUID），与上游 Kazumi 的安装包互不干扰，可共存。
 AppId={{8A6C2F4E-1B3D-4E2A-9C7B-5D4E6F8091A2}
 AppName={#MyAppName}
@@ -51,7 +55,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; \
     GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-Source: "{#MyAppBuildDir}\*"; DestDir: "{app}"; Excludes: "*-setup.exe"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#MyAppBuildDir}\*"; DestDir: "{app}"; Excludes: "*-setup.exe"; Flags: ignoreversion restartreplace recursesubdirs createallsubdirs
 
 [Registry]
 ; URL 协议注册（HKCU 无需管理员权限，卸载时一并删除）。

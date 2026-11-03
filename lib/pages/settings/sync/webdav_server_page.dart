@@ -78,7 +78,8 @@ class _WebDavServerPageState extends State<WebDavServerPage> {
               const SyncPageIntro(
                 icon: Icons.dns_rounded,
                 title: '连接 WebDAV',
-                description: '填写云盘或服务器提供的连接信息。',
+                description: '填写云盘或服务器提供的连接信息。只需要账号密码，'
+                    '即可同步观看记录、收藏与弹幕屏蔽词（如坚果云、Nextcloud）。',
               ),
               TonalCard(
                 padding: const EdgeInsets.all(20),

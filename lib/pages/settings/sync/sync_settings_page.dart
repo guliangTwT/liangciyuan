@@ -99,10 +99,11 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
             ];
             return SyncPageBody(
               children: [
-                const SyncPageIntro(
+                SyncPageIntro(
                   icon: Icons.sync_rounded,
-                  title: '让追番保持同步',
-                  description: '选择需要的服务，也可以同时使用。',
+                  title: '让数据跟着账号走',
+                  description: 'WebDAV 只要云盘账号密码，即可同步观看记录、收藏与弹幕屏蔽词；'
+                      'Bangumi 用于共享追番状态（需要授权码）。两个服务可以同时使用。',
                 ),
                 LayoutBuilder(
                   builder: (context, constraints) {

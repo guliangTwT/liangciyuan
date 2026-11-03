@@ -8,6 +8,7 @@
 
 - **CI 即使配置密钥也会构建失败**：`build.gradle` 中的 `file('liangciyuan-release.jks')` 解析为 `android/app/`，而工作流把密钥写到 `android/`，路径不一致导致读不到密钥。现统一改为 `rootProject.file(...)`，与密钥存放位置一致。
 - **缺少签名密钥时 CI 直接失败**：`Verify keystore present` 步骤在未配置 secret 时中断整个发布。现改为输出 warning 并跳过，退回调试签名继续产出可安装包，避免发布流水线被密钥配置阻塞。
+- **Release 说明乱码**：发布脚本调用 GitHub API 时，PowerShell 5 以 ISO-8859-1 发送字符串，中文全部变成 `?`。现改为显式以 UTF-8 字节提交。
 
 ### 变更
 
@@ -17,6 +18,14 @@
 ### 验证
 
 - MuMu 模拟器（Android 15 / x86_64）实测：同签名 APK 覆盖安装返回 `Success`，应用冷启动后首页直接渲染推荐列表，无需滑动。
+
+### 包含的先前修复
+
+本版本合并了 3.0.4 / 3.0.5 尚未在 Release 中提供的改动：
+
+- 修复首页推荐列表首屏空白（数据到达后不重建，需滑动才显示）。
+- 更换应用图标（Android / iOS / macOS / Windows / 安装器全套资源）。
+- Android 发布签名由调试密钥改为固定发布密钥，解决覆盖安装的签名冲突。
 
 ## 3.0.5（2026-11-03）
 

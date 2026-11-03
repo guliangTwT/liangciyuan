@@ -65,6 +65,12 @@
         steps:
           - name: Clone repository
             uses: actions/checkout@v4
+          - name: Free disk space
+            run: |
+              df -h /
+              sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+              df -h /
+            shell: bash
           - name: Extract tag name
             run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
             shell: bash

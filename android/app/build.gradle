@@ -22,6 +22,13 @@ if (flutterVersionName == null) {
     flutterVersionName = '1.0'
 }
 
+// 发布签名：固定 keystore，保证每次构建签名一致，覆盖安装不再冲突。
+// CI 通过环境变量注入（密钥内容 base64），本地回退到 android/liangciyuan-release.jks。
+def releaseKeystoreFile = rootProject.file('liangciyuan-release.jks')
+def hasLocalKeystore = releaseKeystoreFile.exists()
+def envKeystoreB64 = System.getenv('ANDROID_KEYSTORE_BASE64')
+def hasEnvKeystore = envKeystoreB64 != null && !envKeystoreB64.trim().isEmpty()
+
 android {
     namespace "com.example.kazumi"
     compileSdk flutter.compileSdkVersion
@@ -53,11 +60,24 @@ android {
         versionName flutterVersionName
     }
 
+    signingConfigs {
+        if (hasEnvKeystore || hasLocalKeystore) {
+            release {
+                storeFile hasEnvKeystore
+                    ? file("${System.getenv('KEYSTORE_PATH') ?: 'liangciyuan-release.jks'}")
+                    : releaseKeystoreFile
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD') ?: 'liangciyuan2026'
+                keyAlias System.getenv('ANDROID_KEY_ALIAS') ?: 'liangciyuan'
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD') ?: 'liangciyuan2026'
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig signingConfigs.debug
+            signingConfig hasEnvKeystore || hasLocalKeystore
+                ? signingConfigs.release
+                : signingConfigs.debug
         }
     }
 }
@@ -72,7 +92,7 @@ dependencies {}
 // For flutter version X.Y.Z, version code is X0Y0ZA, where A is the ABI code.
 // See:
 // * https://developer.android.com/build/gradle-tips
-// * https://developer.android.com/studio/build/configure-apk-splits
+// * https://developer.android.com/studio/build/apk-splits
 // * https://gitlab.com/fdroid/fdroiddata/-/blob/master/metadata/im.nfc.nfsee.yml
 ext.abiCodes = ["armeabi-v7a": 1, "arm64-v8a": 2, "x86_64": 4]
 import com.android.build.OutputFile

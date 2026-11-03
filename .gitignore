@@ -55,3 +55,7 @@ android/build/reports/problems/
 **/macos/Pods/
 **/ios/Podfile.lock
 **/macos/Podfile.lock
+
+# Android release signing (never commit private keys)
+android/*.jks
+android/key.properties

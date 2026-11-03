@@ -112,11 +112,13 @@ class _PopularPageState extends State<PopularPage> {
                     ),
                   );
                 }
-                return contentGrid(
-                  (popularController.currentTag == '')
-                      ? popularController.trendList
-                      : popularController.bangumiList,
-                );
+                // 必须在 Observer 内同步读一次列表：SliverLayoutBuilder 的
+                // builder 在布局阶段执行，不参与 MobX 依赖追踪，若把读取推迟
+                // 到那里，数据到达后不会重建（表现为首屏空白、滚动后才出现）。
+                final items = (popularController.currentTag == '')
+                    ? popularController.trendList.toList()
+                    : popularController.bangumiList.toList();
+                return contentGrid(items);
               },
             ),
           ),

@@ -2,6 +2,22 @@
 
 所有对凉次元的显著变更都会记录在本文件中。
 
+## 3.0.6（2026-11-03）
+
+### 修复
+
+- **CI 即使配置密钥也会构建失败**：`build.gradle` 中的 `file('liangciyuan-release.jks')` 解析为 `android/app/`，而工作流把密钥写到 `android/`，路径不一致导致读不到密钥。现统一改为 `rootProject.file(...)`，与密钥存放位置一致。
+- **缺少签名密钥时 CI 直接失败**：`Verify keystore present` 步骤在未配置 secret 时中断整个发布。现改为输出 warning 并跳过，退回调试签名继续产出可安装包，避免发布流水线被密钥配置阻塞。
+
+### 变更
+
+- Android 发布签名统一走 `android/liangciyuan-release.jks`；口令通过 `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD` 覆盖，本地构建使用内置默认值。
+- CI 增加签名证书输出步骤，便于核对每次发布的证书是否一致。
+
+### 验证
+
+- MuMu 模拟器（Android 15 / x86_64）实测：同签名 APK 覆盖安装返回 `Success`，应用冷启动后首页直接渲染推荐列表，无需滑动。
+
 ## 3.0.5（2026-11-03）
 
 ### 修复

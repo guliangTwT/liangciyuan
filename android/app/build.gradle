@@ -23,11 +23,13 @@ if (flutterVersionName == null) {
 }
 
 // 发布签名：固定 keystore，保证每次构建签名一致，覆盖安装不再冲突。
-// CI 通过环境变量注入（密钥内容 base64），本地回退到 android/liangciyuan-release.jks。
+// 密钥文件位于 android/liangciyuan-release.jks（不进版本库）；口令默认值仅用于
+// 本地构建，CI 通过环境变量覆盖。
 def releaseKeystoreFile = rootProject.file('liangciyuan-release.jks')
-def hasLocalKeystore = releaseKeystoreFile.exists()
-def envKeystoreB64 = System.getenv('ANDROID_KEYSTORE_BASE64')
-def hasEnvKeystore = envKeystoreB64 != null && !envKeystoreB64.trim().isEmpty()
+def hasReleaseKeystore = releaseKeystoreFile.exists()
+def envStorePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD')
+def envKeyAlias = System.getenv('ANDROID_KEY_ALIAS')
+def envKeyPassword = System.getenv('ANDROID_KEY_PASSWORD')
 
 android {
     namespace "com.example.kazumi"
@@ -61,21 +63,20 @@ android {
     }
 
     signingConfigs {
-        if (hasEnvKeystore || hasLocalKeystore) {
+        if (hasReleaseKeystore) {
             release {
-                storeFile hasEnvKeystore
-                    ? file("${System.getenv('KEYSTORE_PATH') ?: 'liangciyuan-release.jks'}")
-                    : releaseKeystoreFile
-                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD') ?: 'liangciyuan2026'
-                keyAlias System.getenv('ANDROID_KEY_ALIAS') ?: 'liangciyuan'
-                keyPassword System.getenv('ANDROID_KEY_PASSWORD') ?: 'liangciyuan2026'
+                storeFile releaseKeystoreFile
+                storePassword envStorePassword ?: 'liangciyuan2026'
+                keyAlias envKeyAlias ?: 'liangciyuan'
+                keyPassword envKeyPassword ?: 'liangciyuan2026'
             }
         }
     }
 
     buildTypes {
         release {
-            signingConfig hasEnvKeystore || hasLocalKeystore
+            // 缺少发布密钥时退回调试签名，仅用于本地调试构建。
+            signingConfig hasReleaseKeystore
                 ? signingConfigs.release
                 : signingConfigs.debug
         }

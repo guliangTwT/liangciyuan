@@ -157,9 +157,11 @@ class _PopularPageState extends State<PopularPage> {
               BuildContext context,
               int index,
             ) {
-              return bangumiList.isNotEmpty
-                  ? BangumiCardV(bangumiItem: bangumiList[index])
-                  : null;
+              // 首次加载时用骨架占位，避免整屏空白。
+              if (bangumiList.isEmpty) {
+                return const _BangumiCardSkeleton();
+              }
+              return BangumiCardV(bangumiItem: bangumiList[index]);
             }, childCount: bangumiList.isNotEmpty ? bangumiList.length : 10),
           ),
         );
@@ -302,5 +304,40 @@ class _PopularPageState extends State<PopularPage> {
     } else {
       await popularController.queryBangumiByTag(type: 'init');
     }
+  }
+}
+
+/// 首屏加载时的骨架卡片，保持与真实卡片一致的版面尺寸。
+class _BangumiCardSkeleton extends StatelessWidget {
+  const _BangumiCardSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    final base = Theme.of(context).colorScheme.surfaceContainerHighest;
+    return Card(
+      elevation: 0,
+      clipBehavior: Clip.antiAlias,
+      margin: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: DecoratedBox(
+              decoration: BoxDecoration(color: base),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: base,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const SizedBox(height: 12, width: double.infinity),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

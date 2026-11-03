@@ -141,8 +141,8 @@ class _WebDavSyncPageState extends State<WebDavSyncPage> {
                 ),
                 SettingsTile.switchTile(
                   leading: Icons.favorite_rounded,
-                  title: const Text('收藏'),
-                  description: const Text('在收藏页同步所有追番分类'),
+                  title: const Text('追番（收藏）'),
+                  description: const Text('同步收藏页的所有追番与分类，无需绑定 Bangumi'),
                   initialValue: collect,
                   enabled: enabled && !_busy,
                   onToggle: (value) async {

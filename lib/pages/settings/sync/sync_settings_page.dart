@@ -81,8 +81,8 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
               _SyncServiceCard(
                 title: '多设备同步',
                 service: 'WebDAV',
-                description: '通过自己的云盘，在其他设备接着看。',
-                content: '观看记录 · 收藏 · 弹幕屏蔽词',
+                description: '只要云盘账号密码，就能在其他设备接着看。',
+                content: '追番 · 观看记录 · 收藏 · 弹幕屏蔽词',
                 icon: Icons.devices_rounded,
                 color: colors.tertiaryContainer,
                 onColor: colors.onTertiaryContainer,
@@ -94,6 +94,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                             : _SyncStatus.contentRequired
                         : _SyncStatus.disabled,
                 action: hasServer ? '管理多设备同步' : '设置 WebDAV',
+                hint: '无需 Bangumi 账号',
                 onPressed: () => _open('/settings/webdav/'),
               ),
             ];
@@ -141,6 +142,7 @@ class _SyncServiceCard extends StatelessWidget {
     required this.status,
     required this.action,
     required this.onPressed,
+    this.hint,
   });
 
   final String title;
@@ -152,6 +154,7 @@ class _SyncServiceCard extends StatelessWidget {
   final Color onColor;
   final _SyncStatus status;
   final String action;
+  final String? hint;
   final VoidCallback onPressed;
 
   @override
@@ -198,6 +201,21 @@ class _SyncServiceCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(description, style: theme.textTheme.bodyMedium),
+          if (hint != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.check_circle_outline_rounded,
+                    size: 16, color: theme.colorScheme.primary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(hint!,
+                      style: theme.textTheme.labelMedium
+                          ?.copyWith(color: theme.colorScheme.primary)),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 16),
           Text(content,
               style: theme.textTheme.bodySmall

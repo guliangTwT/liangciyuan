@@ -19,6 +19,7 @@ $router->add('GET', '/v1/ping', 'handle_ping');
 $router->add('GET', '/v1/health', 'handle_health');
 $router->add('POST', '/v1/auth/send-code', 'handle_send_code');
 $router->add('POST', '/v1/auth/register', 'handle_register');
+$router->add('POST', '/v1/auth/reset', 'handle_reset_password');
 $router->add('POST', '/v1/auth/login', 'handle_login');
 $router->add('POST', '/v1/auth/logout', 'handle_logout');
 $router->add('GET', '/v1/me', 'handle_me');

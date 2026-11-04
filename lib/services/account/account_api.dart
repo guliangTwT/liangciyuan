@@ -137,8 +137,24 @@ class AccountApi {
     return AccountAuthResult(token: token, profile: profile);
   }
 
-  Future<void> sendCode(String email) async {
-    await _request('POST', '/v1/auth/send-code', data: {'email': email});
+  Future<void> sendCode(String email, {String purpose = 'register'}) async {
+    await _request(
+      'POST',
+      '/v1/auth/send-code',
+      data: {'email': email, 'purpose': purpose},
+    );
+  }
+
+  Future<void> resetPassword({
+    required String email,
+    required String code,
+    required String password,
+  }) async {
+    await _request(
+      'POST',
+      '/v1/auth/reset',
+      data: {'email': email, 'code': code, 'password': password},
+    );
   }
 
   Future<AccountAuthResult> register({

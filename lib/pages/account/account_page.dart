@@ -180,6 +180,18 @@ class _AccountPageState extends State<AccountPage> {
     }
   }
 
+  Future<void> _showResetPasswordDialog() async {
+    final resetDone = await showDialog<String>(
+      context: context,
+      builder: (_) => _ResetPasswordDialog(initialEmail: _email.text.trim()),
+    );
+    if (!mounted || resetDone == null) return;
+    setState(() {
+      _failed = false;
+      _message = '密码已重置，请用新密码登录';
+    });
+  }
+
   Future<void> _syncNow() async {
     final account = _account..ensureLoaded();
     if (!account.loggedIn) {
@@ -599,17 +611,245 @@ class _AccountPageState extends State<AccountPage> {
             icon: Icons.login_rounded,
           ),
           TextButton(
-            onPressed: _busy
-                ? null
-                : () => setState(() {
-                    _registerMode = !_registerMode;
-                    _message = null;
-                    _failed = false;
-                  }),
-            child: Text(_registerMode ? '已有账号？去登录' : '没有账号？注册'),
+            onPressed: _busy ? null : _showResetPasswordDialog,
+            child: const Text('忘记密码？用邮箱验证码重置'),
           ),
+          if (!_registerMode)
+            TextButton(
+              onPressed: _busy
+                  ? null
+                  : () => setState(() {
+                      _registerMode = true;
+                      _message = null;
+                      _failed = false;
+                    }),
+              child: const Text('没有账号？注册'),
+            )
+          else
+            TextButton(
+              onPressed: _busy
+                  ? null
+                  : () => setState(() {
+                      _registerMode = false;
+                      _message = null;
+                      _failed = false;
+                    }),
+              child: const Text('已有账号？去登录'),
+            ),
         ],
       ),
+    );
+  }
+}
+
+class _ResetPasswordDialog extends StatefulWidget {
+  const _ResetPasswordDialog({required this.initialEmail});
+
+  final String initialEmail;
+
+  @override
+  State<_ResetPasswordDialog> createState() => _ResetPasswordDialogState();
+}
+
+class _ResetPasswordDialogState extends State<_ResetPasswordDialog> {
+  late final TextEditingController _email = TextEditingController(
+    text: widget.initialEmail,
+  );
+  final TextEditingController _code = TextEditingController();
+  final TextEditingController _password = TextEditingController();
+  Timer? _timer;
+  int _cooldown = 0;
+  bool _busy = false;
+  bool _failed = false;
+  String _message = '验证码会发送到该邮箱（10 分钟内有效）';
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _email.dispose();
+    _code.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  bool get _emailValid => RegExp(
+    r'^[\w.+-]+@(qq\.com|vip\.qq\.com|foxmail\.com)$',
+    caseSensitive: false,
+  ).hasMatch(_email.text.trim());
+
+  void _startCooldown() {
+    _timer?.cancel();
+    setState(() => _cooldown = 60);
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() => _cooldown -= 1);
+      if (_cooldown <= 0) timer.cancel();
+    });
+  }
+
+  Future<void> _sendCode() async {
+    if (!_emailValid) {
+      setState(() {
+        _failed = true;
+        _message = '请填写 QQ 邮箱（@qq.com / @foxmail.com）';
+      });
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _failed = false;
+      _message = '正在发送验证码…';
+    });
+    try {
+      await AccountService().sendCode(_email.text.trim(), purpose: 'reset');
+      if (!mounted) return;
+      _startCooldown();
+      setState(() => _message = '验证码已发送，请查收 QQ 邮箱');
+    } on AccountException catch (e) {
+      if (mounted) {
+        setState(() {
+          _failed = true;
+          _message = e.message;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _failed = true;
+          _message = '操作失败：$e';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _submit() async {
+    if (!_emailValid) {
+      setState(() {
+        _failed = true;
+        _message = '请填写 QQ 邮箱（@qq.com / @foxmail.com）';
+      });
+      return;
+    }
+    if (!RegExp(r'^\d{6}$').hasMatch(_code.text.trim())) {
+      setState(() {
+        _failed = true;
+        _message = '请填写 6 位数字验证码';
+      });
+      return;
+    }
+    if (_password.text.length < 8) {
+      setState(() {
+        _failed = true;
+        _message = '密码至少 8 位';
+      });
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _failed = false;
+      _message = '正在重置密码…';
+    });
+    try {
+      await AccountService().resetPassword(
+        email: _email.text.trim(),
+        code: _code.text.trim(),
+        password: _password.text,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(_password.text);
+    } on AccountException catch (e) {
+      if (mounted) {
+        setState(() {
+          _failed = true;
+          _message = e.message;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _failed = true;
+          _message = '操作失败：$e';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: const Text('重置密码'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: 12,
+          children: [
+            TextField(
+              controller: _email,
+              keyboardType: TextInputType.emailAddress,
+              autocorrect: false,
+              decoration: const InputDecoration(
+                labelText: 'QQ 邮箱',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _code,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '验证码',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                TextButton(
+                  onPressed: _busy || _cooldown > 0 ? null : _sendCode,
+                  child: Text(_cooldown > 0 ? '${_cooldown}s 后重发' : '发送验证码'),
+                ),
+              ],
+            ),
+            TextField(
+              controller: _password,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: '新密码',
+                helperText: '至少 8 位',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            Text(
+              _message,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: _failed
+                    ? theme.colorScheme.error
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _busy ? null : _submit,
+          child: const Text('重置密码'),
+        ),
+      ],
     );
   }
 }

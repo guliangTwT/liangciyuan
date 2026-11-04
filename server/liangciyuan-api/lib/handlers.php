@@ -49,6 +49,8 @@ function handle_send_code(Request $request): void
     $config = app_config();
     $body = $request->json();
     $email = normalize_email((string) ($body['email'] ?? ''));
+    // register：注册前验证；reset：给已有账号发重置密码验证码。
+    $purpose = ($body['purpose'] ?? '') === 'reset' ? 'reset' : 'register';
     if (!is_allowed_email($email)) {
         throw new HttpException(400, '只支持 QQ 邮箱（@qq.com / @foxmail.com）');
     }
@@ -62,8 +64,12 @@ function handle_send_code(Request $request): void
         ->execute([now(), now() - 86400]);
     $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ?');
     $stmt->execute([$email]);
-    if ($stmt->fetch()) {
+    $existingUser = $stmt->fetch();
+    if ($purpose === 'register' && $existingUser) {
         throw new HttpException(409, '该邮箱已注册，请直接登录');
+    }
+    if ($purpose === 'reset' && !$existingUser) {
+        throw new HttpException(400, '该邮箱尚未注册，请先注册');
     }
 
     $stmt = $pdo->prepare(
@@ -90,7 +96,9 @@ function handle_send_code(Request $request): void
     try {
         SmtpMailer::send(
             $email,
-            '凉次元注册验证码（10 分钟内有效）',
+            $purpose === 'reset'
+                ? '凉次元重置密码验证码（10 分钟内有效）'
+                : '凉次元注册验证码（10 分钟内有效）',
             verification_mail_html($code)
         );
     } catch (Throwable $e) {
@@ -100,6 +108,71 @@ function handle_send_code(Request $request): void
     }
 
     Response::ok(['message' => '验证码已发送，请查收邮件']);
+}
+
+function handle_reset_password(Request $request): void
+{
+    $body = $request->json();
+    $email = normalize_email((string) ($body['email'] ?? ''));
+    $code = trim((string) ($body['code'] ?? ''));
+    $password = (string) ($body['password'] ?? '');
+
+    if (!is_allowed_email($email)) {
+        throw new HttpException(400, '只支持 QQ 邮箱（@qq.com / @foxmail.com）');
+    }
+    if (!preg_match('/^\d{6}$/', $code)) {
+        throw new HttpException(400, '验证码格式不正确');
+    }
+    if (strlen($password) < 8) {
+        throw new HttpException(400, '密码至少 8 位');
+    }
+
+    rate_limit('reset:ip:' . client_ip(), 10, 3600);
+
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ?');
+        $stmt->execute([$email]);
+        $user = $stmt->fetch();
+        if (!$user) {
+            throw new HttpException(400, '该邮箱尚未注册，请先注册');
+        }
+
+        $stmt = $pdo->prepare(
+            'SELECT id, code_hash, expires_at FROM email_codes
+             WHERE email = ? AND used = 0 ORDER BY id DESC LIMIT 1'
+        );
+        $stmt->execute([$email]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            throw new HttpException(400, '请先获取验证码');
+        }
+        if ((int) $row['expires_at'] < now()) {
+            throw new HttpException(400, '验证码已过期，请重新获取');
+        }
+        if (!hash_equals((string) $row['code_hash'], hash('sha256', $code))) {
+            throw new HttpException(400, '验证码不正确');
+        }
+
+        $pdo->prepare('UPDATE email_codes SET used = 1 WHERE id = ?')->execute([(int) $row['id']]);
+        $pdo->prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?')
+            ->execute([
+                password_hash($password, PASSWORD_DEFAULT),
+                now(),
+                (int) $user['id'],
+            ]);
+        // 改密后让所有旧令牌失效，避免被盗令牌继续可用。
+        $pdo->prepare('DELETE FROM tokens WHERE user_id = ?')->execute([(int) $user['id']]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+
+    Response::ok(['message' => '密码已重置，请用新密码登录']);
 }
 
 function handle_register(Request $request): void

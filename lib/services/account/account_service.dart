@@ -69,7 +69,20 @@ class AccountService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> sendCode(String email) => _api.sendCode(email.trim());
+  Future<void> sendCode(String email, {String purpose = 'register'}) =>
+      _api.sendCode(email.trim(), purpose: purpose);
+
+  Future<void> resetPassword({
+    required String email,
+    required String code,
+    required String password,
+  }) async {
+    await _api.resetPassword(
+      email: email.trim(),
+      code: code.trim(),
+      password: password,
+    );
+  }
 
   Future<void> register({
     required String email,

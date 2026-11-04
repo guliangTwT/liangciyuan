@@ -87,9 +87,15 @@ const List<_SettingsGroup> _settingsGroups = [
       ),
       _SettingsCategory(
         label: '同步设置',
-        description: '追番状态与多设备同步',
+        description: 'WebDAV 多设备同步',
         icon: Icons.cloud_rounded,
         path: '/settings/sync',
+      ),
+      _SettingsCategory(
+        label: 'Bangumi 账号',
+        description: '授权码与账号连接',
+        icon: Icons.account_circle_rounded,
+        path: '/settings/bangumi',
       ),
       _SettingsCategory(
         label: '网络设置',
@@ -134,8 +140,7 @@ String _categoryPath(String location) {
   if (location == '/settings') {
     return '/settings/player';
   }
-  if (_isWithinPath(location, '/settings/bangumi') ||
-      _isWithinPath(location, '/settings/webdav')) {
+  if (_isWithinPath(location, '/settings/webdav')) {
     return '/settings/sync';
   }
   for (final group in _settingsGroups) {

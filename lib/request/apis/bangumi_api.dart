@@ -9,19 +9,14 @@ import 'package:kazumi/modules/characters/characters_response.dart';
 import 'package:kazumi/modules/bangumi/episode_item.dart';
 import 'package:kazumi/modules/character/character_full_item.dart';
 import 'package:kazumi/modules/staff/staff_response.dart';
-import 'package:kazumi/modules/bangumi/bangumi_collection.dart';
 import 'package:kazumi/modules/collect/collect_type.dart';
 import 'package:kazumi/modules/collect/collect_type_mapper.dart';
-import 'package:kazumi/modules/bangumi/bangumi_collection_type.dart';
 import 'package:kazumi/modules/comments/comment_item.dart';
 import 'package:kazumi/utils/search_parser.dart';
 import 'package:kazumi/utils/async_rate_limiter.dart';
 
 class BangumiSearchPage {
-  const BangumiSearchPage({
-    required this.items,
-    required this.rawCount,
-  });
+  const BangumiSearchPage({required this.items, required this.rawCount});
 
   final List<BangumiItem> items;
   final int rawCount;
@@ -29,8 +24,9 @@ class BangumiSearchPage {
 
 class BangumiApi {
   static final BangumiClient _client = BangumiClient.instance;
-  static final AsyncRateLimiter _writeRateLimiter =
-      AsyncRateLimiter(const Duration(milliseconds: 250));
+  static final AsyncRateLimiter _writeRateLimiter = AsyncRateLimiter(
+    const Duration(milliseconds: 250),
+  );
 
   static Future<List<List<BangumiItem>>> getCalendar() async {
     List<List<BangumiItem>> bangumiCalendar = [];
@@ -58,7 +54,10 @@ class BangumiApi {
   // Official fallback for season switching. Mirror mode uses the cached
   // /kazumi/v1/calendar/season endpoint instead of Bangumi search.
   static Future<List<List<BangumiItem>>> getCalendarBySearch(
-      List<String> dateRange, int limit, int offset) async {
+    List<String> dateRange,
+    int limit,
+    int offset,
+  ) async {
     List<BangumiItem> bangumiList = [];
     List<List<BangumiItem>> bangumiCalendar = [];
     var params = <String, dynamic>{
@@ -69,17 +68,15 @@ class BangumiApi {
         "tag": ["日本"],
         "air_date": [">=${dateRange[0]}", "<${dateRange[1]}"],
         "rank": [">0", "<=99999"],
-        "nsfw": true
-      }
+        "nsfw": true,
+      },
     };
     try {
       final url = ApiEndpoints.formatUrl(
-          ApiEndpoints.bangumiAPIDomain + ApiEndpoints.bangumiRankSearch,
-          [limit, offset]);
-      final jsonData = await _client.post(
-        url,
-        data: params,
+        ApiEndpoints.bangumiAPIDomain + ApiEndpoints.bangumiRankSearch,
+        [limit, offset],
       );
+      final jsonData = await _client.post(url, data: params);
       final jsonList = jsonData['data'];
       for (dynamic jsonItem in jsonList) {
         if (jsonItem is Map<String, dynamic>) {
@@ -100,8 +97,10 @@ class BangumiApi {
         bangumiCalendar.add(bangumiDayList);
       }
     } catch (e) {
-      KazumiLogger()
-          .e('Network: fetch bangumi item to calendar failed', error: e);
+      KazumiLogger().e(
+        'Network: fetch bangumi item to calendar failed',
+        error: e,
+      );
     }
     return bangumiCalendar;
   }
@@ -109,15 +108,13 @@ class BangumiApi {
   static String buildBangumiMirrorSeasonCalendarPath(List<String> dateRange) {
     return Uri(
       path: ApiEndpoints.bangumiMirrorSeasonCalendar,
-      queryParameters: {
-        'start': dateRange[0],
-        'end': dateRange[1],
-      },
+      queryParameters: {'start': dateRange[0], 'end': dateRange[1]},
     ).toString();
   }
 
   static Future<List<List<BangumiItem>>> getBangumiMirrorSeasonCalendar(
-      List<String> dateRange) async {
+    List<String> dateRange,
+  ) async {
     List<List<BangumiItem>> bangumiCalendar = [];
     try {
       final jsonData = await _client.get(
@@ -129,8 +126,9 @@ class BangumiApi {
         final jsonList = jsonData['$i'] ?? [];
         for (dynamic jsonItem in jsonList) {
           try {
-            final subject =
-                jsonItem is Map<String, dynamic> ? jsonItem['subject'] : null;
+            final subject = jsonItem is Map<String, dynamic>
+                ? jsonItem['subject']
+                : null;
             if (subject is Map<String, dynamic>) {
               bangumiList.add(BangumiItem.fromJson(subject));
             }
@@ -139,14 +137,18 @@ class BangumiApi {
         bangumiCalendar.add(bangumiList);
       }
     } catch (e) {
-      KazumiLogger().e('Network: resolve bangumi mirror season calendar failed',
-          error: e);
+      KazumiLogger().e(
+        'Network: resolve bangumi mirror season calendar failed',
+        error: e,
+      );
     }
     return bangumiCalendar;
   }
 
-  static Future<List<BangumiItem>> getBangumiList(
-      {int rank = 2, String tag = ''}) async {
+  static Future<List<BangumiItem>> getBangumiList({
+    int rank = 2,
+    String tag = '',
+  }) async {
     List<BangumiItem> bangumiList = [];
     late Map<String, dynamic> params;
     if (tag == '') {
@@ -157,7 +159,7 @@ class BangumiApi {
           "type": [2],
           "tag": ["日本"],
           "rank": [">$rank", "<=1050"],
-          "nsfw": false
+          "nsfw": false,
         },
       };
     } else {
@@ -168,15 +170,16 @@ class BangumiApi {
           "type": [2],
           "tag": [tag],
           "rank": [">$rank", "<=99999"],
-          "nsfw": false
+          "nsfw": false,
         },
       };
     }
     try {
       final jsonData = await _client.post(
         ApiEndpoints.formatUrl(
-            ApiEndpoints.bangumiAPIDomain + ApiEndpoints.bangumiRankSearch,
-            [100, 0]),
+          ApiEndpoints.bangumiAPIDomain + ApiEndpoints.bangumiRankSearch,
+          [100, 0],
+        ),
         data: params,
       );
       final jsonList = jsonData['data'];
@@ -191,8 +194,11 @@ class BangumiApi {
     return bangumiList;
   }
 
-  static Future<List<BangumiItem>> getBangumiTrendsList(
-      {int type = 2, int limit = 24, int offset = 0}) async {
+  static Future<List<BangumiItem>> getBangumiTrendsList({
+    int type = 2,
+    int limit = 24,
+    int offset = 0,
+  }) async {
     List<BangumiItem> bangumiList = [];
     var params = <String, dynamic>{
       'type': type,
@@ -253,17 +259,16 @@ class BangumiApi {
         }
       }
     } catch (e) {
-      KazumiLogger()
-          .e('Network: resolve bangumi mirror popular list failed', error: e);
+      KazumiLogger().e(
+        'Network: resolve bangumi mirror popular list failed',
+        error: e,
+      );
     }
     return bangumiList;
   }
 
   static List<String> _buildNumberFilter<T extends num>(T? min, T? max) {
-    return [
-      if (min != null) '>=$min',
-      if (max != null) '<=$max',
-    ];
+    return [if (min != null) '>=$min', if (max != null) '<=$max'];
   }
 
   static Map<String, dynamic> buildBangumiSearchParams(
@@ -278,22 +283,24 @@ class BangumiApi {
     final rankFilter = rankRange?.isValid == true
         ? _buildNumberFilter<int>(rankRange!.min, rankRange.max)
         : (sort == 'rank')
-            ? [">0", "<=99999"]
-            : [">=0", "<=99999"];
+        ? [">0", "<=99999"]
+        : [">=0", "<=99999"];
 
     final filter = <String, dynamic>{
       "type": [2],
       "tag": tags,
       "rank": rankFilter,
-      "nsfw": false
+      "nsfw": false,
     };
 
     if (dateRange?.isValid == true) {
       filter["air_date"] = [">=${dateRange!.start}", "<${dateRange.end}"];
     }
     if (scoreRange?.isValid == true) {
-      filter["rating"] =
-          _buildNumberFilter<double>(scoreRange!.min, scoreRange.max);
+      filter["rating"] = _buildNumberFilter<double>(
+        scoreRange!.min,
+        scoreRange.max,
+      );
     }
     if (weekdays.isNotEmpty) {
       filter["air_weekday"] = weekdays.toSet().toList()..sort();
@@ -306,15 +313,17 @@ class BangumiApi {
     };
   }
 
-  static Future<BangumiSearchPage?> bangumiSearch(String keyword,
-      {List<String> tags = const [],
-      int limit = 20,
-      int offset = 0,
-      String sort = 'heat',
-      SearchDateRange? dateRange,
-      SearchIntRange? rankRange,
-      SearchDoubleRange? scoreRange,
-      List<int> weekdays = const []}) async {
+  static Future<BangumiSearchPage?> bangumiSearch(
+    String keyword, {
+    List<String> tags = const [],
+    int limit = 20,
+    int offset = 0,
+    String sort = 'heat',
+    SearchDateRange? dateRange,
+    SearchIntRange? rankRange,
+    SearchDoubleRange? scoreRange,
+    List<int> weekdays = const [],
+  }) async {
     List<BangumiItem> bangumiList = [];
 
     final params = buildBangumiSearchParams(
@@ -330,8 +339,9 @@ class BangumiApi {
     try {
       final jsonData = await _client.post(
         ApiEndpoints.formatUrl(
-            ApiEndpoints.bangumiAPIDomain + ApiEndpoints.bangumiRankSearch,
-            [limit, offset]),
+          ApiEndpoints.bangumiAPIDomain + ApiEndpoints.bangumiRankSearch,
+          [limit, offset],
+        ),
         data: params,
       );
       final jsonList = jsonData['data'];
@@ -343,15 +353,14 @@ class BangumiApi {
               bangumiList.add(bangumiItem);
             }
           } catch (e) {
-            KazumiLogger()
-                .e('Network: resolve search results failed', error: e);
+            KazumiLogger().e(
+              'Network: resolve search results failed',
+              error: e,
+            );
           }
         }
       }
-      return BangumiSearchPage(
-        items: bangumiList,
-        rawCount: jsonList.length,
-      );
+      return BangumiSearchPage(items: bangumiList, rawCount: jsonList.length);
     } catch (e) {
       KazumiLogger().e('Network: unknown search problem', error: e);
       return null;
@@ -362,9 +371,9 @@ class BangumiApi {
     try {
       final jsonData = await _client.get(
         ApiEndpoints.formatUrl(
-            ApiEndpoints.bangumiAPINextDomain +
-                ApiEndpoints.bangumiInfoByIDNext,
-            [id]),
+          ApiEndpoints.bangumiAPINextDomain + ApiEndpoints.bangumiInfoByIDNext,
+          [id],
+        ),
       );
       return BangumiItem.fromJson(jsonData);
     } catch (e) {
@@ -409,7 +418,7 @@ class BangumiApi {
     var params = <String, dynamic>{
       'subject_id': id,
       'offset': episode - 1,
-      'limit': 1
+      'limit': 1,
     };
     try {
       final jsonData = await _client.get(
@@ -444,47 +453,58 @@ class BangumiApi {
         if (data.isEmpty) {
           break;
         }
-        episodeList.addAll(data
-            .whereType<Map<String, dynamic>>()
-            .map((jsonItem) => EpisodeInfo.fromJson(jsonItem)));
+        episodeList.addAll(
+          data.whereType<Map<String, dynamic>>().map(
+            (jsonItem) => EpisodeInfo.fromJson(jsonItem),
+          ),
+        );
         offset += data.length;
       } while (total == null || offset < total);
     } catch (e) {
-      KazumiLogger()
-          .e('Network: resolve bangumi episode list failed', error: e);
+      KazumiLogger().e(
+        'Network: resolve bangumi episode list failed',
+        error: e,
+      );
     }
     return episodeList;
   }
 
-  static Future<CommentResponse> getBangumiCommentsByID(int id,
-      {int offset = 0}) async {
+  static Future<CommentResponse> getBangumiCommentsByID(
+    int id, {
+    int offset = 0,
+  }) async {
     final jsonData = await _client.get(
       ApiEndpoints.formatUrl(
-          ApiEndpoints.bangumiAPINextDomain +
-              ApiEndpoints.bangumiCommentsByIDNext,
-          [id, 20, offset]),
+        ApiEndpoints.bangumiAPINextDomain +
+            ApiEndpoints.bangumiCommentsByIDNext,
+        [id, 20, offset],
+      ),
     );
     return CommentResponse.fromJson(jsonData);
   }
 
   static Future<EpisodeCommentResponse> getBangumiCommentsByEpisodeID(
-      int id) async {
+    int id,
+  ) async {
     final jsonData = await _client.get(
       ApiEndpoints.formatUrl(
-          ApiEndpoints.bangumiAPINextDomain +
-              ApiEndpoints.bangumiEpisodeCommentsByIDNext,
-          [id]),
+        ApiEndpoints.bangumiAPINextDomain +
+            ApiEndpoints.bangumiEpisodeCommentsByIDNext,
+        [id],
+      ),
     );
     return EpisodeCommentResponse.fromJson(jsonData);
   }
 
   static Future<CharacterCommentResponse> getCharacterCommentsByCharacterID(
-      int id) async {
+    int id,
+  ) async {
     final jsonData = await _client.get(
       ApiEndpoints.formatUrl(
-          ApiEndpoints.bangumiAPINextDomain +
-              ApiEndpoints.bangumiCharacterCommentsByIDNext,
-          [id]),
+        ApiEndpoints.bangumiAPINextDomain +
+            ApiEndpoints.bangumiCharacterCommentsByIDNext,
+        [id],
+      ),
     );
     return CharacterCommentResponse.fromJson(jsonData);
   }
@@ -492,7 +512,9 @@ class BangumiApi {
   static Future<StaffResponse> getBangumiStaffByID(int id) async {
     final jsonData = await _client.get(
       ApiEndpoints.formatUrl(
-          ApiEndpoints.bangumiAPIDomain + ApiEndpoints.bangumiStaffByID, [id]),
+        ApiEndpoints.bangumiAPIDomain + ApiEndpoints.bangumiStaffByID,
+        [id],
+      ),
     );
     return StaffResponse.fromJson(jsonData);
   }
@@ -500,8 +522,9 @@ class BangumiApi {
   static Future<CharactersResponse> getCharatersByBangumiID(int id) async {
     final jsonData = await _client.get(
       ApiEndpoints.formatUrl(
-          ApiEndpoints.bangumiAPIDomain + ApiEndpoints.bangumiCharacterByID,
-          [id]),
+        ApiEndpoints.bangumiAPIDomain + ApiEndpoints.bangumiCharacterByID,
+        [id],
+      ),
     );
     return CharactersResponse.fromJson(jsonData);
   }
@@ -511,9 +534,10 @@ class BangumiApi {
     try {
       final jsonData = await _client.get(
         ApiEndpoints.formatUrl(
-            ApiEndpoints.bangumiAPINextDomain +
-                ApiEndpoints.bangumiCharacterInfoByCharacterIDNext,
-            [id]),
+          ApiEndpoints.bangumiAPINextDomain +
+              ApiEndpoints.bangumiCharacterInfoByCharacterIDNext,
+          [id],
+        ),
       );
       characterFullItem = CharacterFullItem.fromJson(jsonData);
     } catch (e) {
@@ -526,9 +550,10 @@ class BangumiApi {
     try {
       final jsonData = await _client.get(
         ApiEndpoints.formatUrl(
-            ApiEndpoints.bangumiAuthAPIMirrorDomain +
-                ApiEndpoints.bangumiUsernameByToken,
-            []),
+          ApiEndpoints.bangumiAuthAPIMirrorDomain +
+              ApiEndpoints.bangumiUsernameByToken,
+          [],
+        ),
         requiresAuth: true,
         accessToken: accessToken,
       );
@@ -542,177 +567,18 @@ class BangumiApi {
     return null;
   }
 
-  static Future<List<BangumiCollection>> getBangumiCollectibles({
-    List<BangumiCollectionType> includeBangumiTypes = const [
-      BangumiCollectionType.planToWatch,
-      BangumiCollectionType.watched,
-      BangumiCollectionType.watching,
-      BangumiCollectionType.onHold,
-      BangumiCollectionType.abandoned,
-    ],
-    required String username,
-    int limit = 50,
-    void Function(String message, int current, int total)? onProgress,
-  }) async {
-    final List<BangumiCollection> bangumiCollection = [];
-    int failedItemCount = 0;
-    int progressCurrent = 0;
-    int progressTotal = 0;
-
-    try {
-      final rateLimiter = AsyncRateLimiter(const Duration(milliseconds: 200));
-      const int concurrency = 3;
-
-      Future<Map> fetchPageData(int offset, int pageLimit) async {
-        await rateLimiter.acquire();
-        final url = ApiEndpoints.formatUrl(
-            ApiEndpoints.bangumiAuthAPIMirrorDomain +
-                ApiEndpoints.bangumiGetAllCollections,
-            [username, pageLimit, offset]);
-        final jsonData = await _client.get(
-          url,
-          requiresAuth: true,
-        );
-        if (jsonData is! Map || jsonData['data'] is! List) {
-          KazumiLogger().e(
-            'BangumiApi: invalid collection response format at offset=$offset',
-          );
-          throw const FormatException(
-              'BangumiApi: Invalid collection response format');
-        }
-        return jsonData;
-      }
-
-      List<BangumiCollection> parsePageItems(List<dynamic> jsonList) {
-        final List<BangumiCollection> items = [];
-        for (dynamic jsonItem in jsonList) {
-          if (jsonItem is Map) {
-            try {
-              final collection = BangumiCollection.fromJson(jsonItem);
-              if (includeBangumiTypes.contains(collection.type)) {
-                items.add(collection);
-              }
-            } catch (e) {
-              KazumiLogger().e(
-                'BangumiApi: parse collection item failed: ${e.toString()}',
-                error: e,
-              );
-              failedItemCount++;
-            }
-          }
-        }
-        return items;
-      }
-
-      final firstPageJson = await fetchPageData(0, limit);
-      final int? rawTotal = firstPageJson['total'] as int?;
-      final serverLimit = (firstPageJson['limit'] as int?) ?? limit;
-      final effectiveLimit = (serverLimit > 0) ? serverLimit : limit;
-      final List<dynamic> firstPageList =
-          firstPageJson['data'] as List<dynamic>;
-
-      if (rawTotal == null) {
-        KazumiLogger().e(
-          'BangumiApi: missing or invalid total in collection response',
-        );
-        throw const FormatException(
-            'BangumiApi: missing total in collection response');
-      }
-      final int total = rawTotal;
-
-      final firstPageReceivedCount = firstPageList.length;
-      final firstPageItems = parsePageItems(firstPageList);
-      bangumiCollection.addAll(firstPageItems);
-      progressCurrent += firstPageList.length;
-
-      if (total > 0 && firstPageReceivedCount == 0) {
-        KazumiLogger().e(
-          'BangumiApi: received empty data on first page while total > 0 (total=$total)',
-        );
-        throw const FormatException(
-            'BangumiApi: received empty data on first page while total > 0');
-      }
-      progressTotal = total;
-      onProgress?.call(
-        '正在拉取 Bangumi 收藏',
-        progressCurrent,
-        progressTotal,
-      );
-
-      if (total == 0 || firstPageReceivedCount >= total) {
-        KazumiLogger()
-            .d('get Bangumi collection count: ${bangumiCollection.length}');
-        KazumiLogger().d('get item failed count: $failedItemCount');
-        return bangumiCollection;
-      }
-
-      final remainingOffsets = <int>[];
-      for (int off = effectiveLimit; off < total; off += effectiveLimit) {
-        remainingOffsets.add(off);
-      }
-
-      final Map<int, List<BangumiCollection>> pageResults = {};
-      final offsetsQueue = List<int>.from(remainingOffsets);
-
-      Future<void> worker() async {
-        while (offsetsQueue.isNotEmpty) {
-          final offset = offsetsQueue.removeAt(0);
-          final pageJson = await fetchPageData(offset, effectiveLimit);
-          final List<dynamic> jsonList = pageJson['data'] as List<dynamic>;
-          final items = parsePageItems(jsonList);
-          pageResults[offset] = items;
-
-          progressCurrent += jsonList.length;
-          onProgress?.call(
-            '正在拉取 Bangumi 收藏',
-            progressCurrent > progressTotal ? progressTotal : progressCurrent,
-            progressTotal,
-          );
-
-          if (jsonList.length < serverLimit &&
-              offset + jsonList.length >= total) {
-            offsetsQueue.clear();
-            break;
-          }
-        }
-      }
-
-      final workerCount = remainingOffsets.length < concurrency
-          ? remainingOffsets.length
-          : concurrency;
-      await Future.wait(List.generate(workerCount, (_) => worker()));
-
-      final Set<int> seenBangumiIds =
-          bangumiCollection.map((e) => e.bangumiId).toSet();
-      for (final offset in remainingOffsets) {
-        final items = pageResults[offset];
-        if (items != null) {
-          for (final item in items) {
-            if (seenBangumiIds.add(item.bangumiId)) {
-              bangumiCollection.add(item);
-            }
-          }
-        }
-      }
-    } catch (e) {
-      KazumiLogger().e('Network: get bangumi collection failed', error: e);
-      rethrow;
-    }
-    KazumiLogger()
-        .d('get Bangumi collection count: ${bangumiCollection.length}');
-    KazumiLogger().d('get item failed count: $failedItemCount');
-    return bangumiCollection;
-  }
-
   static Future<bool> updateBangumiById(
-      int id, Map<String, dynamic> data) async {
+    int id,
+    Map<String, dynamic> data,
+  ) async {
     await _writeRateLimiter.acquire();
     try {
       await _client.post(
         ApiEndpoints.formatUrl(
-            ApiEndpoints.bangumiAuthAPIMirrorDomain +
-                ApiEndpoints.bangumiSetCollection,
-            [id]),
+          ApiEndpoints.bangumiAuthAPIMirrorDomain +
+              ApiEndpoints.bangumiSetCollection,
+          [id],
+        ),
         data: data,
         requiresAuth: true,
       );
@@ -741,14 +607,6 @@ class BangumiApi {
     }
   }
 
-  static Future<bool> updateBangumiByType(int id, int localType) async {
-    final type = CollectType.fromValue(localType).toBangumiCollectionType();
-    if (type == null) {
-      return false;
-    }
-    return await updateBangumiById(id, {'type': type.value});
-  }
-
   static Future<bool> addOrUpdateBangumiEvaluationBySubjectID(
     int subjectID,
     int localType, {
@@ -756,8 +614,9 @@ class BangumiApi {
     int? rate,
     List<String>? tags,
   }) async {
-    final bangumiType =
-        CollectType.fromValue(localType).toBangumiCollectionType();
+    final bangumiType = CollectType.fromValue(
+      localType,
+    ).toBangumiCollectionType();
     if (bangumiType == null) {
       return false;
     }

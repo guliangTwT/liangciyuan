@@ -5,12 +5,9 @@ import 'package:kazumi/bean/settings/settings_detail_scaffold.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/pages/settings/sync/sync_settings_widgets.dart';
 import 'package:kazumi/services/storage/storage.dart';
-import 'package:kazumi/services/sync/bangumi_sync_service.dart';
 
 enum _SyncStatus {
-  unconnected('未连接', Icons.link_off_rounded),
   unconfigured('未配置', Icons.settings_outlined),
-  connecting('正在连接', Icons.sync_rounded),
   connectionError('连接异常', Icons.error_outline_rounded),
   enabled('已开启', Icons.check_circle_outline_rounded),
   disabled('已关闭', Icons.pause_circle_outline_rounded),
@@ -36,98 +33,51 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   }
 
   @override
-  Widget build(BuildContext context) => SettingsDetailScaffold(
-        title: const Text('同步设置'),
-        body: ListenableBuilder(
-          listenable: BangumiSyncService(),
-          builder: (context, _) {
-            final bangumi = BangumiSyncService();
-            final hasToken =
-                GStorage.getSetting(SettingsKeys.bangumiAccessToken)
-                    .trim()
-                    .isNotEmpty;
-            final bangumiEnabled =
-                GStorage.getSetting(SettingsKeys.bangumiSyncEnable);
-            final hasServer =
-                GStorage.getSetting(SettingsKeys.webDavURL).trim().isNotEmpty;
-            final webDavEnabled =
-                GStorage.getSetting(SettingsKeys.webDavEnable);
-            final hasSyncContent =
-                GStorage.getSetting(SettingsKeys.webDavEnableHistory) ||
-                    GStorage.getSetting(SettingsKeys.webDavEnableCollect) ||
-                    GStorage.getSetting(SettingsKeys.webDavEnableDanmakuShield);
-            final colors = Theme.of(context).colorScheme;
-            final cards = [
-              _SyncServiceCard(
-                title: '追番同步',
-                service: 'Bangumi',
-                description: '与 Bangumi 保持相同的追番状态。',
-                content: '想看 · 在看 · 看过 · 搁置 · 抛弃',
-                icon: Icons.bookmarks_rounded,
-                color: colors.secondaryContainer,
-                onColor: colors.onSecondaryContainer,
-                status: bangumi.isConnecting
-                    ? _SyncStatus.connecting
-                    : bangumi.lastError != null
-                        ? _SyncStatus.connectionError
-                        : !hasToken
-                            ? _SyncStatus.unconnected
-                            : bangumiEnabled
-                                ? _SyncStatus.enabled
-                                : _SyncStatus.disabled,
-                action: hasToken ? '管理追番同步' : '连接 Bangumi',
-                onPressed: () => _open('/settings/bangumi/'),
-              ),
-              _SyncServiceCard(
-                title: '多设备同步',
-                service: 'WebDAV',
-                description: '只要云盘账号密码，就能在其他设备接着看。',
-                content: '追番 · 观看记录 · 收藏 · 弹幕屏蔽词',
-                icon: Icons.devices_rounded,
-                color: colors.tertiaryContainer,
-                onColor: colors.onTertiaryContainer,
-                status: !hasServer
-                    ? _SyncStatus.unconfigured
-                    : webDavEnabled
-                        ? hasSyncContent
-                            ? _SyncStatus.enabled
-                            : _SyncStatus.contentRequired
-                        : _SyncStatus.disabled,
-                action: hasServer ? '管理多设备同步' : '设置 WebDAV',
-                hint: '无需 Bangumi 账号',
-                onPressed: () => _open('/settings/webdav/'),
-              ),
-            ];
-            return SyncPageBody(
-              children: [
-                SyncPageIntro(
-                  icon: Icons.sync_rounded,
-                  title: '让数据跟着账号走',
-                  description: 'WebDAV 只要云盘账号密码，即可同步观看记录、收藏与弹幕屏蔽词；'
-                      'Bangumi 用于共享追番状态（需要授权码）。两个服务可以同时使用。',
-                ),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final largeText =
-                        MediaQuery.textScalerOf(context).scale(16) > 22;
-                    if (constraints.maxWidth >= 680 && !largeText) {
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(child: cards[0]),
-                          const SizedBox(width: 16),
-                          Expanded(child: cards[1]),
-                        ],
-                      );
-                    }
-                    return Column(spacing: 16, children: cards);
-                  },
-                ),
-              ],
-            );
-          },
-        ),
-      );
+  Widget build(BuildContext context) {
+    final hasServer = GStorage.getSetting(
+      SettingsKeys.webDavURL,
+    ).trim().isNotEmpty;
+    final webDavEnabled = GStorage.getSetting(SettingsKeys.webDavEnable);
+    final hasSyncContent =
+        GStorage.getSetting(SettingsKeys.webDavEnableHistory) ||
+        GStorage.getSetting(SettingsKeys.webDavEnableCollect) ||
+        GStorage.getSetting(SettingsKeys.webDavEnableDanmakuShield);
+    final colors = Theme.of(context).colorScheme;
+    final card = _SyncServiceCard(
+      title: '多设备同步',
+      service: 'WebDAV',
+      description: '只要云盘账号密码，就能在其他设备接着看。',
+      content: '追番 · 观看记录 · 收藏 · 弹幕屏蔽词',
+      icon: Icons.devices_rounded,
+      color: colors.tertiaryContainer,
+      onColor: colors.onTertiaryContainer,
+      status: !hasServer
+          ? _SyncStatus.unconfigured
+          : webDavEnabled
+          ? hasSyncContent
+                ? _SyncStatus.enabled
+                : _SyncStatus.contentRequired
+          : _SyncStatus.disabled,
+      action: hasServer ? '管理多设备同步' : '设置 WebDAV',
+      hint: '无需 Bangumi 账号',
+      onPressed: () => _open('/settings/webdav/'),
+    );
+    return SettingsDetailScaffold(
+      title: const Text('同步设置'),
+      body: SyncPageBody(
+        children: [
+          const SyncPageIntro(
+            icon: Icons.sync_rounded,
+            title: '让数据跟着云盘走',
+            description:
+                '收藏、观看记录与弹幕屏蔽词都通过 WebDAV 同步，'
+                '只需要一个云盘账号密码。',
+          ),
+          card,
+        ],
+      ),
+    );
+  }
 }
 
 class _SyncServiceCard extends StatelessWidget {
@@ -189,15 +139,21 @@ class _SyncServiceCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 20),
-          Text(service,
-              style: theme.textTheme.labelLarge
-                  ?.copyWith(color: theme.colorScheme.primary)),
+          Text(
+            service,
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: theme.colorScheme.primary,
+            ),
+          ),
           const SizedBox(height: 6),
           Semantics(
             header: true,
-            child: Text(title,
-                style: theme.textTheme.headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.w600)),
+            child: Text(
+              title,
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
           const SizedBox(height: 8),
           Text(description, style: theme.textTheme.bodyMedium),
@@ -205,21 +161,30 @@ class _SyncServiceCard extends StatelessWidget {
             const SizedBox(height: 8),
             Row(
               children: [
-                Icon(Icons.check_circle_outline_rounded,
-                    size: 16, color: theme.colorScheme.primary),
+                Icon(
+                  Icons.check_circle_outline_rounded,
+                  size: 16,
+                  color: theme.colorScheme.primary,
+                ),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: Text(hint!,
-                      style: theme.textTheme.labelMedium
-                          ?.copyWith(color: theme.colorScheme.primary)),
+                  child: Text(
+                    hint!,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
                 ),
               ],
             ),
           ],
           const SizedBox(height: 16),
-          Text(content,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          Text(
+            content,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
           const SizedBox(height: 24),
           StateActionButton.tonal(
             onPressed: onPressed,
@@ -242,13 +207,13 @@ class _SyncStatusChip extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final (background, foreground) = switch (status) {
       _SyncStatus.connectionError => (
-          colors.errorContainer,
-          colors.onErrorContainer
-        ),
+        colors.errorContainer,
+        colors.onErrorContainer,
+      ),
       _SyncStatus.enabled => (
-          colors.primaryContainer,
-          colors.onPrimaryContainer
-        ),
+        colors.primaryContainer,
+        colors.onPrimaryContainer,
+      ),
       _ => (colors.surfaceContainerHighest, colors.onSurfaceVariant),
     };
     return Container(
@@ -263,11 +228,12 @@ class _SyncStatusChip extends StatelessWidget {
           Icon(status.icon, size: 16, color: foreground),
           const SizedBox(width: 6),
           Flexible(
-            child: Text(status.label,
-                style: Theme.of(context)
-                    .textTheme
-                    .labelMedium
-                    ?.copyWith(color: foreground)),
+            child: Text(
+              status.label,
+              style: Theme.of(
+                context,
+              ).textTheme.labelMedium?.copyWith(color: foreground),
+            ),
           ),
         ],
       ),

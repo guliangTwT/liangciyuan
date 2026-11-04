@@ -1,28 +1,17 @@
+/// 收藏同步计划：收藏只在本地与 WebDAV 之间同步。
+///
+/// Bangumi 追番状态同步已移除，避免同一份收藏被两个远端双向覆盖。
 class CollectSyncPlan {
   const CollectSyncPlan({
     required this.webDavEnabled,
     required this.webDavCollectiblesEnabled,
-    required this.bangumiEnabled,
   });
 
   final bool webDavEnabled;
   final bool webDavCollectiblesEnabled;
-  final bool bangumiEnabled;
 
   bool get shouldSyncWebDavCollectibles =>
       webDavEnabled && webDavCollectiblesEnabled;
 
-  bool get shouldSyncBangumi => bangumiEnabled;
-
-  bool get canSync => shouldSyncWebDavCollectibles || shouldSyncBangumi;
-
-  bool shouldUploadWebDavAfterBangumi({
-    required bool webDavSynced,
-    required bool bangumiSynced,
-  }) {
-    return shouldSyncWebDavCollectibles &&
-        shouldSyncBangumi &&
-        webDavSynced &&
-        bangumiSynced;
-  }
+  bool get canSync => shouldSyncWebDavCollectibles;
 }

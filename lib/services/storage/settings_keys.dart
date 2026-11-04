@@ -318,6 +318,7 @@ class SettingsKeys {
     false,
     group: SettingGroup.webdav,
   );
+
   /// 定时自动同步间隔（分钟）；0 表示仅在启动时同步。
   static const webDavAutoSyncMinutes = SettingKey<int>(
     'webDavAutoSyncMinutes',
@@ -532,24 +533,9 @@ class SettingsKeys {
     false,
     group: SettingGroup.misc,
   );
-  static const bangumiSyncEnable = SettingKey<bool>(
-    _SettingBoxKey.bangumiSyncEnable,
-    false,
-    group: SettingGroup.bangumi,
-  );
   static const bangumiAccessToken = SettingKey<String>(
     _SettingBoxKey.bangumiAccessToken,
     '',
-    group: SettingGroup.bangumi,
-  );
-  static const bangumiSyncPriority = SettingKey<int>(
-    _SettingBoxKey.bangumiSyncPriority,
-    0,
-    group: SettingGroup.bangumi,
-  );
-  static const bangumiImmediateSyncToastEnable = SettingKey<bool>(
-    _SettingBoxKey.bangumiImmediateSyncToastEnable,
-    true,
     group: SettingGroup.bangumi,
   );
   static const brightnessVolumeGesture = SettingKey<bool>(
@@ -685,10 +671,7 @@ class SettingsKeys {
     shortcutDialogShown,
     onboardingCompleted,
     upstreamAttributionShown,
-    bangumiSyncEnable,
     bangumiAccessToken,
-    bangumiSyncPriority,
-    bangumiImmediateSyncToastEnable,
     brightnessVolumeGesture,
     historySyncDeviceId,
     historySyncSequence,
@@ -792,10 +775,7 @@ class _SettingBoxKey {
       downloadDanmaku = 'downloadDanmaku',
       downloadDirectory = 'downloadDirectory',
       shortcutDialogShown = 'shortcutDialogShown',
-      bangumiSyncEnable = 'bangumiSyncEnable',
       bangumiAccessToken = 'bangumiAccessToken',
-      bangumiSyncPriority = 'bangumiSyncPriority',
-      bangumiImmediateSyncToastEnable = 'bangumiImmediateSyncToastEnable',
       brightnessVolumeGesture = 'brightnessVolumeGesture',
       historySyncDeviceId = 'historySyncDeviceId',
       historySyncSequence = 'historySyncSequence',

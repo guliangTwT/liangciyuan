@@ -176,7 +176,7 @@ class _InfoPageState extends State<InfoPage>
     final token =
         GStorage.getSetting(SettingsKeys.bangumiAccessToken).toString().trim();
     if (token.isEmpty) {
-      KazumiDialog.showToast(message: '请先在同步设置中绑定 Bangumi');
+      KazumiDialog.showToast(message: '请先在设置中打开「Bangumi 账号」并绑定授权码');
       return;
     }
     final localType = infoController.collectController

@@ -78,14 +78,11 @@ class BangumiClient {
     Object? data,
   }) {
     final headers = <String, dynamic>{...bangumiHTTPHeader};
-    final bangumiSyncEnable = GStorage.getSetting(
-      SettingsKeys.bangumiSyncEnable,
-    );
     final token =
         (accessToken ??
                 GStorage.getSetting<String>(SettingsKeys.bangumiAccessToken))
             .trim();
-    if ((requiresAuth || bangumiSyncEnable) && token.isNotEmpty) {
+    if (requiresAuth && token.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';
     }
     if (_shouldSignProtectedMirrorRequest(url, method)) {

@@ -9,7 +9,6 @@ import 'package:kazumi/navigation.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
-import 'package:kazumi/modules/bangumi/sync_priority.dart';
 import 'package:kazumi/modules/collect/collect_layout.dart';
 import 'package:kazumi/modules/collect/collect_sync_plan.dart';
 import 'package:kazumi/modules/collect/collect_type.dart';
@@ -39,13 +38,6 @@ class _CollectPageState extends State<CollectPage> with KazumiDialogOwner {
     required void Function(String message, int current, int total) onProgress,
   }) => switch (step) {
     CollectSyncStep.webDav => collectController.syncCollectibles(
-      onError: onError,
-    ),
-    CollectSyncStep.bangumi => collectController.syncCollectiblesBangumi(
-      onError: onError,
-      onProgress: onProgress,
-    ),
-    CollectSyncStep.upload => collectController.uploadCollectiblesToWebDav(
       onError: onError,
     ),
   };
@@ -84,22 +76,14 @@ class _CollectPageState extends State<CollectPage> with KazumiDialogOwner {
       webDavCollectiblesEnabled: GStorage.getSetting(
         SettingsKeys.webDavEnableCollect,
       ),
-      bangumiEnabled: GStorage.getSetting(SettingsKeys.bangumiSyncEnable),
     );
     await dialogs.run((task) async {
       final destination = await task.show<CollectSyncDestination>(
-        builder: (_) => CollectSyncDialog(
-          plan: plan,
-          priority: BangumiSyncPriority.fromValue(
-            GStorage.getSetting(SettingsKeys.bangumiSyncPriority),
-          ),
-          onSync: _syncStep,
-        ),
+        builder: (_) => CollectSyncDialog(plan: plan, onSync: _syncStep),
       );
       task.withContext(
         (context) => context.pushNamed(switch (destination) {
           CollectSyncDestination.webDavSettings => '/settings/webdav/',
-          CollectSyncDestination.bangumiSettings => '/settings/bangumi/',
         }),
       );
     }, errorMessage: '同步未完成，请稍后重试');
@@ -120,8 +104,9 @@ class _CollectPageState extends State<CollectPage> with KazumiDialogOwner {
             : null,
         title: Text(
           '追番',
-          style: Theme.of(context).textTheme.headlineSmall
-              ?.copyWith(fontWeight: FontWeight.w700),
+          style: Theme.of(
+            context,
+          ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
         ),
         actions: [
           Padding(

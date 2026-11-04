@@ -2,6 +2,25 @@
 
 所有对凉次元的显著变更都会记录在本文件中。
 
+## 3.0.9（2026-11-04）
+
+### 变更
+
+- **收藏同步只保留 WebDAV**：移除 Bangumi 追番状态同步（自动/手动/即时同步、冲突优先级、同步结果提示），避免同一份收藏被两个远端双向覆盖。收藏的合并、上传与定时同步全部由 WebDAV 负责。
+- **收藏页同步弹窗简化**：只剩「WebDAV 收藏」一步，不再出现 Bangumi 步骤、回传步骤和冲突优先级设置。
+- **同步设置页只显示 WebDAV**：原先的 Bangumi 同步卡片已移除，页面文案同步更新为「数据跟着云盘走」。
+- **Bangumi 账号独立成页**：设置 →「Bangumi 账号」保留授权码绑定/验证/清除，用于在条目页发表吐槽、补全用户信息等账号操作；该授权码不再参与收藏同步。
+
+### 移除
+
+- 删除 `BangumiSyncService`、`BangumiSyncPriority`、`BangumiCollection` 模型及对应的同步设置项（`bangumiSyncEnable`、`bangumiSyncPriority`、`bangumiImmediateSyncToastEnable`）。
+- 删除 `BangumiApi.getBangumiCollectibles` / `updateBangumiByType` 与相关测试。
+
+### 说明
+
+- 已同步到 Bangumi 的追番状态不会被修改或删除，只是应用不再读写它；本地收藏与 WebDAV 备份不受影响。
+- 旧版本遗留的三个同步设置键会留在本地设置库中，但不再被读取。
+
 ## 3.0.8（2026-11-04）
 
 ### 新增

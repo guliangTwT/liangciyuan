@@ -7,10 +7,11 @@ import 'package:webdav_client/webdav_client.dart' as webdav;
 
 /// 把账号云端存储包装成同步引擎使用的远端文件接口。
 class AccountRemoteClient implements webdav.Client {
-  AccountRemoteClient({required this.token});
+  AccountRemoteClient({required this.token, AccountApi? api})
+    : _api = api ?? AccountApi.instance;
 
   final String token;
-  final AccountApi _api = AccountApi.instance;
+  final AccountApi _api;
 
   static const String _root = '/kazumiSync';
 
@@ -86,6 +87,9 @@ class AccountRemoteClient implements webdav.Client {
     CancelToken? cancelToken,
   }) async {
     final bytes = await File(localFilePath).readAsBytes();
+    // 空的 Hive 盒子（如没有任何收藏）没有可同步内容：账号接口不接受空
+    // payload，直接跳过；远端的同类文件只会在本地为空时被写，不存在覆盖。
+    if (bytes.isEmpty) return;
     await _api.putBlob(
       token,
       kindFor(path),

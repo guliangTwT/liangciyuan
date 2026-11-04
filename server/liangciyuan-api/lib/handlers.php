@@ -365,7 +365,8 @@ function handle_sync_put(Request $request): void
     $body = $request->json();
     $payload = (string) ($body['payload'] ?? '');
     $updatedAt = (int) ($body['updatedAt'] ?? 0);
-    if ($payload === '' || $updatedAt <= 0) {
+    // 允许显式写入空内容（例如空的收藏盒子），只拒绝缺少字段的请求。
+    if (!array_key_exists('payload', $body) || $updatedAt <= 0) {
         throw new HttpException(400, '缺少 payload 或 updatedAt');
     }
     $decoded = base64_decode($payload, true);

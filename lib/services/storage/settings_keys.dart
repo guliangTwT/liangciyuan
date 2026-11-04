@@ -558,6 +558,43 @@ class SettingsKeys {
     false,
     group: SettingGroup.sync,
   );
+
+  /// 账号服务地址（PHP 后端）。
+  static const accountApiBase = SettingKey<String>(
+    'accountApiBase',
+    'https://guliang.me/liangciyuan/api.php',
+    group: SettingGroup.sync,
+  );
+  static const accountToken = SettingKey<String>(
+    'accountToken',
+    '',
+    group: SettingGroup.sync,
+  );
+  static const accountUserId = SettingKey<int>(
+    'accountUserId',
+    0,
+    group: SettingGroup.sync,
+  );
+  static const accountEmail = SettingKey<String>(
+    'accountEmail',
+    '',
+    group: SettingGroup.sync,
+  );
+  static const accountNickname = SettingKey<String>(
+    'accountNickname',
+    '',
+    group: SettingGroup.sync,
+  );
+  static const accountAvatarUrl = SettingKey<String>(
+    'accountAvatarUrl',
+    '',
+    group: SettingGroup.sync,
+  );
+  static const accountSyncEnable = SettingKey<bool>(
+    'accountSyncEnable',
+    false,
+    group: SettingGroup.sync,
+  );
   static const playerControllerLayerDisappearTime = SettingKey<int>(
     'playerControllerLayerDisappearTime',
     4000,
@@ -676,6 +713,13 @@ class SettingsKeys {
     historySyncDeviceId,
     historySyncSequence,
     historySyncSnapshotInitialized,
+    accountApiBase,
+    accountToken,
+    accountUserId,
+    accountEmail,
+    accountNickname,
+    accountAvatarUrl,
+    accountSyncEnable,
     playerControllerLayerDisappearTime,
     defaultVolume,
     playerMuted,

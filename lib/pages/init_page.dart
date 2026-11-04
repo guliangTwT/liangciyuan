@@ -11,6 +11,8 @@ import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/pages/collect/collect_controller.dart';
+import 'package:kazumi/services/account/account_service.dart';
+import 'package:kazumi/services/sync/account_sync_service.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/shaders/shader_asset_service.dart';
 import 'package:kazumi/pages/download/download_controller.dart';
@@ -62,6 +64,7 @@ class _InitPageState extends State<InitPage> {
     _loadShaders();
     unawaited(myController.loadShieldList());
     _webDavInit();
+    _accountSyncInit();
     try {
       await downloadController.init();
       _setupBackgroundDownloadNavigation();
@@ -153,6 +156,31 @@ class _InitPageState extends State<InitPage> {
 
   Future<void> _loadShaders() async {
     await shaderAssetService.copyShadersToExternalDirectory();
+  }
+
+  Future<void> _accountSyncInit() async {
+    final account = AccountService()..ensureLoaded();
+    if (!account.loggedIn) return;
+    try {
+      await account.refresh();
+    } catch (e, stackTrace) {
+      KazumiLogger().w(
+        'Account: profile refresh failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
+    if (!GStorage.getSetting(SettingsKeys.accountSyncEnable)) return;
+    try {
+      await AccountSyncService().syncCollectibles();
+      widget.collectController.loadCollectibles();
+    } catch (e, stackTrace) {
+      KazumiLogger().w(
+        'Account: automatic collect sync failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   Future<void> _webDavInit() async {

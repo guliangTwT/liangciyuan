@@ -1,8 +1,8 @@
 /// GitHub release/API acceleration prefixes. Direct access is tried and
 /// compared against these mirrors before a download starts.
 const List<String> githubMirrorPrefixes = [
-  'https://ghfast.top/',
   'https://gh-proxy.com/',
+  'https://ghfast.top/',
   'https://ghproxy.net/',
   'https://gh-proxy.org/',
 ];

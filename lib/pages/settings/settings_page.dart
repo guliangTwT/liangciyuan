@@ -92,10 +92,10 @@ const List<_SettingsGroup> _settingsGroups = [
         path: '/settings/sync',
       ),
       _SettingsCategory(
-        label: 'Bangumi 账号',
-        description: '授权码与账号连接',
+        label: '账号与云同步',
+        description: '登录、资料与收藏云同步',
         icon: Icons.account_circle_rounded,
-        path: '/settings/bangumi',
+        path: '/settings/account',
       ),
       _SettingsCategory(
         label: '网络设置',

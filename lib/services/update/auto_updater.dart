@@ -115,7 +115,7 @@ List<String> getUpdateFilePatterns(InstallationType installationType) {
 Uri? githubFallbackUrl(String url) =>
     url.startsWith('https://github.com/') ||
         url.startsWith('https://api.github.com/')
-    ? Uri.parse('https://gh-proxy.org/$url')
+    ? Uri.parse('https://gh-proxy.com/$url')
     : null;
 
 class AutoUpdater {
@@ -504,8 +504,16 @@ class AutoUpdater {
       candidates,
       cancelToken: cancelToken,
     );
+    final direct = unwrapGithubMirror(url) ?? (isGithubUrl(url) ? url : null);
     final ordered = [...candidates]
-      ..sort((a, b) => (scores[b] ?? 0).compareTo(scores[a] ?? 0));
+      ..sort((a, b) {
+        final byScore = (scores[b] ?? 0).compareTo(scores[a] ?? 0);
+        if (byScore != 0) return byScore;
+        // 测速失败（含 0）时优先尝试加速镜像，直连放在最后。
+        final byMirror = (a == direct ? 1 : 0).compareTo(b == direct ? 1 : 0);
+        if (byMirror != 0) return byMirror;
+        return candidates.indexOf(a).compareTo(candidates.indexOf(b));
+      });
     Object? lastError;
     for (final candidate in ordered) {
       if (cancelToken.isCancelled) throw cancelToken.cancelError!;

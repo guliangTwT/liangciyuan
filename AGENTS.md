@@ -55,4 +55,12 @@
   仅在 pub.dev 不可达时临时使用，并接受 lockfile 被刷新：
   `PUB_HOSTED_URL=https://pub.flutter-io.cn flutter pub get`，
   提交前必须检查 `git diff pubspec.lock`。
-- Release 构建若因 Maven 限流失败，直接 `gh run rerun <run-id> --failed` 重试，不要改代码。
+- Release 构建若因 Maven 限流失败，直接 `gh run rerun <run-id> --failed` 重试，不要改代码。## 账号云同步后端（自建）
+
+- 代码：`server/liangciyuan-api/`（PHP 8.2 + SQLite，无 Composer 依赖）。
+- 线上：`https://guliang.me/liangciyuan/api.php`（虚拟主机 PHP-82）。
+- 部署：`mnbt.ps1 deploy server/liangciyuan-api.zip -To /liangciyuan`，zip 只打包 api.php、lib/、config.example.php、README.md。
+- 发件配置：服务器 `/liangciyuan/config.local.php` 中的 `mail_user`（QQ 邮箱）与 `mail_auth`（QQ 授权码），不提交仓库。
+- 健康检查：`GET /v1/health` 返回 `db` 与 `mailConfigured`。
+- 数据：`/data/liangciyuan.sqlite` 与 `/data/liangciyuan-avatars/`，根站伪静态已禁止直接访问。
+- 注册仅接受 `@qq.com` / `@vip.qq.com` / `@foxmail.com`。

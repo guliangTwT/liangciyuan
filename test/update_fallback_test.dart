@@ -9,7 +9,7 @@ void main() {
       );
       expect(
         url.toString(),
-        'https://gh-proxy.org/https://api.github.com/repos/GuLiang-I/liangciyuan/releases/latest',
+        'https://gh-proxy.com/https://api.github.com/repos/GuLiang-I/liangciyuan/releases/latest',
       );
     });
 
@@ -18,13 +18,16 @@ void main() {
         'https://github.com/GuLiang-I/liangciyuan/releases/download/3.0.0/liangciyuan-3.0.0-windows-x64-setup.exe',
       );
       expect(url, isNotNull);
-      expect(url.toString(), startsWith('https://gh-proxy.org/https://github.com/'));
+      expect(
+        url.toString(),
+        startsWith('https://gh-proxy.com/https://github.com/'),
+      );
     });
 
     test('leaves non-GitHub URLs untouched', () {
       expect(githubFallbackUrl('https://maven.aliyun.com/x.jar'), isNull);
       expect(
-        githubFallbackUrl('https://gh-proxy.org/https://github.com/a/b'),
+        githubFallbackUrl('https://gh-proxy.com/https://github.com/a/b'),
         isNull,
       );
     });

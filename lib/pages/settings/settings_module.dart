@@ -17,7 +17,7 @@ import 'package:kazumi/pages/settings/renderer_settings.dart';
 import 'package:kazumi/pages/settings/settings_page.dart';
 import 'package:kazumi/pages/settings/storage_settings.dart';
 import 'package:kazumi/pages/settings/super_resolution_settings.dart';
-import 'package:kazumi/pages/settings/sync/bangumi_account_page.dart';
+import 'package:kazumi/pages/account/account_page.dart';
 import 'package:kazumi/pages/settings/sync/sync_settings_page.dart';
 import 'package:kazumi/pages/settings/sync/webdav_server_page.dart';
 import 'package:kazumi/pages/settings/sync/webdav_sync_page.dart';
@@ -36,10 +36,7 @@ final settingsModule = createModule(
         sub
           ..route('/', child: (context, state) => const SettingsIndexPage())
           ..route('/sync', child: (context, state) => const SyncSettingsPage())
-          ..route(
-            '/bangumi/',
-            child: (context, state) => const BangumiAccountPage(),
-          )
+          ..route('/account', child: (context, state) => const AccountPage())
           ..route(
             '/webdav/',
             child: (context, state) => WebDavSyncPage(

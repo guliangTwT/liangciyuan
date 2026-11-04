@@ -90,8 +90,22 @@ class HistorySyncService {
     await _localLogQueue.run(() async {
       final file = await localChangeLogFile();
       await file.parent.create(recursive: true);
+      // 若上次写入被中断在 JSON 中间（缺少行尾换行），直接追加会和残行
+      // 拼成一条非法记录，导致这一批事件被当作损坏数据丢弃。
+      var needsLeadingNewline = false;
+      if (await file.exists() && await file.length() > 0) {
+        final reader = await file.open(mode: FileMode.read);
+        try {
+          await reader.setPosition(await file.length() - 1);
+          final lastByte = await reader.read(1);
+          needsLeadingNewline =
+              lastByte.isEmpty || lastByte.first != 0x0A;
+        } finally {
+          await reader.close();
+        }
+      }
       await file.writeAsString(
-        content,
+        needsLeadingNewline ? '\n$content' : content,
         mode: FileMode.append,
         flush: true,
       );

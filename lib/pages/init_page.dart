@@ -7,6 +7,7 @@ import 'package:kazumi/pages/my/my_controller.dart';
 import 'package:kazumi/services/sync/bangumi_sync_service.dart';
 import 'package:kazumi/services/sync/danmaku_shield_sync_service.dart';
 import 'package:kazumi/services/sync/webdav.dart';
+import 'package:kazumi/services/sync/webdav_auto_sync.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
 import 'package:flutter_modular/flutter_modular.dart';
@@ -157,6 +158,11 @@ class _InitPageState extends State<InitPage> {
   }
 
   Future<void> _webDavInit() async {
+    // 无论当前是否启用，都先注入依赖：用户稍后开启 WebDAV 时定时器可直接工作。
+    WebDavAutoSync().configure(
+      danmakuShieldSync: widget.danmakuShieldSync,
+      webDav: WebDav(),
+    );
     bool webDavEnable = await GStorage.getSetting(SettingsKeys.webDavEnable);
     bool webDavEnableHistory = await GStorage.getSetting(
       SettingsKeys.webDavEnableHistory,
@@ -186,6 +192,8 @@ class _InitPageState extends State<InitPage> {
           stackTrace: stackTrace,
         );
       }
+      // 初始化成功与否都安排定时同步：网络恢复后仍可自动重试。
+      WebDavAutoSync().reschedule();
     }
   }
 

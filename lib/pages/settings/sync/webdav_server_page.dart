@@ -8,6 +8,7 @@ import 'package:kazumi/pages/settings/sync/sync_settings_widgets.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/services/sync/webdav.dart';
+import 'package:kazumi/services/sync/webdav_auto_sync.dart';
 
 class WebDavServerPage extends StatefulWidget {
   const WebDavServerPage({super.key});
@@ -63,6 +64,8 @@ class _WebDavServerPageState extends State<WebDavServerPage> {
       _failed = true;
       _message = '连接失败，同步已关闭。请检查服务器地址、账号和密码后重试。';
     } finally {
+      // 连接结果会影响定时同步是否可运行。
+      WebDavAutoSync().reschedule();
       if (mounted) setState(() => _busy = false);
     }
   }

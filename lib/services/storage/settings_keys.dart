@@ -318,6 +318,12 @@ class SettingsKeys {
     false,
     group: SettingGroup.webdav,
   );
+  /// 定时自动同步间隔（分钟）；0 表示仅在启动时同步。
+  static const webDavAutoSyncMinutes = SettingKey<int>(
+    'webDavAutoSyncMinutes',
+    0,
+    group: SettingGroup.webdav,
+  );
   static const danmakuShieldSyncDeviceId = SettingKey<String>(
     'danmakuShieldSyncDeviceId',
     '',
@@ -637,6 +643,7 @@ class SettingsKeys {
     webDavEnableHistory,
     webDavEnableCollect,
     webDavEnableDanmakuShield,
+    webDavAutoSyncMinutes,
     danmakuShieldSyncDeviceId,
     danmakuShieldSyncState,
     danmakuShieldSyncCorruptState,

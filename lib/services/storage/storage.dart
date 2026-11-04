@@ -165,7 +165,7 @@ class GStorage {
   }
 
   /// Open a Hive box with automatic recovery on corruption.
-  /// If the box is corrupted, delete it and create a new empty one.
+  /// If the box cannot be opened, its files are backed up before being reset.
   static Future<Box<T>> _openBoxSafe<T>(String boxName) async {
     try {
       return await Hive.openBox<T>(boxName);
@@ -174,7 +174,9 @@ class GStorage {
           'GStorage: Box "$boxName" corrupted, attempting recovery',
           error: e);
 
-      // Delete the corrupted box files
+      // 无法确认是数据损坏还是适配器/IO 问题，先备份原文件再重置，
+      // 避免一次瞬时错误永久删除用户数据。
+      await _backupBoxFiles(boxName);
       await _deleteBoxFiles(boxName);
 
       // Try to open again (will create a new empty box)
@@ -188,6 +190,25 @@ class GStorage {
             .e('GStorage: Failed to recover box "$boxName"', error: e2);
         rethrow;
       }
+    }
+  }
+
+  /// Copy box files aside before a destructive reset so data stays recoverable.
+  static Future<void> _backupBoxFiles(String boxName) async {
+    if (_hivePath == null) return;
+    final suffix = DateTime.now().millisecondsSinceEpoch;
+    final boxFile = File('$_hivePath/$boxName.hive');
+    try {
+      if (await boxFile.exists()) {
+        final backup = '$_hivePath/$boxName.corrupt-$suffix.hive';
+        await boxFile.copy(backup);
+        KazumiLogger().w('GStorage: backed up unreadable box to $backup');
+      }
+    } catch (e) {
+      KazumiLogger().w(
+        'GStorage: failed to back up box "$boxName" before reset',
+        error: e,
+      );
     }
   }
 
@@ -252,53 +273,72 @@ class GStorage {
     final backupFile = File(backupFilePath);
     final backupContent = await backupFile.readAsBytes();
     final tempBox =
-        await Hive.openBox('tempCollectiblesBox', bytes: backupContent);
-    final tempBoxItems = tempBox.toMap().entries;
-    KazumiLogger().i(
-        'WebDav: restoring collectibles. tempCollectiblesBox length ${tempBoxItems.length}');
+        await Hive.openBox(_nextTempBoxName('tempCollectiblesBox'), bytes: backupContent);
+    try {
+      final tempBoxItems = tempBox.toMap().entries;
+      KazumiLogger().i(
+          'WebDav: restoring collectibles. tempCollectiblesBox length ${tempBoxItems.length}');
 
-    await collectibles.clear();
-    for (var tempBoxItem in tempBoxItems) {
-      await collectibles.put(tempBoxItem.key, tempBoxItem.value);
+      await collectibles.clear();
+      for (var tempBoxItem in tempBoxItems) {
+        await collectibles.put(tempBoxItem.key, tempBoxItem.value);
+      }
+      await collectibles.flush();
+    } finally {
+      await tempBox.close();
     }
-    await tempBox.close();
   }
 
   static Future<List<CollectedBangumi>> getCollectiblesFromFile(
       String backupFilePath) async {
     final backupFile = File(backupFilePath);
     final backupContent = await backupFile.readAsBytes();
-    final tempBox =
-        await Hive.openBox('tempCollectiblesBox', bytes: backupContent);
-    final tempBoxItems = tempBox.toMap().entries;
-    KazumiLogger().i(
-        'WebDav: get collectibles from file. tempCollectiblesBox length ${tempBoxItems.length}');
+    final tempBox = await Hive.openBox(
+      _nextTempBoxName('tempCollectiblesBox'),
+      bytes: backupContent,
+    );
+    try {
+      final tempBoxItems = tempBox.toMap().entries;
+      KazumiLogger().i(
+          'WebDav: get collectibles from file. tempCollectiblesBox length ${tempBoxItems.length}');
 
-    final List<CollectedBangumi> collectibles = [];
-    for (var tempBoxItem in tempBoxItems) {
-      collectibles.add(tempBoxItem.value);
+      final List<CollectedBangumi> collectibles = [];
+      for (var tempBoxItem in tempBoxItems) {
+        collectibles.add(tempBoxItem.value);
+      }
+      return collectibles;
+    } finally {
+      await tempBox.close();
     }
-    await tempBox.close();
-    return collectibles;
   }
 
   static Future<List<CollectedBangumiChange>> getCollectChangesFromFile(
       String backupFilePath) async {
     final backupFile = File(backupFilePath);
     final backupContent = await backupFile.readAsBytes();
-    final tempBox =
-        await Hive.openBox('tempCollectChangesBox', bytes: backupContent);
-    final tempBoxItems = tempBox.toMap().entries;
-    KazumiLogger().i(
-        'WebDav: get collectChanges from file. tempCollectChangesBox length ${tempBoxItems.length}');
+    final tempBox = await Hive.openBox(
+      _nextTempBoxName('tempCollectChangesBox'),
+      bytes: backupContent,
+    );
+    try {
+      final tempBoxItems = tempBox.toMap().entries;
+      KazumiLogger().i(
+          'WebDav: get collectChanges from file. tempCollectChangesBox length ${tempBoxItems.length}');
 
-    final List<CollectedBangumiChange> collectChanges = [];
-    for (var tempBoxItem in tempBoxItems) {
-      collectChanges.add(tempBoxItem.value);
+      final List<CollectedBangumiChange> collectChanges = [];
+      for (var tempBoxItem in tempBoxItems) {
+        collectChanges.add(tempBoxItem.value);
+      }
+      return collectChanges;
+    } finally {
+      await tempBox.close();
     }
-    await tempBox.close();
-    return collectChanges;
   }
+
+  /// 临时 box 每次用唯一名字，避免上次异常未关闭时 openBox 忽略新的 bytes。
+  static int _tempBoxCounter = 0;
+  static String _nextTempBoxName(String prefix) =>
+      '${prefix}_${DateTime.now().microsecondsSinceEpoch}_${_tempBoxCounter++}';
 
   static Future<void> patchCollectibles(
       List<CollectedBangumi> remoteCollectibles,
@@ -311,18 +351,49 @@ class GStorage {
         remoteChanges: remoteChanges,
       );
 
-      // Update local storage
-      await collectibles.clear();
-      for (var collect in mergeResult.collectibles) {
-        await collectibles.put(collect.bangumiItem.id, collect);
-      }
-      await collectibles.flush();
+      // Hive 没有事务：先快照本地数据，任一写入失败时回滚，
+      // 避免“先清空再写入”中途失败导致收藏永久丢失。
+      final previousCollectibles = collectibles.toMap();
+      final previousChanges = collectChanges.toMap();
+      try {
+        await collectibles.clear();
+        for (var collect in mergeResult.collectibles) {
+          await collectibles.put(collect.bangumiItem.id, collect);
+        }
+        await collectibles.flush();
 
-      await collectChanges.clear();
-      for (var change in mergeResult.changes) {
-        await collectChanges.put(change.id, change);
+        await collectChanges.clear();
+        for (var change in mergeResult.changes) {
+          await collectChanges.put(change.id, change);
+        }
+        await collectChanges.flush();
+      } catch (e, stackTrace) {
+        KazumiLogger().e(
+          'GStorage: patch collectibles failed, rolling back',
+          error: e,
+          stackTrace: stackTrace,
+        );
+        try {
+          await collectibles.clear();
+          for (final entry in previousCollectibles.entries) {
+            await collectibles.put(entry.key, entry.value);
+          }
+          await collectibles.flush();
+
+          await collectChanges.clear();
+          for (final entry in previousChanges.entries) {
+            await collectChanges.put(entry.key, entry.value);
+          }
+          await collectChanges.flush();
+        } catch (rollbackError, rollbackStack) {
+          KazumiLogger().e(
+            'GStorage: rollback after failed patch also failed',
+            error: rollbackError,
+            stackTrace: rollbackStack,
+          );
+        }
+        rethrow;
       }
-      await collectChanges.flush();
 
       _collectChangeIdInitialized = false;
       _initializeNextCollectChangeIdLocked();

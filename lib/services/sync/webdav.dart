@@ -116,6 +116,7 @@ class WebDav {
           }
           final file = File('${runDirectory.path}/remote-${index++}.json');
           await client.read2File('$_danmakuShieldPath/$name', file.path);
+          // 任意远端文件损坏都中止整次同步：宁可不同步，也不覆盖远端数据。
           remote = remote.merge(
             DanmakuShieldSyncState.decode(await file.readAsString()),
           );
@@ -144,6 +145,12 @@ class WebDav {
 
   Future<void> _updateBox(String boxName) async {
     var directory = await getApplicationSupportDirectory();
+    // 复制前先落盘，降低把未完成的写入帧复制到远端的概率。
+    if (boxName == 'collectibles') {
+      await GStorage.collectibles.flush();
+    } else if (boxName == 'collectchanges') {
+      await GStorage.collectChanges.flush();
+    }
     final localFilePath = '${directory.path}/hive/$boxName.hive';
     final tempFilePath = '${webDavLocalTempDirectory.path}/$boxName.tmp';
     final webDavPath = '$_syncRootPath/$boxName.tmp';
@@ -161,7 +168,11 @@ class WebDav {
   Future<void> syncHistory() {
     return _historySyncSingleFlight.run(() async {
       try {
-        await _runWebDavExclusive(_syncHistory);
+        await _runWebDavExclusive(() async {
+          // 启动流程是 unawaited 的，播放页可能先于 init() 触发同步。
+          if (!initialized) await _init();
+          await _syncHistory();
+        });
       } catch (e) {
         KazumiLogger().e('WebDav: history sync failed', error: e);
         rethrow;
@@ -172,6 +183,7 @@ class WebDav {
   Future<void> updateCollectibles() async {
     try {
       await _runWebDavExclusive(() async {
+        if (!initialized) await _init();
         await _updateBox('collectibles');
         if (GStorage.collectChanges.isNotEmpty) {
           await _updateBox('collectchanges');
@@ -197,6 +209,7 @@ class WebDav {
   }
 
   Future<void> _syncCollectibles() async {
+    if (!initialized) await _init();
     List<CollectedBangumi> remoteCollectibles = [];
     List<CollectedBangumiChange> remoteChanges = [];
 
@@ -229,6 +242,21 @@ class WebDav {
     if (downloadFutures.isNotEmpty) {
       await Future.wait(downloadFutures);
     }
+
+    // 远端只有变更日志而没有收藏快照属于不一致状态：
+    // 直接合并会把本地没有变更记录的收藏清空，因此隔离后以本地为准重建。
+    if (changesExists && !collectiblesExists) {
+      KazumiLogger().w(
+        'WebDav: remote has collect changes without collectibles, rebuilding from local',
+      );
+      await _quarantineCollectiblesBackup('collectchanges.tmp');
+      await _updateBox('collectibles');
+      if (GStorage.collectChanges.isNotEmpty) {
+        await _updateBox('collectchanges');
+      }
+      return;
+    }
+
     try {
       if (collectiblesExists) {
         remoteCollectibles = await GStorage.getCollectiblesFromFile(
@@ -238,9 +266,27 @@ class WebDav {
         remoteChanges = await GStorage.getCollectChangesFromFile(
             '${webDavLocalTempDirectory.path}/collectchanges.tmp');
       }
-    } catch (e) {
-      KazumiLogger().e('WebDav: get collectibles failed', error: e);
-      throw Exception('WebDav: get collectibles from file failed');
+    } on FileSystemException {
+      // 读写临时文件失败多为瞬时 IO 问题，保留远端数据并让调用方重试。
+      rethrow;
+    } catch (e, stackTrace) {
+      KazumiLogger().e(
+        'WebDav: get collectibles failed, quarantining remote backup',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      // 远端备份已损坏且每次都会以同样方式失败：隔离坏文件后重新上传本地数据。
+      if (collectiblesExists) {
+        await _quarantineCollectiblesBackup('collectibles.tmp');
+      }
+      if (changesExists) {
+        await _quarantineCollectiblesBackup('collectchanges.tmp');
+      }
+      await _updateBox('collectibles');
+      if (GStorage.collectChanges.isNotEmpty) {
+        await _updateBox('collectchanges');
+      }
+      return;
     }
     if (remoteChanges.isNotEmpty || remoteCollectibles.isNotEmpty) {
       await GStorage.patchCollectibles(remoteCollectibles, remoteChanges);
@@ -249,6 +295,16 @@ class WebDav {
     if (GStorage.collectChanges.isNotEmpty) {
       await _updateBox('collectchanges');
     }
+  }
+
+  Future<void> _quarantineCollectiblesBackup(String remoteName) async {
+    final quarantinePath = '$_syncRootPath/$remoteName.invalid.'
+        '${DateTime.now().millisecondsSinceEpoch}';
+    await _quarantineRemoteFile(
+      sourcePath: '$_syncRootPath/$remoteName',
+      quarantinePath: quarantinePath,
+      description: 'collectibles backup $remoteName',
+    );
   }
 
   Future<void> _syncHistory() async {

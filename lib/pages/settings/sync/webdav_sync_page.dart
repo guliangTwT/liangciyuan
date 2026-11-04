@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 
 import 'package:kazumi/bean/settings/settings_detail_scaffold.dart';
+import 'package:kazumi/bean/settings/settings_dropdown_tile.dart';
 import 'package:kazumi/bean/settings/settings_list.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/pages/settings/sync/sync_settings_widgets.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/services/sync/webdav.dart';
+import 'package:kazumi/services/sync/webdav_auto_sync.dart';
 import 'package:kazumi/services/sync/danmaku_shield_sync_service.dart';
 
 class WebDavSyncPage extends StatefulWidget {
@@ -23,6 +25,18 @@ class _WebDavSyncPageState extends State<WebDavSyncPage> {
   bool _busy = false;
   bool _failed = false;
   String? _message;
+  late int autoSyncMinutes =
+      GStorage.getSetting(SettingsKeys.webDavAutoSyncMinutes);
+
+  @override
+  void initState() {
+    super.initState();
+    // 版本升级后直接进入设置页时可能尚未走过启动流程，这里补齐依赖。
+    WebDavAutoSync().configure(
+      danmakuShieldSync: widget.danmakuShieldSync,
+      webDav: WebDav(),
+    );
+  }
 
   Future<void> _run(Future<void> Function() action) async {
     if (_busy) return;
@@ -46,6 +60,8 @@ class _WebDavSyncPageState extends State<WebDavSyncPage> {
 
   Future<void> _setEnabled(bool enabled) => _run(() async {
         await WebDav().setEnabled(enabled);
+        // 主开关变化会改变定时同步的前置条件，需要重新安排。
+        WebDavAutoSync().reschedule();
         _message = null;
       });
 
@@ -164,6 +180,33 @@ class _WebDavSyncPageState extends State<WebDavSyncPage> {
                     if (!mounted) return;
                     setState(() {});
                     if (syncEnabled) await _syncDanmakuShield();
+                  },
+                ),
+              ],
+            ),
+            SettingsSection(
+              title: const Text('自动同步'),
+              margin: EdgeInsets.zero,
+              tiles: [
+                SettingsDropdownTile<int>(
+                  leading: Icons.schedule_rounded,
+                  title: const Text('按时间自动同步'),
+                  description: Text(
+                    autoSyncMinutes == 0
+                        ? '仅在启动应用时同步一次'
+                        : '后台${WebDavAutoSync.describeInterval(autoSyncMinutes)}自动同步所选内容',
+                  ),
+                  value: autoSyncMinutes,
+                  enabled: enabled && !_busy,
+                  options: {
+                    for (final minutes in WebDavAutoSync.intervalOptions)
+                      minutes: WebDavAutoSync.describeInterval(minutes),
+                  },
+                  onChanged: (value) async {
+                    await GStorage.putSetting(
+                        SettingsKeys.webDavAutoSyncMinutes, value);
+                    WebDavAutoSync().reschedule();
+                    if (mounted) setState(() => autoSyncMinutes = value);
                   },
                 ),
               ],

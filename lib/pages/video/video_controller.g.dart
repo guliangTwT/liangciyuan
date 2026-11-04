@@ -281,11 +281,12 @@ mixin _$VideoPageController on _VideoPageController, Store {
 
   @override
   void _applyEpisodeComments(
-      int episode, EpisodeInfo info, List<EpisodeCommentItem> comments) {
+      int episode, EpisodeInfo info, List<EpisodeCommentItem> comments,
+      [int total = 0]) {
     final _$actionInfo = _$_VideoPageControllerActionController.startAction(
         name: '_VideoPageController._applyEpisodeComments');
     try {
-      return super._applyEpisodeComments(episode, info, comments);
+      return super._applyEpisodeComments(episode, info, comments, total);
     } finally {
       _$_VideoPageControllerActionController.endAction(_$actionInfo);
     }

@@ -785,6 +785,9 @@ abstract class _VideoPageController with Store implements Disposable {
     episodeCommentsList.clear();
   }
 
+  @observable
+  int commentsTotal = 0;
+
   Future<bool> queryBangumiEpisodeCommentsByID(int id, int episode) async {
     final session = _commentSessions.begin();
     final latestEpisodeInfo = await _loadEpisodeInfo(id, episode, session);
@@ -792,6 +795,7 @@ abstract class _VideoPageController with Store implements Disposable {
       return false;
     }
     final List<AccountCommentItem> commentsList;
+    final int total;
     try {
       final page = await AccountApi.instance.listEpisodeComments(
         bangumiId: id,
@@ -801,6 +805,7 @@ abstract class _VideoPageController with Store implements Disposable {
       if (session.isStale) {
         return false;
       }
+      total = page.total;
       commentsList = [
         for (final comment in page.items)
           AccountCommentItem.fromAccountComment(comment),
@@ -820,7 +825,7 @@ abstract class _VideoPageController with Store implements Disposable {
         (a, b) => a.comment.createdAt.compareTo(b.comment.createdAt),
       );
     }
-    _applyEpisodeComments(episode, latestEpisodeInfo, commentsList);
+    _applyEpisodeComments(episode, latestEpisodeInfo, commentsList, total);
     KazumiLogger().i(
       'VideoPageController: loaded comments list length ${episodeCommentsList.length}',
     );
@@ -852,11 +857,13 @@ abstract class _VideoPageController with Store implements Disposable {
   void _applyEpisodeComments(
     int episode,
     EpisodeInfo info,
-    List<EpisodeCommentItem> comments,
-  ) {
+    List<EpisodeCommentItem> comments, [
+    int total = 0,
+  ]) {
     commentsEpisode = episode;
     episodeInfo = info;
     episodeCommentsList = ObservableList.of(comments);
+    commentsTotal = total > 0 ? total : comments.length;
   }
 
   @action

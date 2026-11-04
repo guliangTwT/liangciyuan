@@ -156,6 +156,9 @@ function handle_reset_password(Request $request): void
         }
 
         $pdo->prepare('UPDATE email_codes SET used = 1 WHERE id = ?')->execute([(int) $row['id']]);
+        // 同一邮箱更早的未使用验证码一并作废，防止旧码二次完成重置。
+        $pdo->prepare('UPDATE email_codes SET used = 1 WHERE email = ? AND used = 0')
+            ->execute([$email]);
         $pdo->prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?')
             ->execute([
                 password_hash($password, PASSWORD_DEFAULT),
@@ -497,11 +500,11 @@ function comment_target(array $source): array
         throw new HttpException(400, 'targetType 不支持');
     }
     $id = (int) ($source['targetId'] ?? 0);
-    if ($id <= 0 || $id > 999999999) {
+    // SQLite INTEGER 上限为 2^63；客户端单集编码为 bangumiId * 10000 + episode，
+    // Bangumi subject ID 可达百万级（10^6 * 10^4 = 10^10），故放宽到 10^12。
+    if ($id <= 0 || $id > 1000000000000) {
         throw new HttpException(400, 'targetId 不正确');
     }
-    // 单集评论用 (bangumiId * 10000 + episode) 编码进一个整数，
-    // 客户端与服务端共用该约定。
     return [$type, $id];
 }
 
@@ -517,7 +520,12 @@ function comment_view(array $row, int $viewerId): array
         'user' => [
             'id' => (int) $row['user_id'],
             'nickname' => (string) $row['nickname'],
-            'avatarUrl' => avatar_url($row),
+            // avatar_url 读 $user['id']，而 JOIN 行的 id 是评论 id：
+            // 必须显式用 user_id 构造，否则头像指向错误的文件。
+            'avatarUrl' => avatar_url([
+                'id' => (int) $row['user_id'],
+                'avatar' => (string) $row['avatar'],
+            ]),
         ],
     ];
 }
@@ -662,6 +670,15 @@ function handle_user_profile(Request $request): void
     $stmt->execute([$id]);
 
     // 公开主页只暴露昵称、头像、吐槽数与最近吐槽。
+    // 带令牌时顺便标出自己的吐槽，头像跳转等功能无需额外请求。
+    $viewerId = 0;
+    if ($request->bearerToken() !== '') {
+        try {
+            $viewerId = (int) current_user($request)['id'];
+        } catch (HttpException) {
+            $viewerId = 0;
+        }
+    }
     Response::ok([
         'user' => [
             'id' => (int) $user['id'],
@@ -671,7 +688,7 @@ function handle_user_profile(Request $request): void
         'avatarUrl' => avatar_url($user),
         'commentCount' => $commentCount,
         'comments' => array_map(
-            static fn (array $row): array => comment_view($row, 0),
+            static fn (array $row): array => comment_view($row, $viewerId),
             $stmt->fetchAll()
         ),
     ]);

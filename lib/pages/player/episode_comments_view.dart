@@ -21,6 +21,7 @@ class EpisodeCommentsView extends StatelessWidget {
     required this.onToggleSort,
     required this.onSelectEpisode,
     required this.onRefresh,
+    this.total,
   });
 
   final int episode;
@@ -32,6 +33,9 @@ class EpisodeCommentsView extends StatelessWidget {
   final VoidCallback onToggleSort;
   final VoidCallback onSelectEpisode;
   final VoidCallback onRefresh;
+
+  /// 服务端总数；为空时回退到当前列表长度。
+  final int? total;
 
   @override
   Widget build(BuildContext context) {
@@ -122,7 +126,7 @@ class EpisodeCommentsView extends StatelessWidget {
                       child: IndexedSemantics(
                         index: index,
                         child: AccountCommentCard(
-                          comments[index].comment.toAccountComment(),
+                          comments[index].toAccountComment(),
                           compact: true,
                           onAvatarTap: (userId) =>
                               context.pushNamed('/settings/profile/$userId'),
@@ -144,12 +148,14 @@ class EpisodeCommentsView extends StatelessWidget {
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                  child: Text('已显示全部 ${comments.length} 条讨论 · 凉次元账号服务',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context)
-                          .textTheme
-                          .labelMedium
-                          ?.copyWith(color: colors.onSurfaceVariant)),
+                  child: Text(
+                    '共 ${total ?? comments.length} 条讨论 · 凉次元账号服务',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelMedium
+                        ?.copyWith(color: colors.onSurfaceVariant),
+                  ),
                 ),
               ),
             ],

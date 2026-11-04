@@ -37,33 +37,40 @@ class ProfileHeaderView extends StatelessWidget {
         children: [
           Row(
             children: [
-              GestureDetector(
-                onTap: onAvatarTap,
-                child: Container(
-                  padding: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [colors.primary, colors.tertiary],
-                    ),
-                  ),
+              Semantics(
+                button: onAvatarTap != null,
+                label: onAvatarTap != null ? '编辑资料或查看主页' : null,
+                child: GestureDetector(
+                  onTap: onAvatarTap,
                   child: Container(
-                    padding: const EdgeInsets.all(2),
+                    padding: const EdgeInsets.all(3),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: colors.surface,
+                      gradient: LinearGradient(
+                        colors: [colors.primary, colors.tertiary],
+                      ),
                     ),
-                    child: ClipOval(
-                      child: SizedBox(
-                        width: 88,
-                        height: 88,
-                        child: avatarUrl.isEmpty
-                            ? Icon(
-                                Icons.person_rounded,
-                                size: 48,
-                                color: colors.onSurfaceVariant,
-                              )
-                            : BangumiAvatar(imageUrl: avatarUrl, radius: 44),
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: colors.surface,
+                      ),
+                      child: ClipOval(
+                        child: SizedBox(
+                          width: 88,
+                          height: 88,
+                          child: avatarUrl.isEmpty
+                              ? Icon(
+                                  Icons.person_rounded,
+                                  size: 48,
+                                  color: colors.onSurfaceVariant,
+                                )
+                              : BangumiAvatar(
+                                  imageUrl: avatarUrl,
+                                  radius: 44,
+                                ),
+                        ),
                       ),
                     ),
                   ),
@@ -127,40 +134,46 @@ class ProfileStatsBar extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: onOpenHistory,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          decoration: BoxDecoration(
-            color: colors.primaryContainer,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                Icons.sentiment_satisfied_alt_rounded,
-                color: colors.onPrimaryContainer,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  '观看足迹',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+      child: Semantics(
+        button: true,
+        label: '查看观看足迹',
+        child: Material(
+          color: colors.primaryContainer,
+          borderRadius: BorderRadius.circular(20),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onOpenHistory,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.sentiment_satisfied_alt_rounded,
                     color: colors.onPrimaryContainer,
-                    fontWeight: FontWeight.w700,
                   ),
-                ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '观看足迹',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.titleSmall?.copyWith(
+                        color: colors.onPrimaryContainer,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  _stat(colors, '${stats.watchedBangumiCount} 部番剧'),
+                  const SizedBox(width: 12),
+                  _stat(colors, '${stats.watchedEpisodeCount} 集'),
+                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: colors.onPrimaryContainer,
+                  ),
+                ],
               ),
-              _stat(colors, '${stats.watchedBangumiCount} 部番剧'),
-              const SizedBox(width: 12),
-              _stat(colors, '${stats.watchedEpisodeCount} 集'),
-              const SizedBox(width: 8),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: colors.onPrimaryContainer,
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -190,7 +203,13 @@ class _AccountProfilePageState extends State<AccountProfilePage> {
   @override
   void initState() {
     super.initState();
-    _load();
+    if (widget.userId <= 0) {
+      // 路由参数非法（非数字或 0）时不发请求，直接显示错误态。
+      _loading = false;
+      _failed = true;
+    } else {
+      _load();
+    }
   }
 
   Future<void> _load() async {

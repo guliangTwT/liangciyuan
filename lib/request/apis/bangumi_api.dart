@@ -413,22 +413,25 @@ class BangumiApi {
   }
 
   static Future<EpisodeInfo> getBangumiEpisodeByID(int id, int episode) async {
-    EpisodeInfo episodeInfo = EpisodeInfo.fromTemplate();
-    var params = <String, dynamic>{
-      'subject_id': id,
-      'offset': episode - 1,
-      'limit': 1,
-    };
+    // 用全集列表按剧集号（sort）匹配，而不是 offset=episode-1 的序号定位：
+    // 列表混含 SP/OP/ED 或集数缺口时，序号与剧集号错位。
     try {
-      final jsonData = await _client.get(
-        ApiEndpoints.bangumiAPIDomain + ApiEndpoints.bangumiEpisodeByID,
-        queryParameters: params,
-      );
-      episodeInfo = EpisodeInfo.fromJson(jsonData['data'][0]);
+      final episodes = await getBangumiEpisodesByID(id);
+      for (final info in episodes) {
+        if (info.episode == episode && info.type == 0) {
+          return info;
+        }
+      }
+      // 找不到正片时退回第一个同号条目（例如 SP 与正片编号重叠的番）。
+      for (final info in episodes) {
+        if (info.episode == episode) {
+          return info;
+        }
+      }
     } catch (e) {
       KazumiLogger().e('Network: resolve bangumi episode failed', error: e);
     }
-    return episodeInfo;
+    return EpisodeInfo.fromTemplate();
   }
 
   static Future<List<EpisodeInfo>> getBangumiEpisodesByID(int id) async {

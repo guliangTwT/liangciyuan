@@ -6,11 +6,14 @@ import 'package:dio/dio.dart';
 import 'package:kazumi/request/clients/download_http_client.dart';
 import 'package:kazumi/services/logging/logger.dart';
 
-/// 分块并行下载器：把一个支持 Range 的大文件拆成 [chunks] 份并发下载，
-/// 全部完成后拼接、校验 SHA-256 再落盘。镜像站普遍按单连接限速，
-/// 并行是提高总吞吐的唯一途径。
+/// 分块并行下载器：把一个支持 Range 的大文件拆成 [chunks] 份并发下载。
 ///
-/// 不支持 Range（HEAD/探测失败、状态码不是 206）时自动退回单连接下载。
+/// 镜像站普遍按单连接限速，并行是提高总吞吐的唯一途径。
+/// 每个分块写独立临时文件（无共享句柄、无指针竞争），一次连接内顺序
+/// 追加；连接中断重试时重下该块剩余部分并继续追加到同一块文件，
+/// 最终按序拼接并校验各块大小。
+///
+/// 不支持 Range（探测失败或状态码不是 206）时自动退回单连接下载。
 class ParallelDownloader {
   ParallelDownloader({this.chunks = 8});
 
@@ -37,7 +40,7 @@ class ParallelDownloader {
       );
       return;
     }
-    if (!await _serverAcceptsRanges(url, total, cancelToken)) {
+    if (!await _serverAcceptsRanges(url, cancelToken)) {
       await _singleConnection(
         url: url,
         savePath: savePath,
@@ -55,29 +58,56 @@ class ParallelDownloader {
     // 末尾可能出现空块（partSize 向上取整时）。
     ranges.removeWhere((r) => r.$1 > r.$2);
 
-    final sink = File(savePath).openSync(mode: FileMode.write);
-    final receivedLock = _ByteCounter();
+    final partDir = await Directory.systemTemp.createTemp('kazumi-pdl-');
     try {
+      final progress = _ChunkProgress(total, onProgress, cancelToken);
+      final partPaths = [
+        for (var i = 0; i < ranges.length; i++) '${partDir.path}/part-$i.bin',
+      ];
       await Future.wait([
-        for (final range in ranges)
+        for (var i = 0; i < ranges.length; i++)
           _downloadRange(
             url: url,
-            range: range,
-            sink: sink,
+            range: ranges[i],
+            savePath: partPaths[i],
             cancelToken: cancelToken,
-            onBytes: (count) {
-              final totalReceived = receivedLock.add(count);
-              if (!cancelToken.isCancelled) {
-                onProgress(totalReceived, total);
-              }
-            },
+            onBytes: (chunkBytes, {reset = false}) =>
+                progress.update(i, chunkBytes, reset: reset),
           ),
       ]);
       if (cancelToken.isCancelled) throw cancelToken.cancelError!;
+
+      // 校验各分块大小后按序拼接。
+      final sink = File(savePath).openSync(mode: FileMode.write);
+      try {
+        for (var i = 0; i < ranges.length; i++) {
+          final expected = ranges[i].$2 - ranges[i].$1 + 1;
+          final part = File(partPaths[i]);
+          if (await part.length() != expected) {
+            throw Exception('分块 $i 大小不符（期望 $expected 字节）');
+          }
+          await for (final data in part.openRead()) {
+            await sink.writeFrom(data);
+          }
+        }
+        await sink.flush();
+      } finally {
+        try {
+          await sink.close();
+        } catch (_) {}
+      }
     } finally {
-      await sink.flush();
-      await sink.close();
+      try {
+        await partDir.delete(recursive: true);
+      } catch (_) {}
     }
+  }
+
+  /// 只需要响应头；把流排空以释放连接。
+  Future<void> _drain(Response<ResponseBody> response) async {
+    try {
+      await response.data?.stream.drain<void>();
+    } catch (_) {}
   }
 
   Future<int> _resolveTotalLength(
@@ -92,15 +122,16 @@ class ParallelDownloader {
         cancelToken: cancelToken,
       );
       final contentRange = response.headers.value('content-range');
-      if (contentRange != null) {
+      if (response.statusCode == 206 && contentRange != null) {
         final match = RegExp(r'/(\d+)$').firstMatch(contentRange);
-        if (match != null) return int.parse(match.group(1)!);
+        if (match != null) {
+          final total = int.parse(match.group(1)!);
+          await _drain(response);
+          return total;
+        }
       }
-      final contentLength = response.headers.value('content-length');
-      if (contentLength != null && response.statusCode == 200) {
-        // 服务器忽略 Range 且直接给全文：不分块。
-        return -1;
-      }
+      // 200 或无 content-range：服务器忽略 Range，回退单连接。
+      await _drain(response);
       return -1;
     } catch (_) {
       return -1;
@@ -109,18 +140,18 @@ class ParallelDownloader {
 
   Future<bool> _serverAcceptsRanges(
     String url,
-    int total,
     CancelToken cancelToken,
   ) async {
     try {
       final response = await DownloadHttpClient.instance.getStream(
         url,
-        headers: {'range': 'bytes=0-1023'},
+        headers: const {'range': 'bytes=0-1023'},
         receiveTimeout: const Duration(seconds: 15),
         cancelToken: cancelToken,
       );
-      // 206 表示真分块；200 表示服务器忽略了 Range。
-      return response.statusCode == 206;
+      final accepts = response.statusCode == 206;
+      await _drain(response);
+      return accepts;
     } catch (_) {
       return false;
     }
@@ -129,35 +160,52 @@ class ParallelDownloader {
   Future<void> _downloadRange({
     required String url,
     required (int, int) range,
-    required RandomAccessFile sink,
+    required String savePath,
     required CancelToken cancelToken,
-    required void Function(int count) onBytes,
+    required void Function(int chunkBytes, {bool reset}) onBytes,
   }) async {
     var attempt = 0;
-    var offset = range.$1;
-    while (offset <= range.$2) {
+    // 进度按「本块已落盘字节」汇报；重试整块重来时先回退该块计数。
+    while (true) {
       if (cancelToken.isCancelled) throw cancelToken.cancelError!;
       attempt++;
+      var reported = 0;
+      onBytes(0, reset: true);
       try {
         final response = await DownloadHttpClient.instance.getStream(
           url,
-          headers: {'range': 'bytes=$offset-${range.$2}'},
+          headers: {'range': 'bytes=${range.$1}-${range.$2}'},
           receiveTimeout: const Duration(seconds: 60),
           cancelToken: cancelToken,
         );
-        if (response.statusCode != 206 && response.statusCode != 200) {
-          throw Exception('HTTP ${response.statusCode} for range $range');
+        if (response.statusCode != 206) {
+          // 200 意味着服务器忽略 Range 返回全文——不能当分块数据用。
+          await _drain(response);
+          throw Exception(
+            'range 请求返回 ${response.statusCode}，期望 206（$range）',
+          );
         }
-        await for (final chunk in response.data!.stream) {
-          if (cancelToken.isCancelled) throw cancelToken.cancelError!;
-          await sink.setPosition(offset);
-          await sink.writeFrom(chunk);
-          offset += chunk.length;
-          onBytes(chunk.length);
+        // 每次尝试从块头重下整块并覆盖块文件；避免「已写字节与
+        // offset 不同步」的追加陷阱。块只有几 MB，重下代价可接受。
+        final sink = File(savePath).openSync(mode: FileMode.write);
+        try {
+          await for (final chunk in response.data!.stream) {
+            if (cancelToken.isCancelled) throw cancelToken.cancelError!;
+            await sink.writeFrom(chunk);
+            reported += chunk.length;
+            onBytes(chunk.length);
+          }
+          if (reported != range.$2 - range.$1 + 1) {
+            throw Exception(
+              '分块提前结束（$reported/${range.$2 - range.$1 + 1} 字节）',
+            );
+          }
+          return;
+        } finally {
+          try {
+            await sink.close();
+          } catch (_) {}
         }
-        if (offset > range.$2) return;
-        // 提前结束：重试剩余部分。
-        throw Exception('chunk ended early at $offset/${range.$2}');
       } catch (e) {
         if (cancelToken.isCancelled) rethrow;
         if (attempt >= _maxRetriesPerChunk) rethrow;
@@ -187,12 +235,28 @@ class ParallelDownloader {
   }
 }
 
-/// 简单的线程安全计数器（Dart 单线程事件循环，原子性由同步代码保证）。
-class _ByteCounter {
-  int _value = 0;
+/// 聚合各分块已下载字节数并回调总进度。
+/// 每块整块重试：重试前该块计数归零重来，总进度只按真实落盘字节计算。
+class _ChunkProgress {
+  _ChunkProgress(this.total, this.onProgress, this._cancelToken);
 
-  int add(int count) {
-    _value += count;
-    return _value;
+  final int total;
+  final void Function(int received, int total) onProgress;
+  final CancelToken _cancelToken;
+  final List<int> _counts = [];
+
+  void update(int chunkIndex, int chunkBytes, {bool reset = false}) {
+    while (_counts.length <= chunkIndex) {
+      _counts.add(0);
+    }
+    if (reset) {
+      _counts[chunkIndex] = 0;
+    } else {
+      _counts[chunkIndex] += chunkBytes;
+    }
+    final sum = _counts.fold(0, (a, b) => a + b).clamp(0, total);
+    if (!_cancelToken.isCancelled) {
+      onProgress(sum, total);
+    }
   }
 }

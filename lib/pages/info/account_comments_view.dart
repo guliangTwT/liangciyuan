@@ -33,6 +33,7 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
   bool _loading = false;
   bool _loaded = false;
   bool _failed = false;
+  DateTime? _lastLoadMoreAt;
 
   String get _token => AccountService().token;
 
@@ -54,6 +55,13 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
     if (!_scrollController.hasClients) return;
     final position = _scrollController.position;
     if (position.pixels >= position.maxScrollExtent - 240) {
+      // 滚动事件高频触发；失败后 3 秒冷却，避免连续失败重试风暴。
+      final last = _lastLoadMoreAt;
+      final now = DateTime.now();
+      if (last != null && now.difference(last) < const Duration(seconds: 3)) {
+        return;
+      }
+      _lastLoadMoreAt = now;
       _loadMore();
     }
   }

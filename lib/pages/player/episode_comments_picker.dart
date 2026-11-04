@@ -51,8 +51,11 @@ class EpisodeCommentsPicker extends StatelessWidget {
                   final info = episodes[index];
                   final title =
                       info.nameCn.isNotEmpty ? info.nameCn : info.name;
-                  final selected = index + 1 == selectedEpisode;
-                  return Material(
+                  // 用剧集号（sort）而非列表序号：列表可能混含 SP/OP/ED
+                  // 或集数缺口，序号会错位到别的集的讨论。
+                  final episodeNumber = info.episode;
+                  final selected = episodeNumber == selectedEpisode;
+                  final Material listTile = Material(
                     color: selected
                         ? colors.primaryContainer
                         : colors.surfaceContainerHighest,
@@ -68,7 +71,7 @@ class EpisodeCommentsPicker extends StatelessWidget {
                       contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 8),
                       title: Text(
-                        '${info.readType().toUpperCase()} ${info.episode}'
+                        '${info.readType().toUpperCase()} $episodeNumber'
                             .trim(),
                         style: type.labelLarge?.copyWith(
                           color: selected
@@ -91,9 +94,11 @@ class EpisodeCommentsPicker extends StatelessWidget {
                         color:
                             selected ? colors.primary : colors.onSurfaceVariant,
                       ),
-                      onTap: () => Navigator.pop(context, index + 1),
+                      // 返回真实剧集号，评论与标题查询都用它。
+                      onTap: () => Navigator.pop(context, episodeNumber),
                     ),
                   );
+                  return listTile;
                 },
               ),
             ),

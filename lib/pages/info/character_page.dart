@@ -43,11 +43,18 @@ class _CharacterPageState extends State<CharacterPage> {
     setState(() {
       _character = null;
     });
-    final character =
-        await BangumiApi.getCharacterByCharacterID(widget.characterID);
-    if (mounted) {
+    try {
+      final character =
+          await BangumiApi.getCharacterByCharacterID(widget.characterID);
+      if (!mounted) return;
       setState(() {
         _character = character;
+      });
+    } catch (_) {
+      // id==0 的模板触发既有错误视图与重试入口，避免卡在骨架屏。
+      if (!mounted) return;
+      setState(() {
+        _character = CharacterFullItem.fromTemplate();
       });
     }
   }

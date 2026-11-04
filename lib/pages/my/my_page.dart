@@ -22,6 +22,26 @@ class MyPage extends StatefulWidget {
 class _MyPageState extends State<MyPage> {
   bool _attached = false;
 
+  /// 登录/登出/资料变更时刷新头部（AccountService 是 ChangeNotifier，
+  /// Observer 感知不到它）。
+  void _onAccountChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    AccountService().ensureLoaded();
+    AccountService().addListener(_onAccountChanged);
+  }
+
+  @override
+  void dispose() {
+    AccountService().removeListener(_onAccountChanged);
+    _setAttached(false);
+    super.dispose();
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -35,14 +55,6 @@ class _MyPageState extends State<MyPage> {
       oldWidget.controller.detach();
       widget.controller.attach();
     }
-    // 登录/资料变更后刷新头部。
-    setState(() {});
-  }
-
-  @override
-  void dispose() {
-    _setAttached(false);
-    super.dispose();
   }
 
   void _setAttached(bool value) {
@@ -50,7 +62,6 @@ class _MyPageState extends State<MyPage> {
     _attached = value;
     if (value) {
       widget.controller.attach();
-      AccountService().ensureLoaded();
     } else {
       widget.controller.detach();
     }

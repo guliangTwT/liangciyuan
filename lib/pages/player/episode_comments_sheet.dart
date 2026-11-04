@@ -151,6 +151,7 @@ class _EpisodeCommentsSheetState extends State<EpisodeCommentsSheet>
         onToggleSort: _controller.toggleSortOrder,
         onSelectEpisode: _showEpisodeSelection,
         onRefresh: _loadComments,
+        total: matchesEpisode ? _controller.commentsTotal : null,
       );
     });
   }

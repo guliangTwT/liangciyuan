@@ -361,15 +361,20 @@ class AccountApi {
     await _request('DELETE', '/v1/comments/$id', token: token);
   }
 
-  /// 单集评论：按 (bangumiId, episode) 读取全部条目。
+  /// 单集评论：按 (bangumiId, episode) 分页读取。
+  /// 页大小与服务端一致（50），一次即可取完当前所有讨论。
   Future<AccountCommentPage> listEpisodeComments({
     required int bangumiId,
     required int episode,
+    int offset = 0,
+    int limit = 50,
     String? token,
   }) async {
     return listComments(
       targetType: 'episode',
       targetId: bangumiId * 10000 + episode,
+      offset: offset,
+      limit: limit,
       token: token,
     );
   }

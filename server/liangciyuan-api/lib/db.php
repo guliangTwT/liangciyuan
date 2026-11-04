@@ -72,6 +72,25 @@ CREATE TABLE IF NOT EXISTS sync_blobs (
 SQL);
 
     $pdo->exec(<<<SQL
+CREATE TABLE IF NOT EXISTS comments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  target_type TEXT NOT NULL DEFAULT 'bangumi',
+  target_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  content TEXT NOT NULL,
+  spoiler INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted INTEGER NOT NULL DEFAULT 0
+)
+SQL);
+    $pdo->exec(
+        'CREATE INDEX IF NOT EXISTS idx_comments_target
+         ON comments(target_type, target_id, created_at, id)'
+    );
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_comments_user ON comments(user_id, created_at)');
+
+    $pdo->exec(<<<SQL
 CREATE TABLE IF NOT EXISTS rate_limits (
   key TEXT PRIMARY KEY,
   count INTEGER NOT NULL,

@@ -487,3 +487,142 @@ function handle_sync_delete(Request $request): void
         ->execute([(int) $user['id'], $kind]);
     Response::ok();
 }
+
+// ---- 吐槽（自建评论） ----
+
+function comment_target(array $source): array
+{
+    $type = strtolower(trim((string) ($source['targetType'] ?? 'bangumi')));
+    if (!in_array($type, ['bangumi', 'character'], true)) {
+        throw new HttpException(400, 'targetType 不支持');
+    }
+    $id = (int) ($source['targetId'] ?? 0);
+    if ($id <= 0 || $id > 999999999) {
+        throw new HttpException(400, 'targetId 不正确');
+    }
+    return [$type, $id];
+}
+
+function comment_view(array $row, int $viewerId): array
+{
+    return [
+        'id' => (int) $row['id'],
+        'content' => (string) $row['content'],
+        'spoiler' => (bool) $row['spoiler'],
+        'createdAt' => (int) $row['created_at'],
+        'updatedAt' => (int) $row['updated_at'],
+        'mine' => (int) $row['user_id'] === $viewerId && $viewerId > 0,
+        'user' => [
+            'id' => (int) $row['user_id'],
+            'nickname' => (string) $row['nickname'],
+            'avatarUrl' => avatar_url($row),
+        ],
+    ];
+}
+
+function comment_count(string $type, int $targetId): int
+{
+    $stmt = db()->prepare(
+        'SELECT COUNT(*) AS c FROM comments
+         WHERE target_type = ? AND target_id = ? AND deleted = 0'
+    );
+    $stmt->execute([$type, $targetId]);
+    return (int) ($stmt->fetch()['c'] ?? 0);
+}
+
+function handle_comments_list(Request $request): void
+{
+    [$type, $targetId] = comment_target($request->query);
+    $offset = max(0, (int) ($request->query['offset'] ?? 0));
+    $limit = (int) ($request->query['limit'] ?? 20);
+    $limit = $limit <= 0 ? 20 : min($limit, 50);
+
+    // 未登录也能读；带令牌时顺便标出哪些是自己的。
+    $viewerId = 0;
+    if ($request->bearerToken() !== '') {
+        try {
+            $viewerId = (int) current_user($request)['id'];
+        } catch (HttpException) {
+            $viewerId = 0;
+        }
+    }
+
+    $stmt = db()->prepare(
+        'SELECT c.*, u.nickname, u.avatar
+         FROM comments c JOIN users u ON u.id = c.user_id
+         WHERE c.target_type = ? AND c.target_id = ? AND c.deleted = 0
+         ORDER BY c.created_at DESC, c.id DESC
+         LIMIT ? OFFSET ?'
+    );
+    $stmt->bindValue(1, $type);
+    $stmt->bindValue(2, $targetId, PDO::PARAM_INT);
+    $stmt->bindValue(3, $limit, PDO::PARAM_INT);
+    $stmt->bindValue(4, $offset, PDO::PARAM_INT);
+    $stmt->execute();
+
+    Response::ok([
+        'total' => comment_count($type, $targetId),
+        'offset' => $offset,
+        'items' => array_map(
+            static fn (array $row): array => comment_view($row, $viewerId),
+            $stmt->fetchAll()
+        ),
+    ]);
+}
+
+function handle_comments_create(Request $request): void
+{
+    $user = current_user($request);
+    $body = $request->json();
+    [$type, $targetId] = comment_target($body);
+    $content = trim((string) ($body['content'] ?? ''));
+    $length = mb_strlen($content, 'UTF-8');
+    if ($length < 1) {
+        throw new HttpException(400, '吐槽内容不能为空');
+    }
+    if ($length > 500) {
+        throw new HttpException(400, '吐槽最多 500 字');
+    }
+    rate_limit('comment:user:' . (int) $user['id'], 10, 300);
+    $spoiler = !empty($body['spoiler']) ? 1 : 0;
+    $now = now();
+    $pdo = db();
+    $pdo->prepare(
+        'INSERT INTO comments(target_type, target_id, user_id, content, spoiler,
+                              created_at, updated_at, deleted)
+         VALUES(?, ?, ?, ?, ?, ?, ?, 0)'
+    )->execute([$type, $targetId, (int) $user['id'], $content, $spoiler, $now, $now]);
+    $id = (int) $pdo->lastInsertId();
+
+    $stmt = $pdo->prepare(
+        'SELECT c.*, u.nickname, u.avatar
+         FROM comments c JOIN users u ON u.id = c.user_id
+         WHERE c.id = ?'
+    );
+    $stmt->execute([$id]);
+    Response::ok([
+        'comment' => comment_view($stmt->fetch(), (int) $user['id']),
+        'total' => comment_count($type, $targetId),
+    ]);
+}
+
+function handle_comments_delete(Request $request): void
+{
+    $user = current_user($request);
+    $id = (int) ($request->params['id'] ?? 0);
+    $pdo = db();
+    $stmt = $pdo->prepare(
+        'SELECT id, user_id FROM comments WHERE id = ? AND deleted = 0'
+    );
+    $stmt->execute([$id]);
+    $row = $stmt->fetch();
+    if (!$row) {
+        throw new HttpException(400, '吐槽不存在或已删除');
+    }
+    if ((int) $row['user_id'] !== (int) $user['id']) {
+        throw new HttpException(403, '只能删除自己的吐槽');
+    }
+    $pdo->prepare('UPDATE comments SET deleted = 1, updated_at = ? WHERE id = ?')
+        ->execute([now(), $id]);
+    Response::ok();
+}

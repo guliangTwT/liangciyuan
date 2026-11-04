@@ -6,7 +6,6 @@ import 'package:kazumi/modules/search/plugin_search_module.dart';
 import 'package:kazumi/request/apis/bangumi_api.dart';
 import 'package:mobx/mobx.dart';
 import 'package:kazumi/services/logging/logger.dart';
-import 'package:kazumi/modules/comments/comment_item.dart';
 import 'package:kazumi/modules/characters/character_item.dart';
 import 'package:kazumi/modules/staff/staff_item.dart';
 
@@ -30,9 +29,6 @@ abstract class _InfoController with Store {
   var pluginSearchStatus = ObservableMap<String, PluginSearchStatus>();
 
   @observable
-  var commentsList = ObservableList<CommentItem>();
-
-  @observable
   var characterList = ObservableList<CharacterItem>();
 
   @observable
@@ -53,13 +49,6 @@ abstract class _InfoController with Store {
   int _relationRequestGeneration = 0;
 
   bool _isFillingInterestUserProfile = false;
-
-  int _commentsOffset = 0;
-
-  void clearComments() {
-    commentsList.clear();
-    _commentsOffset = 0;
-  }
 
   Future<bool> fillInterestUserProfileIfNeeded() async {
     final interest = bangumiItem.interest;
@@ -87,14 +76,6 @@ abstract class _InfoController with Store {
     } finally {
       _isFillingInterestUserProfile = false;
     }
-  }
-
-  void _removeCurrentUserFromPublicComments() {
-    final interest = bangumiItem.interest;
-    if (interest == null) return;
-    final userId = interest.user?.id;
-    if (userId == null) return;
-    commentsList.removeWhere((item) => item.user.id == userId);
   }
 
   Future<void> queryBangumiInfoByID(int id, {String type = "init"}) async {
@@ -140,52 +121,6 @@ abstract class _InfoController with Store {
       }
     }
     await collectController.updateLocalCollect(bangumiItem);
-  }
-
-  Future<void> queryBangumiCommentsByID(int id, {bool refresh = true}) async {
-    await _updateBangumiCommentsByID(
-      id,
-      refresh: refresh,
-      clearBeforeFetch: true,
-    );
-  }
-
-  Future<void> _updateBangumiCommentsByID(
-    int id, {
-    required bool refresh,
-    required bool clearBeforeFetch,
-  }) async {
-    if (refresh) {
-      if (clearBeforeFetch) {
-        clearComments();
-      }
-    }
-    final offset = refresh ? 0 : _commentsOffset;
-    await BangumiApi.getBangumiCommentsByID(id, offset: offset).then((value) {
-      if (refresh && !clearBeforeFetch) {
-        commentsList = ObservableList<CommentItem>.of(value.commentList);
-      } else {
-        commentsList.addAll(value.commentList);
-      }
-      _commentsOffset = refresh
-          ? value.commentList.length
-          : _commentsOffset + value.commentList.length;
-      _removeCurrentUserFromPublicComments();
-    });
-    KazumiLogger().i(
-      'InfoController: loaded comments list length ${commentsList.length}, offset $_commentsOffset',
-    );
-  }
-
-  Future<void> refreshBangumiCommentsSilently(int id) async {
-    if (commentsList.isEmpty) {
-      return;
-    }
-    await _updateBangumiCommentsByID(
-      id,
-      refresh: true,
-      clearBeforeFetch: false,
-    );
   }
 
   Future<void> queryBangumiCharactersByID(int id) async {

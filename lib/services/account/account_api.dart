@@ -304,4 +304,104 @@ class AccountApi {
       data: {'payload': payload, 'updatedAt': updatedAt},
     );
   }
+
+  Future<AccountCommentPage> listComments({
+    required String targetType,
+    required int targetId,
+    int offset = 0,
+    int limit = 20,
+    String? token,
+  }) async {
+    final body = await _request(
+      'GET',
+      '/v1/comments?targetType=$targetType&targetId=$targetId'
+      '&offset=$offset&limit=$limit',
+      token: token,
+    );
+    final items = body['items'];
+    return AccountCommentPage(
+      total: (body['total'] as num?)?.toInt() ?? 0,
+      items: [
+        if (items is List)
+          for (final item in items)
+            if (item is Map<String, dynamic>) AccountComment.fromJson(item),
+      ],
+    );
+  }
+
+  Future<AccountComment> createComment({
+    required String token,
+    required String targetType,
+    required int targetId,
+    required String content,
+    bool spoiler = false,
+  }) async {
+    final body = await _request(
+      'POST',
+      '/v1/comments',
+      token: token,
+      data: {
+        'targetType': targetType,
+        'targetId': targetId,
+        'content': content,
+        'spoiler': spoiler,
+      },
+    );
+    final comment = body['comment'];
+    if (comment is! Map<String, dynamic>) {
+      throw const AccountException('服务器返回的吐槽数据不完整');
+    }
+    return AccountComment.fromJson(comment);
+  }
+
+  Future<void> deleteComment({
+    required String token,
+    required int id,
+  }) async {
+    await _request('DELETE', '/v1/comments/$id', token: token);
+  }
+}
+
+class AccountCommentPage {
+  const AccountCommentPage({required this.total, required this.items});
+
+  final int total;
+  final List<AccountComment> items;
+}
+
+class AccountComment {
+  const AccountComment({
+    required this.id,
+    required this.content,
+    required this.spoiler,
+    required this.createdAt,
+    required this.userId,
+    required this.nickname,
+    required this.avatarUrl,
+    required this.mine,
+  });
+
+  final int id;
+  final String content;
+  final bool spoiler;
+  final int createdAt;
+  final int userId;
+  final String nickname;
+  final String avatarUrl;
+  final bool mine;
+
+  factory AccountComment.fromJson(Map<String, dynamic> json) {
+    final user = json['user'];
+    final map = user is Map<String, dynamic> ? user : const <String, dynamic>{};
+    return AccountComment(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      content: (json['content'] ?? '').toString(),
+      spoiler: json['spoiler'] == true,
+      createdAt: (json['createdAt'] as num?)?.toInt() ?? 0,
+      userId: (map['id'] as num?)?.toInt() ?? 0,
+      nickname: (map['nickname'] ?? '').toString(),
+      avatarUrl: (map['avatarUrl'] ?? '').toString(),
+      mine: json['mine'] == true,
+    );
+  }
 }

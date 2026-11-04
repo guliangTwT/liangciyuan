@@ -43,8 +43,9 @@ Base：`https://<域名>/liangciyuan/api.php`
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/v1/ping` | 健康检查 |
-| POST | `/v1/auth/send-code` | `{email}`，仅 QQ 邮箱，发送 6 位验证码 |
+| POST | `/v1/auth/send-code` | `{email, purpose=register\|reset}`，仅 QQ 邮箱，发送 6 位验证码 |
 | POST | `/v1/auth/register` | `{email, code, password, nickname}`，返回 token |
+| POST | `/v1/auth/reset` | `{email, code, password}`，重置密码并吊销全部令牌 |
 | POST | `/v1/auth/login` | `{email, password}`，返回 token |
 | POST | `/v1/auth/logout` | 注销当前 token |
 | GET | `/v1/me` | 当前用户资料 |
@@ -55,6 +56,9 @@ Base：`https://<域名>/liangciyuan/api.php`
 | GET | `/v1/sync/{kind}` | 读取 `{payload(base64), updatedAt, checksum}` |
 | PUT | `/v1/sync/{kind}` | `{payload(base64), updatedAt}`，服务端按 updatedAt 做后写优先 |
 | DELETE | `/v1/sync/{kind}` | 删除某一类同步数据 |
+| GET | `/v1/comments` | `?targetType=bangumi&targetId=&offset=&limit=`，未登录可读，返回 `{total, items}` |
+| POST | `/v1/comments` | `{targetType, targetId, content, spoiler}`，登录后发布吐槽（≤500 字） |
+| DELETE | `/v1/comments/{id}` | 删除自己的吐槽（软删除） |
 
 鉴权：`Authorization: Bearer <token>`。
 
@@ -67,3 +71,4 @@ Base：`https://<域名>/liangciyuan/api.php`
 - 验证码 6 位、10 分钟过期、一次性，60 秒内不可重发，单 IP 每小时 20 次。
 - 头像校验真实图片类型与大小，文件名由服务端生成。
 - 单次同步 payload 上限 8 MB（base64 解码后）。
+- 吐槽按用户限流（10 条/5 分钟），软删除不物理清除。

@@ -3,14 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/widget/error_widget.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
-import 'package:kazumi/pages/info/info_comments_view.dart';
+import 'package:kazumi/pages/info/account_comments_view.dart';
 import 'package:kazumi/bean/card/character_card.dart';
 import 'package:kazumi/bean/card/staff_card.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/modules/bangumi/bangumi_relation.dart';
-import 'package:kazumi/modules/comments/comment_item.dart';
 import 'package:kazumi/modules/characters/character_item.dart';
 import 'package:kazumi/modules/staff/staff_item.dart';
 import 'package:kazumi/utils/constants.dart';
@@ -19,8 +18,6 @@ import 'package:kazumi/utils/device.dart';
 class InfoTabView extends StatefulWidget {
   const InfoTabView({
     super.key,
-    required this.commentsQueryTimeout,
-    required this.commentsHasLoaded,
     required this.charactersQueryTimeout,
     required this.charactersIsEmpty,
     required this.staffQueryTimeout,
@@ -29,24 +26,16 @@ class InfoTabView extends StatefulWidget {
     required this.relationsIsLoading,
     required this.relationsHasLoaded,
     required this.tabController,
-    required this.loadMoreComments,
     required this.loadCharacters,
     required this.loadStaff,
     required this.loadRelations,
     required this.bangumiItem,
-    required this.commentsList,
-    required this.commentsIsLoading,
-    required this.onWriteReview,
     required this.characterList,
     required this.staffList,
     required this.relationList,
     required this.isLoading,
   });
 
-  final bool commentsQueryTimeout;
-  final bool commentsHasLoaded;
-  final bool commentsIsLoading;
-  final VoidCallback onWriteReview;
   final bool charactersQueryTimeout;
   final bool charactersIsEmpty;
   final bool staffQueryTimeout;
@@ -55,12 +44,10 @@ class InfoTabView extends StatefulWidget {
   final bool relationsIsLoading;
   final bool relationsHasLoaded;
   final TabController tabController;
-  final Future<void> Function({bool loadMore}) loadMoreComments;
   final Future<void> Function() loadCharacters;
   final Future<void> Function() loadStaff;
   final Future<void> Function() loadRelations;
   final BangumiItem bangumiItem;
-  final List<CommentItem> commentsList;
   final List<CharacterItem> characterList;
   final List<StaffFullItem> staffList;
   final List<BangumiRelation> relationList;
@@ -496,16 +483,7 @@ class _InfoTabViewState extends State<InfoTabView> {
             );
           },
         ),
-        InfoCommentsView(
-          interest: widget.bangumiItem.interest,
-          comments: widget.commentsList,
-          isLoading: widget.commentsIsLoading,
-          hasLoaded: widget.commentsHasLoaded,
-          hasError: widget.commentsQueryTimeout,
-          onReviewTap: widget.onWriteReview,
-          onRetry: () => widget.loadMoreComments(loadMore: false),
-          onLoadMore: () => widget.loadMoreComments(loadMore: true),
-        ),
+        AccountCommentsView(bangumiId: widget.bangumiItem.id),
         charactersListBody,
         relationsListBody,
         staffListBody,

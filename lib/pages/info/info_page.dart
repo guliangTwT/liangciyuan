@@ -57,10 +57,7 @@ class _InfoPageState extends State<InfoPage>
   late final TabController infoTabController;
   late final bool showRating;
 
-  bool commentsIsLoading = false;
   bool charactersIsLoading = false;
-  bool commentsQueryTimeout = false;
-  bool commentsHasLoaded = false;
   bool charactersQueryTimeout = false;
   bool charactersIsEmpty = false;
   bool staffIsLoading = false;
@@ -148,45 +145,11 @@ class _InfoPageState extends State<InfoPage>
     }
   }
 
-  Future<void> loadMoreComments({bool loadMore = false}) async {
-    if (commentsIsLoading) return;
-    setState(() {
-      commentsIsLoading = true;
-      commentsQueryTimeout = false;
-    });
-    try {
-      await infoController.queryBangumiCommentsByID(
-        infoController.bangumiItem.id,
-        refresh: !loadMore,
-      );
-      if (mounted) {
-        setState(() {
-          commentsIsLoading = false;
-          commentsHasLoaded = true;
-        });
-      }
-    } catch (e) {
-      KazumiLogger().e('InfoPage: failed to load comments', error: e);
-      if (mounted) {
-        setState(() {
-          commentsIsLoading = false;
-          commentsQueryTimeout = true;
-        });
-      }
-    }
-  }
-
-  Future<void> _openReviewEditor() async {
-    // Bangumi 账号已移除；吐槽接口将迁移到凉次元自有账号服务。
-    KazumiDialog.showToast(message: '吐槽功能正在迁移，下个版本改用凉次元账号');
-  }
-
   @override
   void initState() {
     super.initState();
     infoController.bangumiItem = widget.inputBangumiItem;
     infoController.characterList.clear();
-    infoController.clearComments();
     infoController.staffList.clear();
     infoController.clearRelations();
     infoController.pluginSearchResponseList.clear();
@@ -201,9 +164,6 @@ class _InfoPageState extends State<InfoPage>
 
   void onInfoTabChanged() {
     final index = infoTabController.index;
-    if (index == 1) {
-      onCommentsTabSelected();
-    }
     if (index == 2 &&
         infoController.characterList.isEmpty &&
         !charactersIsLoading &&
@@ -223,31 +183,10 @@ class _InfoPageState extends State<InfoPage>
     }
   }
 
-  Future<void> onCommentsTabSelected() async {
-    final interest = infoController.bangumiItem.interest;
-    final token = GStorage.getSetting(
-      SettingsKeys.bangumiAccessToken,
-    ).toString().trim();
-    if (interest != null && token.isNotEmpty) {
-      final updated = await infoController.fillInterestUserProfileIfNeeded();
-      if (!mounted) return;
-      if (updated) {
-        setState(() {});
-      }
-    }
-    if (infoController.commentsList.isEmpty &&
-        !commentsIsLoading &&
-        !commentsHasLoaded &&
-        !commentsQueryTimeout) {
-      loadMoreComments();
-    }
-  }
-
   @override
   void dispose() {
     infoTabController.removeListener(onInfoTabChanged);
     infoController.characterList.clear();
-    infoController.clearComments();
     infoController.staffList.clear();
     infoController.clearRelations();
     infoController.pluginSearchResponseList.clear();
@@ -436,18 +375,12 @@ class _InfoPageState extends State<InfoPage>
             return InfoTabView(
               tabController: infoTabController,
               bangumiItem: infoController.bangumiItem,
-              commentsQueryTimeout: commentsQueryTimeout,
-              commentsHasLoaded: commentsHasLoaded,
               charactersQueryTimeout: charactersQueryTimeout,
               charactersIsEmpty: charactersIsEmpty,
               staffQueryTimeout: staffQueryTimeout,
               staffIsEmpty: staffIsEmpty,
-              loadMoreComments: loadMoreComments,
               loadCharacters: loadCharacters,
               loadStaff: loadStaff,
-              commentsList: infoController.commentsList.toList(growable: false),
-              commentsIsLoading: commentsIsLoading,
-              onWriteReview: _openReviewEditor,
               characterList: infoController.characterList,
               staffList: infoController.staffList,
               relationList: infoController.relationList,

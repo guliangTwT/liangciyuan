@@ -30,5 +30,8 @@ $router->add('GET', '/v1/sync', 'handle_sync_list');
 $router->add('GET', '/v1/sync/{kind}', 'handle_sync_get');
 $router->add('PUT', '/v1/sync/{kind}', 'handle_sync_put');
 $router->add('DELETE', '/v1/sync/{kind}', 'handle_sync_delete');
+$router->add('GET', '/v1/comments', 'handle_comments_list');
+$router->add('POST', '/v1/comments', 'handle_comments_create');
+$router->add('DELETE', '/v1/comments/{id}', 'handle_comments_delete');
 
 $router->dispatch(Request::fromGlobals());

@@ -75,6 +75,8 @@ abstract class _CollectController with Store {
   }) {
     if (error != null) {
       KazumiLogger().e(message, error: error);
+      onError('$message：${WebDav.describeError(error)}');
+      return;
     }
     onError(message);
   }

@@ -25,8 +25,9 @@ class _WebDavSyncPageState extends State<WebDavSyncPage> {
   bool _busy = false;
   bool _failed = false;
   String? _message;
-  late int autoSyncMinutes =
-      GStorage.getSetting(SettingsKeys.webDavAutoSyncMinutes);
+  late int autoSyncMinutes = GStorage.getSetting(
+    SettingsKeys.webDavAutoSyncMinutes,
+  );
 
   @override
   void initState() {
@@ -50,8 +51,10 @@ class _WebDavSyncPageState extends State<WebDavSyncPage> {
     } catch (e) {
       KazumiLogger().w('WebDAV settings operation failed', error: e);
       if (mounted) {
-        _failed = true;
-        _message = '未能完成，请检查网络或服务器配置后重试。';
+        setState(() {
+          _failed = true;
+          _message = '失败：${WebDav.describeError(e)}';
+        });
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -59,23 +62,23 @@ class _WebDavSyncPageState extends State<WebDavSyncPage> {
   }
 
   Future<void> _setEnabled(bool enabled) => _run(() async {
-        await WebDav().setEnabled(enabled);
-        // 主开关变化会改变定时同步的前置条件，需要重新安排。
-        WebDavAutoSync().reschedule();
-        _message = null;
-      });
+    await WebDav().setEnabled(enabled);
+    // 主开关变化会改变定时同步的前置条件，需要重新安排。
+    WebDavAutoSync().reschedule();
+    _message = null;
+  });
 
   Future<void> _syncHistory() => _run(() async {
-        final webDav = WebDav();
-        if (!webDav.initialized) {
-          await webDav.init();
-        } else if (!webDav.isHistorySyncing) {
-          await webDav.ping();
-        }
-        if (mounted) setState(() => _message = '正在同步观看记录…');
-        await webDav.syncHistory();
-        _message = '观看记录已同步';
-      });
+    final webDav = WebDav();
+    if (!webDav.initialized) {
+      await webDav.init();
+    } else if (!webDav.isHistorySyncing) {
+      await webDav.ping();
+    }
+    if (mounted) setState(() => _message = '正在同步观看记录…');
+    await webDav.syncHistory();
+    _message = '观看记录已同步';
+  });
 
   Future<void> _configure() async {
     await context.pushNamed('/settings/webdav/editor');
@@ -88,10 +91,10 @@ class _WebDavSyncPageState extends State<WebDavSyncPage> {
   }
 
   Future<void> _syncDanmakuShield() => _run(() async {
-        if (mounted) setState(() => _message = '正在同步弹幕屏蔽词…');
-        await widget.danmakuShieldSync.sync();
-        _message = '弹幕屏蔽词已同步';
-      });
+    if (mounted) setState(() => _message = '正在同步弹幕屏蔽词…');
+    await widget.danmakuShieldSync.sync();
+    _message = '弹幕屏蔽词已同步';
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -120,9 +123,11 @@ class _WebDavSyncPageState extends State<WebDavSyncPage> {
                 SettingsTile(
                   leading: Icons.dns_rounded,
                   title: Text(configured ? '同步服务器' : '连接你的云盘'),
-                  description: Text(configured
-                      ? (host == null || host.isEmpty ? '已保存服务器地址' : host)
-                      : '需要支持 WebDAV 的云盘或服务器'),
+                  description: Text(
+                    configured
+                        ? (host == null || host.isEmpty ? '已保存服务器地址' : host)
+                        : '需要支持 WebDAV 的云盘或服务器',
+                  ),
                   trailing: const Icon(Icons.chevron_right_rounded),
                   enabled: !_busy,
                   onPressed: (_) => _configure(),
@@ -130,9 +135,11 @@ class _WebDavSyncPageState extends State<WebDavSyncPage> {
                 SettingsTile.switchTile(
                   leading: Icons.cloud_sync_rounded,
                   title: const Text('启用 WebDAV'),
-                  description: Text(configured
-                      ? (enabled ? '已开启，选择下方要同步的内容' : '开启后选择要同步的内容')
-                      : '请先配置服务器'),
+                  description: Text(
+                    configured
+                        ? (enabled ? '已开启，选择下方要同步的内容' : '开启后选择要同步的内容')
+                        : '请先配置服务器',
+                  ),
                   initialValue: enabled,
                   enabled: configured && !_busy,
                   onToggle: (value) => _setEnabled(value ?? !enabled),
@@ -151,7 +158,9 @@ class _WebDavSyncPageState extends State<WebDavSyncPage> {
                   enabled: enabled && !_busy,
                   onToggle: (value) async {
                     await GStorage.putSetting(
-                        SettingsKeys.webDavEnableHistory, value ?? !history);
+                      SettingsKeys.webDavEnableHistory,
+                      value ?? !history,
+                    );
                     if (mounted) setState(() {});
                   },
                 ),
@@ -163,7 +172,9 @@ class _WebDavSyncPageState extends State<WebDavSyncPage> {
                   enabled: enabled && !_busy,
                   onToggle: (value) async {
                     await GStorage.putSetting(
-                        SettingsKeys.webDavEnableCollect, value ?? !collect);
+                      SettingsKeys.webDavEnableCollect,
+                      value ?? !collect,
+                    );
                     if (mounted) setState(() {});
                   },
                 ),
@@ -176,7 +187,9 @@ class _WebDavSyncPageState extends State<WebDavSyncPage> {
                   onToggle: (value) async {
                     final syncEnabled = value ?? !shield;
                     await GStorage.putSetting(
-                        SettingsKeys.webDavEnableDanmakuShield, syncEnabled);
+                      SettingsKeys.webDavEnableDanmakuShield,
+                      syncEnabled,
+                    );
                     if (!mounted) return;
                     setState(() {});
                     if (syncEnabled) await _syncDanmakuShield();
@@ -204,7 +217,9 @@ class _WebDavSyncPageState extends State<WebDavSyncPage> {
                   },
                   onChanged: (value) async {
                     await GStorage.putSetting(
-                        SettingsKeys.webDavAutoSyncMinutes, value);
+                      SettingsKeys.webDavAutoSyncMinutes,
+                      value,
+                    );
                     WebDavAutoSync().reschedule();
                     if (mounted) setState(() => autoSyncMinutes = value);
                   },
@@ -217,8 +232,9 @@ class _WebDavSyncPageState extends State<WebDavSyncPage> {
               icon: Icons.sync_rounded,
             ),
             StateActionButton.tonal(
-              onPressed:
-                  enabled && shield && !_busy ? _syncDanmakuShield : null,
+              onPressed: enabled && shield && !_busy
+                  ? _syncDanmakuShield
+                  : null,
               text: '立即同步弹幕屏蔽词',
               icon: Icons.sync_rounded,
             ),

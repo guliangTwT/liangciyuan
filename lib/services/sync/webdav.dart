@@ -1,8 +1,10 @@
 import 'dart:io';
+import 'package:dio/dio.dart';
 import 'package:webdav_client/webdav_client.dart' as webdav;
 import 'package:path_provider/path_provider.dart';
 import 'package:kazumi/modules/history/history_sync.dart';
 import 'package:kazumi/modules/danmaku/danmaku_shield_sync.dart';
+import 'package:kazumi/request/core/network_exception.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/modules/collect/collect_module.dart';
@@ -91,10 +93,33 @@ class WebDav {
       GStorage.getSetting(SettingsKeys.webDavEnable) &&
       GStorage.getSetting(SettingsKeys.webDavEnableDanmakuShield);
 
+  /// 把底层异常转成用户可读的一句话，便于定位同步失败的具体原因。
+  static String describeError(Object error) {
+    if (error is NetworkException) {
+      return error.message;
+    }
+    if (error is DioException) {
+      final code = error.response?.statusCode;
+      if (code != null) {
+        return code == 401 || code == 403 ? '账号或密码错误（$code）' : '服务器返回 $code';
+      }
+      return '网络异常，请检查连接';
+    }
+    final text = error
+        .toString()
+        .replaceFirst(RegExp(r'^Exception:\s*'), '')
+        .replaceFirst(RegExp(r'^WebDavException:\s*'), '')
+        .trim();
+    if (text.isEmpty) {
+      return '未知错误';
+    }
+    return text.length > 120 ? '${text.substring(0, 120)}…' : text;
+  }
+
   Future<void> syncDanmakuShield({
     required String deviceId,
     required Future<DanmakuShieldSyncState> Function(DanmakuShieldSyncState)
-        merge,
+    merge,
   }) {
     // Queue every request: an edit during an upload needs another pass.
     return _runWebDavExclusive(() async {
@@ -102,8 +127,9 @@ class WebDav {
       if (!initialized) await _init();
       await _ensureLocalTempDirectory();
       await _ensureRemoteDirectory(_danmakuShieldPath);
-      final runDirectory =
-          await webDavLocalTempDirectory.createTemp('danmaku-shield-sync-');
+      final runDirectory = await webDavLocalTempDirectory.createTemp(
+        'danmaku-shield-sync-',
+      );
       try {
         var remote = DanmakuShieldSyncState();
         final entries = await client.readDir(_danmakuShieldPath);
@@ -136,8 +162,10 @@ class WebDav {
         try {
           await runDirectory.delete(recursive: true);
         } catch (e) {
-          KazumiLogger()
-              .w('WebDav: failed to clean danmaku shield sync files', error: e);
+          KazumiLogger().w(
+            'WebDav: failed to clean danmaku shield sync files',
+            error: e,
+          );
         }
       }
     });
@@ -214,10 +242,12 @@ class WebDav {
     List<CollectedBangumiChange> remoteChanges = [];
 
     final files = await client.readDir(_syncRootPath);
-    final collectiblesExists =
-        files.any((file) => file.name == 'collectibles.tmp');
-    final changesExists =
-        files.any((file) => file.name == 'collectchanges.tmp');
+    final collectiblesExists = files.any(
+      (file) => file.name == 'collectibles.tmp',
+    );
+    final changesExists = files.any(
+      (file) => file.name == 'collectchanges.tmp',
+    );
     if (!collectiblesExists && !changesExists) {
       await _updateBox('collectibles');
       if (GStorage.collectChanges.isNotEmpty) {
@@ -228,16 +258,20 @@ class WebDav {
 
     List<Future<void>> downloadFutures = [];
     if (collectiblesExists) {
-      downloadFutures.add(_downloadBox('collectibles').catchError((e) {
-        KazumiLogger().e('WebDav: download collectibles failed', error: e);
-        throw Exception('WebDav: download collectibles failed');
-      }));
+      downloadFutures.add(
+        _downloadBox('collectibles').catchError((e) {
+          KazumiLogger().e('WebDav: download collectibles failed', error: e);
+          throw Exception('WebDav: download collectibles failed');
+        }),
+      );
     }
     if (changesExists) {
-      downloadFutures.add(_downloadBox('collectchanges').catchError((e) {
-        KazumiLogger().e('WebDav: download collectchanges failed', error: e);
-        throw Exception('WebDav: download collectchanges failed');
-      }));
+      downloadFutures.add(
+        _downloadBox('collectchanges').catchError((e) {
+          KazumiLogger().e('WebDav: download collectchanges failed', error: e);
+          throw Exception('WebDav: download collectchanges failed');
+        }),
+      );
     }
     if (downloadFutures.isNotEmpty) {
       await Future.wait(downloadFutures);
@@ -249,7 +283,6 @@ class WebDav {
       KazumiLogger().w(
         'WebDav: remote has collect changes without collectibles, rebuilding from local',
       );
-      await _quarantineCollectiblesBackup('collectchanges.tmp');
       await _updateBox('collectibles');
       if (GStorage.collectChanges.isNotEmpty) {
         await _updateBox('collectchanges');
@@ -260,11 +293,13 @@ class WebDav {
     try {
       if (collectiblesExists) {
         remoteCollectibles = await GStorage.getCollectiblesFromFile(
-            '${webDavLocalTempDirectory.path}/collectibles.tmp');
+          '${webDavLocalTempDirectory.path}/collectibles.tmp',
+        );
       }
       if (changesExists) {
         remoteChanges = await GStorage.getCollectChangesFromFile(
-            '${webDavLocalTempDirectory.path}/collectchanges.tmp');
+          '${webDavLocalTempDirectory.path}/collectchanges.tmp',
+        );
       }
     } on FileSystemException {
       // 读写临时文件失败多为瞬时 IO 问题，保留远端数据并让调用方重试。
@@ -298,7 +333,8 @@ class WebDav {
   }
 
   Future<void> _quarantineCollectiblesBackup(String remoteName) async {
-    final quarantinePath = '$_syncRootPath/$remoteName.invalid.'
+    final quarantinePath =
+        '$_syncRootPath/$remoteName.invalid.'
         '${DateTime.now().millisecondsSinceEpoch}';
     await _quarantineRemoteFile(
       sourcePath: '$_syncRootPath/$remoteName',
@@ -333,11 +369,13 @@ class WebDav {
         }
       }
 
-      final snapshotInitialized =
-          GStorage.getSetting(SettingsKeys.historySyncSnapshotInitialized);
+      final snapshotInitialized = GStorage.getSetting(
+        SettingsKeys.historySyncSnapshotInitialized,
+      );
       final localBatch = await historySync.prepareLocalLogs(
         runDirectory: runDirectory,
-        forceCheckpoint: snapshotInitialized != true ||
+        forceCheckpoint:
+            snapshotInitialized != true ||
             snapshotReadResult.needsRepair ||
             downloads.currentDeviceLogOversized ||
             importedLegacyHistory,
@@ -375,8 +413,9 @@ class WebDav {
           true,
         );
       } else {
-        final uploadFile =
-            await historySync.copyActiveLogForUpload(runDirectory);
+        final uploadFile = await historySync.copyActiveLogForUpload(
+          runDirectory,
+        );
         if (uploadFile != null) {
           await _publishDeviceHistoryChanges(
             sourceFile: uploadFile,
@@ -467,8 +506,9 @@ class WebDav {
   Future<void> _cleanupStaleHistorySyncRunDirectories() async {
     await _ensureLocalTempDirectory();
     final staleBefore = DateTime.now().subtract(_staleRunDirectoryAge);
-    await for (final entity
-        in webDavLocalTempDirectory.list(followLinks: false)) {
+    await for (final entity in webDavLocalTempDirectory.list(
+      followLinks: false,
+    )) {
       if (entity is! Directory) {
         continue;
       }
@@ -521,20 +561,14 @@ class WebDav {
         '${runDirectory.path}${Platform.pathSeparator}'
         'remote-events-${index++}.jsonl',
       );
-      await client.read2File(
-        '$_historyChangesPath/$name',
-        localFile.path,
-      );
+      await client.read2File('$_historyChangesPath/$name', localFile.path);
       if (name == '$deviceId.jsonl' &&
           await localFile.length() >
               HistorySyncService.checkpointLogThresholdBytes) {
         currentDeviceLogOversized = true;
       }
       eventFiles.add(
-        _DownloadedHistoryEventFile(
-          remoteName: name,
-          localFile: localFile,
-        ),
+        _DownloadedHistoryEventFile(remoteName: name, localFile: localFile),
       );
     }
 
@@ -600,7 +634,8 @@ class WebDav {
 
   Future<void> _quarantineRemoteHistoryEventFile(String remoteName) {
     final sourcePath = '$_historyChangesPath/$remoteName';
-    final quarantinePath = '$sourcePath.invalid.'
+    final quarantinePath =
+        '$sourcePath.invalid.'
         '${DateTime.now().millisecondsSinceEpoch}';
     return _quarantineRemoteFile(
       sourcePath: sourcePath,
@@ -684,7 +719,8 @@ class WebDav {
   }
 
   Future<void> _quarantineLegacyHistoryBackup() async {
-    final quarantinePath = '$_syncRootPath/histories.invalid.'
+    final quarantinePath =
+        '$_syncRootPath/histories.invalid.'
         '${DateTime.now().millisecondsSinceEpoch}.tmp';
     await _quarantineRemoteFile(
       sourcePath: '$_syncRootPath/histories.tmp',
@@ -699,14 +735,8 @@ class WebDav {
     required String description,
   }) async {
     try {
-      await client.rename(
-        sourcePath,
-        quarantinePath,
-        false,
-      );
-      KazumiLogger().w(
-        'WebDav: moved invalid $description to $quarantinePath',
-      );
+      await client.rename(sourcePath, quarantinePath, false);
+      KazumiLogger().w('WebDav: moved invalid $description to $quarantinePath');
     } catch (e, stackTrace) {
       KazumiLogger().w(
         'WebDav: failed to quarantine invalid $description',

@@ -3,6 +3,7 @@ import 'package:kazumi/bean/widget/bangumi_avatar.dart';
 import 'package:kazumi/modules/comments/comment_item.dart';
 import 'package:kazumi/services/account/account_api.dart';
 import 'package:kazumi/utils/date_time.dart';
+import 'package:skeletonizer/skeletonizer.dart';
 
 /// 自建账号服务的评论卡片：条目吐槽、人物吐槽与单集讨论共用。
 class AccountCommentCard extends StatelessWidget {
@@ -100,7 +101,7 @@ class AccountCommentCard extends StatelessWidget {
 }
 
 /// 把自建服务的 [AccountComment] 适配成单集讨论视图使用的
-/// [EpisodeCommentItem]（该视图沿用既有卡片与排序逻辑）。
+/// [EpisodeCommentItem]（该视图沿用既有排序逻辑）。
 class AccountCommentItem extends EpisodeCommentItem {
   AccountCommentItem.fromAccountComment(AccountComment comment)
     : super(
@@ -122,4 +123,52 @@ class AccountCommentItem extends EpisodeCommentItem {
         ),
         replies: const [],
       );
+}
+
+extension AccountCommentEpisodeComment on EpisodeComment {
+  /// 单集讨论卡片渲染回 [AccountComment]。
+  AccountComment toAccountComment() {
+    return AccountComment(
+      id: user.id,
+      content: comment,
+      spoiler: false,
+      createdAt: createdAt,
+      userId: user.id,
+      nickname: user.nickname,
+      avatarUrl: user.avatar.large,
+      mine: false,
+    );
+  }
+}
+
+class AccountCommentCardBone extends StatelessWidget {
+  const AccountCommentCardBone({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Skeletonizer.zone(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              const Bone.circle(size: 44),
+              const SizedBox(width: 12),
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Bone.text(width: 96),
+                  SizedBox(height: 2),
+                  Bone.text(width: 64, fontSize: 11),
+                ],
+              ),
+            ]),
+            const SizedBox(height: 16),
+            const Bone.multiText(lines: 2),
+          ],
+        ),
+      ),
+    );
+  }
 }

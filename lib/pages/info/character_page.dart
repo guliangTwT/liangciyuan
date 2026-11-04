@@ -5,7 +5,6 @@ import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 
 import 'package:kazumi/bean/card/account_comment_card.dart';
-import 'package:kazumi/bean/card/user_comments_card.dart';
 import 'package:kazumi/bean/dialog/material_bottom_sheet.dart';
 import 'package:kazumi/bean/widget/connected_tabs.dart';
 import 'package:kazumi/bean/widget/error_widget.dart';
@@ -171,7 +170,7 @@ class _CharacterPageState extends State<CharacterPage> {
     if (_loadingComments) {
       return SliverList.builder(
         itemCount: 3,
-        itemBuilder: (context, _) => const UserCommentsCardBone(),
+        itemBuilder: (context, _) => const AccountCommentCardBone(),
       );
     }
     if (_commentsError) {

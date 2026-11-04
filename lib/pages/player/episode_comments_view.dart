@@ -1,7 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:kazumi/bean/card/user_comments_card.dart';
+import 'package:kazumi/bean/card/account_comment_card.dart';
 import 'package:kazumi/bean/widget/error_widget.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:kazumi/bean/widget/loading_indicator.dart';
@@ -115,12 +115,15 @@ class EpisodeCommentsView extends StatelessWidget {
                 sliver: SliverList(
                   delegate: SliverChildBuilderDelegate(
                     (context, index) => KeepAlive(
-                      // Retain BBCode image geometry and expanded discussions.
+                      // Retain avatar image geometry while scrolling.
                       key: ObjectKey(comments[index]),
                       keepAlive: true,
                       child: IndexedSemantics(
                         index: index,
-                        child: UserCommentsCard.episode(comments[index]),
+                        child: AccountCommentCard(
+                          comments[index].comment.toAccountComment(),
+                          compact: true,
+                        ),
                       ),
                     ),
                     childCount: comments.length,

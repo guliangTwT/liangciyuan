@@ -107,21 +107,9 @@ class ApiEndpoints {
   /// 番剧信息
   static const String bangumiInfoByIDNext = '/p1/subjects/{0}';
 
-  /// 番剧评论
-  static const String bangumiCommentsByIDNext =
-      '/p1/subjects/{0}/comments?limit={1}&offset={2}';
-
-  /// 番剧剧集评论
-  static const String bangumiEpisodeCommentsByIDNext =
-      '/p1/episodes/{0}/comments';
-
   /// 番剧角色信息
   static const String bangumiCharacterInfoByCharacterIDNext =
       '/p1/characters/{0}';
-
-  /// 番剧角色评论
-  static const String bangumiCharacterCommentsByIDNext =
-      '/p1/characters/{0}/comments';
 
   /// DanDanPlay API Domain
   static const String dandanAPIDomain = 'https://api.dandanplay.net';

@@ -52,6 +52,8 @@
             type: boolean
 
     env:
+      # Flutter SDK / 引擎走国内镜像；pub 仍使用官方源以保持 pubspec.lock 可复现。
+      FLUTTER_STORAGE_BASE_URL: https://storage.flutter-io.cn
       DANDANAPI_APPID: ${{ secrets.DANDANAPI_APPID }}
       DANDANAPI_KEY: ${{ secrets.DANDANAPI_KEY }}
       KAZUMI_APPID: ${{ secrets.KAZUMI_APPID }}

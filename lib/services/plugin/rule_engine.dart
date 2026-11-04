@@ -23,10 +23,10 @@ class RuleEngine {
     ApiRuleStrategy apiStrategy = const ApiRuleStrategy(),
     XPathRuleStrategy xpathStrategy = const XPathRuleStrategy(),
     bool logFailures = true,
-  })  : _requestExecutor = requestExecutor ?? _DefaultRuleRequestExecutor(),
-        _apiStrategy = apiStrategy,
-        _xpathStrategy = xpathStrategy,
-        _logFailures = logFailures;
+  }) : _requestExecutor = requestExecutor ?? _DefaultRuleRequestExecutor(),
+       _apiStrategy = apiStrategy,
+       _xpathStrategy = xpathStrategy,
+       _logFailures = logFailures;
 
   final RuleRequestExecutor _requestExecutor;
   final ApiRuleStrategy _apiStrategy;
@@ -314,7 +314,7 @@ class _DefaultRuleRequestExecutor implements RuleRequestExecutor {
       // Clearance cookies are bound to the User-Agent they were issued to,
       // so the verified UA overrides the rule's own; sending a different one
       // would make the site serve the challenge page again.
-      if (verifiedUserAgent != null) 'user-agent': verifiedUserAgent,
+      'user-agent': ?verifiedUserAgent,
     };
     if (request.method == 'POST') {
       switch (request.bodyType) {
@@ -343,8 +343,10 @@ class _DefaultRuleRequestExecutor implements RuleRequestExecutor {
     final uri = Uri.tryParse(url);
     if (uri == null) return '';
     try {
-      final cookies =
-          await PluginCookieManager.instance.loadForRequest(pluginName, uri);
+      final cookies = await PluginCookieManager.instance.loadForRequest(
+        pluginName,
+        uri,
+      );
       return cookies
           .map((cookie) => '${cookie.name}=${cookie.value}')
           .join('; ');

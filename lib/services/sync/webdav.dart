@@ -208,21 +208,6 @@ class WebDav {
     });
   }
 
-  Future<void> updateCollectibles() async {
-    try {
-      await _runWebDavExclusive(() async {
-        if (!initialized) await _init();
-        await _updateBox('collectibles');
-        if (GStorage.collectChanges.isNotEmpty) {
-          await _updateBox('collectchanges');
-        }
-      });
-    } catch (e) {
-      KazumiLogger().e('WebDav: update collectibles failed', error: e);
-      rethrow;
-    }
-  }
-
   Future<void> _downloadBox(String boxName) async {
     String fileName = '$boxName.tmp';
     final existingFile = File('${webDavLocalTempDirectory.path}/$fileName');

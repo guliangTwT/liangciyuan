@@ -1,5 +1,8 @@
 allprojects {
     repositories {
+        // 默认走阿里云镜像，失败时自动回落到官方仓库。
+        maven { url "https://maven.aliyun.com/repository/google" }
+        maven { url "https://maven.aliyun.com/repository/public" }
         google()
         mavenCentral()
     }

@@ -64,7 +64,7 @@ class _TimelinePageState extends State<TimelinePage> {
             child: ListView.separated(
               padding: materialBottomSheetContentPadding,
               itemCount: years.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 24),
+              separatorBuilder: (_, _) => const SizedBox(height: 24),
               itemBuilder: (context, index) {
                 final year = years[index];
                 return ContentSection(
@@ -233,8 +233,9 @@ class _TimelinePageState extends State<TimelinePage> {
                   builder: (context, viewport) => NestedScrollView(
                     // Keep the outer viewport clamped and unstretched so tabs stay fixed.
                     physics: const ClampingScrollPhysics(),
-                    scrollBehavior: ScrollConfiguration.of(context)
-                        .copyWith(overscroll: false, scrollbars: false),
+                    scrollBehavior: ScrollConfiguration.of(
+                      context,
+                    ).copyWith(overscroll: false, scrollbars: false),
                     headerSliverBuilder: (context, innerBoxIsScrolled) => [
                       if (seasonHeader != null)
                         SliverToBoxAdapter(

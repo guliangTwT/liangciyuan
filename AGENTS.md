@@ -42,3 +42,17 @@
   `certificate DN: CN=Liangciyuan, OU=Release, ...`；若是 `CN=Android Debug`
   说明密钥未生效，该包不能作为正式发布。
 - 更换密钥属于破坏性操作：所有已安装用户都必须卸载重装。非必要不要更换。
+
+## 依赖镜像（默认策略）
+
+- **Maven / Gradle**：`android/settings.gradle` 与 `android/build.gradle` 已把阿里云镜像排在
+  官方仓库之前，官方仓库保留为回落；`android/gradle.properties` 配置了下载重试 3 次与
+  60 秒超时，避免 Maven Central 429 直接中断构建。
+- **Flutter SDK / 引擎**：CI 默认设置 `FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn`；
+  本机已持久化同名用户环境变量。
+- **pub 包**：**不要把 `PUB_HOSTED_URL` 设为默认**。镜像 host 与 `pubspec.lock` 中的
+  `https://pub.dev` 不一致，pub 会判定锁定全部失效并全量升级依赖（实测会改写 233 个包）。
+  仅在 pub.dev 不可达时临时使用，并接受 lockfile 被刷新：
+  `PUB_HOSTED_URL=https://pub.flutter-io.cn flutter pub get`，
+  提交前必须检查 `git diff pubspec.lock`。
+- Release 构建若因 Maven 限流失败，直接 `gh run rerun <run-id> --failed` 重试，不要改代码。

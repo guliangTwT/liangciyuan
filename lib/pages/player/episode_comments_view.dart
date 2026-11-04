@@ -138,7 +138,7 @@ class EpisodeCommentsView extends StatelessWidget {
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                  child: Text('已显示全部 ${comments.length} 条讨论 · 来自 Bangumi',
+                  child: Text('已显示全部 ${comments.length} 条讨论 · 凉次元账号服务',
                       textAlign: TextAlign.center,
                       style: Theme.of(context)
                           .textTheme

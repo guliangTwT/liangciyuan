@@ -6,10 +6,10 @@ import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/services/sync/danmaku_shield_sync_service.dart';
 import 'package:kazumi/services/sync/webdav.dart';
 
-/// 按设定间隔在后台自动执行 WebDAV 同步。
+/// 按设定间隔在后台自动执行账号云同步。
 ///
 /// 间隔来自 [SettingsKeys.webDavAutoSyncMinutes]（分钟，0 表示关闭）。
-/// 只在 WebDAV 已启用、且至少开启了一项同步内容时才会真正同步；
+/// 只在账号云同步已启用、且至少开启了一项同步内容时才会真正同步；
 /// 所有同步都自带串行队列与去重，重复触发是安全的。
 class WebDavAutoSync {
   WebDavAutoSync._();

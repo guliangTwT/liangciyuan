@@ -12,12 +12,14 @@ import 'package:kazumi/repositories/download_repository.dart';
 import 'package:kazumi/services/download/download_manager.dart';
 import 'package:kazumi/services/video_source/services.dart';
 import 'package:kazumi/services/video_source/video_source_format.dart';
+import 'package:kazumi/bean/card/account_comment_card.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:mobx/mobx.dart';
+import 'package:kazumi/services/account/account_api.dart';
+import 'package:kazumi/services/account/account_service.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/modules/bangumi/episode_item.dart';
 import 'package:kazumi/modules/comments/comment_item.dart';
-import 'package:kazumi/modules/comments/comment_response.dart';
 import 'package:kazumi/request/apis/bangumi_api.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/utils/episode_url.dart';
@@ -785,33 +787,30 @@ abstract class _VideoPageController with Store implements Disposable {
 
   Future<bool> queryBangumiEpisodeCommentsByID(int id, int episode) async {
     final session = _commentSessions.begin();
-    final EpisodeInfo latestEpisodeInfo;
-    try {
-      latestEpisodeInfo = await BangumiApi.getBangumiEpisodeByID(id, episode);
-    } catch (_) {
-      if (session.isStale) {
-        return false;
-      }
-      rethrow;
-    }
-    if (session.isStale) {
+    final latestEpisodeInfo = await _loadEpisodeInfo(id, episode, session);
+    if (session.isStale || latestEpisodeInfo == null) {
       return false;
     }
-    final EpisodeCommentResponse value;
+    final List<AccountCommentItem> commentsList;
     try {
-      value = await BangumiApi.getBangumiCommentsByEpisodeID(
-        latestEpisodeInfo.id,
+      final page = await AccountApi.instance.listEpisodeComments(
+        bangumiId: id,
+        episode: episode,
+        token: _episodeCommentsToken(),
       );
+      if (session.isStale) {
+        return false;
+      }
+      commentsList = [
+        for (final comment in page.items)
+          AccountCommentItem.fromAccountComment(comment),
+      ];
     } catch (_) {
       if (session.isStale) {
         return false;
       }
       rethrow;
     }
-    if (session.isStale) {
-      return false;
-    }
-    final commentsList = value.commentList;
     if (!isCommentsAscending) {
       commentsList.sort(
         (a, b) => b.comment.createdAt.compareTo(a.comment.createdAt),
@@ -826,6 +825,27 @@ abstract class _VideoPageController with Store implements Disposable {
       'VideoPageController: loaded comments list length ${episodeCommentsList.length}',
     );
     return true;
+  }
+
+  String? _episodeCommentsToken() {
+    final account = AccountService()..ensureLoaded();
+    return account.loggedIn ? account.token : null;
+  }
+
+  /// 分集标题仍取自 Bangumi（纯元数据）；评论内容全部来自自建服务。
+  Future<EpisodeInfo?> _loadEpisodeInfo(
+    int id,
+    int episode,
+    AsyncSession session,
+  ) async {
+    try {
+      return await BangumiApi.getBangumiEpisodeByID(id, episode);
+    } catch (_) {
+      if (session.isStale) {
+        return null;
+      }
+      rethrow;
+    }
   }
 
   @action

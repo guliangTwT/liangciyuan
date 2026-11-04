@@ -157,7 +157,7 @@ class _InitPageState extends State<InitPage> {
   }
 
   Future<void> _webDavInit() async {
-    // 无论当前是否启用，都先注入依赖：用户稍后开启 WebDAV 时定时器可直接工作。
+    // 无论当前是否启用，都先注入依赖：用户稍后开启云同步时定时器可直接工作。
     WebDavAutoSync().configure(
       danmakuShieldSync: widget.danmakuShieldSync,
       webDav: WebDav(),
@@ -174,40 +174,40 @@ class _InitPageState extends State<InitPage> {
         );
       }
     }
-    bool webDavEnable =
+    bool cloudSyncEnable =
         account.loggedIn &&
         await GStorage.getSetting(SettingsKeys.accountSyncEnable);
-    bool webDavEnableHistory = await GStorage.getSetting(
+    bool cloudEnableHistory = await GStorage.getSetting(
       SettingsKeys.webDavEnableHistory,
     );
-    bool webDavEnableCollect = await GStorage.getSetting(
+    bool cloudEnableCollect = await GStorage.getSetting(
       SettingsKeys.webDavEnableCollect,
     );
-    if (webDavEnable) {
+    if (cloudSyncEnable) {
       var webDav = WebDav();
-      KazumiLogger().i('WebDav: Starting WebDav initialization');
+      KazumiLogger().i('CloudSync: Starting cloud sync initialization');
       try {
         await webDav.init();
         await widget.danmakuShieldSync.syncIfEnabled();
-        if (webDavEnableHistory) {
+        if (cloudEnableHistory) {
           try {
             await webDav.syncHistory();
-            KazumiLogger().i('WebDav: Completed syncing watch history');
+            KazumiLogger().i('CloudSync: Completed syncing watch history');
           } catch (e, stackTrace) {
             KazumiLogger().w(
-              'WebDav: automatic watch history sync failed',
+              'CloudSync: automatic watch history sync failed',
               error: e,
               stackTrace: stackTrace,
             );
           }
         }
-        if (webDavEnableCollect) {
+        if (cloudEnableCollect) {
           try {
             await webDav.syncCollectibles();
-            KazumiLogger().i('WebDav: Completed syncing collectibles');
+            KazumiLogger().i('CloudSync: Completed syncing collectibles');
           } catch (e, stackTrace) {
             KazumiLogger().w(
-              'WebDav: automatic collectibles sync failed',
+              'CloudSync: automatic collectibles sync failed',
               error: e,
               stackTrace: stackTrace,
             );
@@ -215,7 +215,7 @@ class _InitPageState extends State<InitPage> {
         }
       } catch (e, stackTrace) {
         KazumiLogger().w(
-          'WebDav: automatic initialization failed',
+          'CloudSync: automatic initialization failed',
           error: e,
           stackTrace: stackTrace,
         );

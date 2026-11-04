@@ -360,6 +360,35 @@ class AccountApi {
   }) async {
     await _request('DELETE', '/v1/comments/$id', token: token);
   }
+
+  /// 单集评论：按 (bangumiId, episode) 读取全部条目。
+  Future<AccountCommentPage> listEpisodeComments({
+    required int bangumiId,
+    required int episode,
+    String? token,
+  }) async {
+    return listComments(
+      targetType: 'episode',
+      targetId: bangumiId * 10000 + episode,
+      token: token,
+    );
+  }
+
+  Future<AccountComment> createEpisodeComment({
+    required String token,
+    required int bangumiId,
+    required int episode,
+    required String content,
+    bool spoiler = false,
+  }) async {
+    return createComment(
+      token: token,
+      targetType: 'episode',
+      targetId: bangumiId * 10000 + episode,
+      content: content,
+      spoiler: spoiler,
+    );
+  }
 }
 
 class AccountCommentPage {

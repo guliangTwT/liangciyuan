@@ -4,14 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 
+import 'package:kazumi/bean/card/account_comment_card.dart';
 import 'package:kazumi/bean/card/user_comments_card.dart';
 import 'package:kazumi/bean/dialog/material_bottom_sheet.dart';
 import 'package:kazumi/bean/widget/connected_tabs.dart';
 import 'package:kazumi/bean/widget/error_widget.dart';
 import 'package:kazumi/modules/character/character_full_item.dart';
-import 'package:kazumi/modules/comments/comment_item.dart';
 import 'package:kazumi/pages/info/character_info_view.dart';
 import 'package:kazumi/request/apis/bangumi_api.dart';
+import 'package:kazumi/services/account/account_api.dart';
+import 'package:kazumi/services/account/account_service.dart';
 
 class CharacterPage extends StatefulWidget {
   const CharacterPage({
@@ -33,7 +35,7 @@ class CharacterPage extends StatefulWidget {
 
 class _CharacterPageState extends State<CharacterPage> {
   CharacterFullItem? _character;
-  List<CharacterCommentItem> _comments = [];
+  List<AccountComment> _comments = [];
   bool _loadingComments = true;
   bool _commentsError = false;
 
@@ -56,11 +58,16 @@ class _CharacterPageState extends State<CharacterPage> {
       _commentsError = false;
     });
     try {
-      final response = await BangumiApi.getCharacterCommentsByCharacterID(
-          widget.characterID);
+      // 人物吐槽也存凉次元账号服务；资料本身仍来自 Bangumi。
+      final account = AccountService()..ensureLoaded();
+      final page = await AccountApi.instance.listComments(
+        targetType: 'character',
+        targetId: widget.characterID,
+        token: account.loggedIn ? account.token : null,
+      );
       if (!mounted) return;
       setState(() {
-        _comments = response.commentList;
+        _comments = page.items;
         _loadingComments = false;
       });
     } catch (_) {
@@ -193,7 +200,7 @@ class _CharacterPageState extends State<CharacterPage> {
             keepAlive: true,
             child: IndexedSemantics(
               index: index,
-              child: UserCommentsCard.character(_comments[index]),
+              child: AccountCommentCard(_comments[index]),
             ),
           );
         },

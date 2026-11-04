@@ -493,13 +493,15 @@ function handle_sync_delete(Request $request): void
 function comment_target(array $source): array
 {
     $type = strtolower(trim((string) ($source['targetType'] ?? 'bangumi')));
-    if (!in_array($type, ['bangumi', 'character'], true)) {
+    if (!in_array($type, ['bangumi', 'episode', 'character'], true)) {
         throw new HttpException(400, 'targetType 不支持');
     }
     $id = (int) ($source['targetId'] ?? 0);
     if ($id <= 0 || $id > 999999999) {
         throw new HttpException(400, 'targetId 不正确');
     }
+    // 单集评论用 (bangumiId * 10000 + episode) 编码进一个整数，
+    // 客户端与服务端共用该约定。
     return [$type, $id];
 }
 

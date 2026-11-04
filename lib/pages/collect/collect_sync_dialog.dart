@@ -4,10 +4,10 @@ import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/modules/collect/collect_sync_plan.dart';
 
-enum CollectSyncDestination { webDavSettings }
+enum CollectSyncDestination { accountSettings }
 
 enum CollectSyncStep {
-  webDav('WebDAV 收藏', '合并本地与云端收藏', Icons.cloud_sync_rounded);
+  cloud('云端收藏', '合并本地与账号云端收藏', Icons.cloud_sync_rounded);
 
   const CollectSyncStep(this._title, this._description, this._icon);
 
@@ -15,7 +15,7 @@ enum CollectSyncStep {
   final String _description;
   final IconData _icon;
 
-  CollectSyncDestination get _settings => CollectSyncDestination.webDavSettings;
+  CollectSyncDestination get _settings => CollectSyncDestination.accountSettings;
 }
 
 typedef CollectSyncOperation =
@@ -60,8 +60,8 @@ class _CollectSyncDialogState extends State<CollectSyncDialog> {
   bool get _finished => _phase == _SyncPhase.finished;
 
   List<_StepState> _createSteps() => [
-    if (widget.plan.shouldSyncWebDavCollectibles)
-      _StepState(CollectSyncStep.webDav),
+    if (widget.plan.shouldSyncCollectibles)
+      _StepState(CollectSyncStep.cloud),
   ];
 
   // Removed routes can stay mounted until their exit animation ends.
@@ -209,7 +209,7 @@ class _CollectSyncDialogState extends State<CollectSyncDialog> {
                 const SizedBox(height: 24),
               ],
               if (!widget.plan.canSync) ...[
-                _setupRow(CollectSyncDestination.webDavSettings),
+                _setupRow(CollectSyncDestination.accountSettings),
               ] else ...[
                 for (var i = 0; i < _steps.length; i++) ...[
                   if (i > 0) const SizedBox(height: 4),
@@ -258,9 +258,9 @@ class _CollectSyncDialogState extends State<CollectSyncDialog> {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final (title, description, icon) = switch (destination) {
-      CollectSyncDestination.webDavSettings => (
-        'WebDAV',
-        '设置服务器，开启收藏同步',
+      CollectSyncDestination.accountSettings => (
+        '凉次元账号',
+        '登录账号，开启收藏云同步',
         Icons.cloud_sync_rounded,
       ),
     };

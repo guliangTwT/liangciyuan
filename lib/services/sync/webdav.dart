@@ -187,19 +187,19 @@ class WebDav {
 
   static String _describeStatus(int code) {
     if (code == 401 || code == 403) {
-      return '账号或密码错误（$code）';
+      return '登录状态已失效（$code），请重新登录凉次元账号';
     }
     if (code == 404) {
-      return '服务器路径不存在（404），请检查 WebDAV 地址';
+      return '云端数据不存在（404）';
     }
     if (code == 408) {
       return '请求超时（408），请检查网络后重试';
     }
     if (code == 429) {
-      return '请求过于频繁（429），可能是云盘限流，请稍后重试';
+      return '请求过于频繁（429），请稍后重试';
     }
     if (code == 503) {
-      return '服务器暂时不可用（503），可能是云盘限流或维护，请稍后重试';
+      return '云同步服务暂时不可用（503），请稍后重试';
     }
     if (code >= 500) {
       return '服务器错误（$code），请稍后重试';

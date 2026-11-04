@@ -37,7 +37,7 @@ class _CollectPageState extends State<CollectPage> with KazumiDialogOwner {
     required ValueChanged<String> onError,
     required void Function(String message, int current, int total) onProgress,
   }) => switch (step) {
-    CollectSyncStep.webDav => collectController.syncCollectibles(
+    CollectSyncStep.cloud => collectController.syncCollectibles(
       onError: onError,
     ),
   };
@@ -72,8 +72,8 @@ class _CollectPageState extends State<CollectPage> with KazumiDialogOwner {
   Future<void> _sync() async {
     if (_syncDialogOpen || _pendingIds.isNotEmpty) return;
     final plan = CollectSyncPlan(
-      webDavEnabled: GStorage.getSetting(SettingsKeys.webDavEnable),
-      webDavCollectiblesEnabled: GStorage.getSetting(
+      cloudEnabled: GStorage.getSetting(SettingsKeys.accountSyncEnable),
+      collectiblesEnabled: GStorage.getSetting(
         SettingsKeys.webDavEnableCollect,
       ),
     );
@@ -83,7 +83,7 @@ class _CollectPageState extends State<CollectPage> with KazumiDialogOwner {
       );
       task.withContext(
         (context) => context.pushNamed(switch (destination) {
-          CollectSyncDestination.webDavSettings => '/settings/account/',
+          CollectSyncDestination.accountSettings => '/settings/account/',
         }),
       );
     }, errorMessage: '同步未完成，请稍后重试');

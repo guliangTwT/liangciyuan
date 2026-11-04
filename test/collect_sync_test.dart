@@ -9,39 +9,39 @@ import 'package:kazumi/modules/collect/collect_type.dart';
 
 void main() {
   group('CollectSyncPlan', () {
-    test('keeps WebDAV history-only mode out of collectible sync', () {
+    test('keeps history-only mode out of collectible sync', () {
       const plan = CollectSyncPlan(
-        webDavEnabled: true,
-        webDavCollectiblesEnabled: false,
+        cloudEnabled: true,
+        collectiblesEnabled: false,
       );
 
-      expect(plan.shouldSyncWebDavCollectibles, isFalse);
+      expect(plan.shouldSyncCollectibles, isFalse);
       expect(plan.canSync, isFalse);
     });
 
-    test('allows WebDAV-only collectible sync', () {
+    test('allows account cloud collectible sync', () {
       const plan = CollectSyncPlan(
-        webDavEnabled: true,
-        webDavCollectiblesEnabled: true,
+        cloudEnabled: true,
+        collectiblesEnabled: true,
       );
 
-      expect(plan.shouldSyncWebDavCollectibles, isTrue);
+      expect(plan.shouldSyncCollectibles, isTrue);
       expect(plan.canSync, isTrue);
     });
 
-    test('requires the WebDAV master switch', () {
+    test('requires the account master switch', () {
       const plan = CollectSyncPlan(
-        webDavEnabled: false,
-        webDavCollectiblesEnabled: true,
+        cloudEnabled: false,
+        collectiblesEnabled: true,
       );
 
-      expect(plan.shouldSyncWebDavCollectibles, isFalse);
+      expect(plan.shouldSyncCollectibles, isFalse);
       expect(plan.canSync, isFalse);
     });
   });
 
   group('CollectSyncMerger', () {
-    test('merges local change log into WebDAV collectibles', () {
+    test('merges local change log into cloud collectibles', () {
       final mergeResult = CollectSyncMerger.mergeWebDav(
         localCollectibles: [
           _collect(1, CollectType.watching, 10),

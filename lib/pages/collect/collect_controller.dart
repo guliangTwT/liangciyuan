@@ -76,7 +76,7 @@ abstract class _CollectController with Store {
     onError(message);
   }
 
-  Future<bool> _connectWebDav(ValueChanged<String> onError) async {
+  Future<bool> _connectCloudSync(ValueChanged<String> onError) async {
     if (!GStorage.getSetting(SettingsKeys.accountSyncEnable)) {
       _reportSyncError('请先开启账号云同步', onError);
       return false;
@@ -102,7 +102,7 @@ abstract class _CollectController with Store {
   }
 
   Future<bool> syncCollectibles({required ValueChanged<String> onError}) async {
-    if (!await _connectWebDav(onError)) return false;
+    if (!await _connectCloudSync(onError)) return false;
     try {
       await WebDav().syncCollectibles();
     } catch (e) {

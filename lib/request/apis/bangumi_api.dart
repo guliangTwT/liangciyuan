@@ -4,7 +4,6 @@ import 'package:kazumi/request/clients/bangumi_client.dart';
 import 'package:kazumi/request/core/network_exception.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/modules/bangumi/bangumi_relation.dart';
-import 'package:kazumi/modules/comments/comment_response.dart';
 import 'package:kazumi/modules/characters/characters_response.dart';
 import 'package:kazumi/modules/bangumi/episode_item.dart';
 import 'package:kazumi/modules/character/character_full_item.dart';
@@ -469,45 +468,6 @@ class BangumiApi {
     return episodeList;
   }
 
-  static Future<CommentResponse> getBangumiCommentsByID(
-    int id, {
-    int offset = 0,
-  }) async {
-    final jsonData = await _client.get(
-      ApiEndpoints.formatUrl(
-        ApiEndpoints.bangumiAPINextDomain +
-            ApiEndpoints.bangumiCommentsByIDNext,
-        [id, 20, offset],
-      ),
-    );
-    return CommentResponse.fromJson(jsonData);
-  }
-
-  static Future<EpisodeCommentResponse> getBangumiCommentsByEpisodeID(
-    int id,
-  ) async {
-    final jsonData = await _client.get(
-      ApiEndpoints.formatUrl(
-        ApiEndpoints.bangumiAPINextDomain +
-            ApiEndpoints.bangumiEpisodeCommentsByIDNext,
-        [id],
-      ),
-    );
-    return EpisodeCommentResponse.fromJson(jsonData);
-  }
-
-  static Future<CharacterCommentResponse> getCharacterCommentsByCharacterID(
-    int id,
-  ) async {
-    final jsonData = await _client.get(
-      ApiEndpoints.formatUrl(
-        ApiEndpoints.bangumiAPINextDomain +
-            ApiEndpoints.bangumiCharacterCommentsByIDNext,
-        [id],
-      ),
-    );
-    return CharacterCommentResponse.fromJson(jsonData);
-  }
 
   static Future<StaffResponse> getBangumiStaffByID(int id) async {
     final jsonData = await _client.get(

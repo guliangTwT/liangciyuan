@@ -20,6 +20,7 @@ function db(): PDO
     $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
     $pdo->exec('PRAGMA journal_mode=WAL');
     $pdo->exec('PRAGMA foreign_keys=ON');
+    $pdo->exec('PRAGMA busy_timeout=5000');
 
     $pdo->exec(<<<SQL
 CREATE TABLE IF NOT EXISTS users (
@@ -88,6 +89,11 @@ function rate_limit(string $key, int $limit, int $windowSeconds): void
     }
     $pdo = db();
     $now = now();
+    // 低概率清理过期计数，避免表无限增长。
+    if (random_int(1, 100) === 1) {
+        $pdo->prepare('DELETE FROM rate_limits WHERE window_start < ?')
+            ->execute([$now - 86400]);
+    }
     $pdo->beginTransaction();
     try {
         $stmt = $pdo->prepare('SELECT count, window_start FROM rate_limits WHERE key = ?');

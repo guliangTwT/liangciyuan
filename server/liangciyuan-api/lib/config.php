@@ -23,8 +23,11 @@ function app_config(): array
         'code_ttl' => 600,
         'code_resend_seconds' => 60,
         'code_ip_hourly_limit' => 20,
+        'code_email_hourly_limit' => 5,
         'token_ttl' => 15552000,
         'max_payload_bytes' => 8388608,
+        'max_sync_kinds' => 16,
+        'max_sync_total_bytes' => 67108864,
         'max_avatar_bytes' => 2097152,
     ];
 

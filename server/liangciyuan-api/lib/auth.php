@@ -19,7 +19,15 @@ function create_token(int $userId): string
     $config = app_config();
     $token = bin2hex(random_bytes(32));
     $now = now();
-    $stmt = db()->prepare(
+    $pdo = db();
+    $pdo->prepare('DELETE FROM tokens WHERE expires_at < ?')->execute([$now]);
+    // 单账号最多保留 10 个有效令牌，避免无限累积。
+    $pdo->prepare(
+        'DELETE FROM tokens WHERE user_id = ? AND id NOT IN (
+           SELECT id FROM tokens WHERE user_id = ? ORDER BY id DESC LIMIT 10
+         )'
+    )->execute([$userId, $userId]);
+    $stmt = $pdo->prepare(
         'INSERT INTO tokens(user_id, token_hash, created_at, expires_at, last_used_at)
          VALUES(?, ?, ?, ?, ?)'
     );

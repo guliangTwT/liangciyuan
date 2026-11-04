@@ -54,8 +54,12 @@ function handle_send_code(Request $request): void
     }
 
     rate_limit('send-code:ip:' . client_ip(), (int) $config['code_ip_hourly_limit'], 3600);
+    rate_limit('send-code:email:' . $email, (int) $config['code_email_hourly_limit'], 3600);
 
     $pdo = db();
+    // 清理过期与已使用的验证码，避免表无限增长。
+    $pdo->prepare('DELETE FROM email_codes WHERE expires_at < ? OR (used = 1 AND created_at < ?)')
+        ->execute([now(), now() - 86400]);
     $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ?');
     $stmt->execute([$email]);
     if ($stmt->fetch()) {
@@ -72,8 +76,6 @@ function handle_send_code(Request $request): void
     }
 
     $code = (string) random_int(100000, 999999);
-    SmtpMailer::send($email, '凉次元注册验证码', verification_mail_html($code));
-
     $pdo->prepare(
         'INSERT INTO email_codes(email, code_hash, expires_at, used, created_at, ip)
          VALUES(?, ?, ?, 0, ?, ?)'
@@ -84,6 +86,18 @@ function handle_send_code(Request $request): void
         now(),
         client_ip(),
     ]);
+    $codeId = (int) $pdo->lastInsertId();
+    try {
+        SmtpMailer::send(
+            $email,
+            '凉次元注册验证码（10 分钟内有效）',
+            verification_mail_html($code)
+        );
+    } catch (Throwable $e) {
+        // 发信失败时撤销验证码，避免用户拿到一个无法使用的记录。
+        $pdo->prepare('DELETE FROM email_codes WHERE id = ?')->execute([$codeId]);
+        throw $e;
+    }
 
     Response::ok(['message' => '验证码已发送，请查收邮件']);
 }
@@ -157,6 +171,10 @@ function handle_register(Request $request): void
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
+        }
+        if ($e instanceof PDOException
+            && (string) ($e->errorInfo[0] ?? '') === '23000') {
+            throw new HttpException(409, '该邮箱已注册，请直接登录');
         }
         throw $e;
     }
@@ -261,14 +279,20 @@ function handle_upload_avatar(Request $request): void
     }
 
     $userId = (int) $user['id'];
+    $name = $userId . '.' . $allowed[$type];
+    $staged = $dir . '/.' . $userId . '.upload';
+    if (!move_uploaded_file((string) $file['tmp_name'], $staged)) {
+        throw new HttpException(500, '保存头像失败');
+    }
+    // 先落地新文件，再删除旧文件，避免移动失败时旧头像也丢失。
     foreach (['jpg', 'png', 'webp'] as $ext) {
         $old = $dir . '/' . $userId . '.' . $ext;
-        if (is_file($old)) {
+        if ($old !== $dir . '/' . $name && is_file($old)) {
             @unlink($old);
         }
     }
-    $name = $userId . '.' . $allowed[$type];
-    if (!move_uploaded_file((string) $file['tmp_name'], $dir . '/' . $name)) {
+    if (!rename($staged, $dir . '/' . $name)) {
+        @unlink($staged);
         throw new HttpException(500, '保存头像失败');
     }
 
@@ -289,6 +313,8 @@ function handle_get_avatar(Request $request): void
         $path = $dir . '/' . $id . '.' . $ext;
         if (is_file($path)) {
             header('Content-Type: ' . $mime);
+            header('X-Content-Type-Options: nosniff');
+            header('Content-Length: ' . (string) filesize($path));
             header('Cache-Control: public, max-age=86400');
             readfile($path);
             exit;
@@ -351,6 +377,18 @@ function handle_sync_put(Request $request): void
     }
 
     $pdo = db();
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(*) AS c, COALESCE(SUM(length(payload)), 0) AS s
+         FROM sync_blobs WHERE user_id = ? AND kind <> ?'
+    );
+    $stmt->execute([(int) $user['id'], $kind]);
+    $existing = $stmt->fetch() ?: ['c' => 0, 's' => 0];
+    if ((int) $existing['c'] >= (int) $config['max_sync_kinds']) {
+        throw new HttpException(413, '同步内容类型过多');
+    }
+    if ((int) $existing['s'] + strlen($payload) > (int) $config['max_sync_total_bytes']) {
+        throw new HttpException(413, '同步数据总量超出限制');
+    }
     // 客户端在上传前已经拉取并合并过云端数据，这里以服务端接收时间落库，
     // 避免设备时钟偏差导致 PUT 永远 409。
     $storedAt = (int) round(microtime(true) * 1000);

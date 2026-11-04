@@ -204,9 +204,24 @@
               name: android_outputs
               path: android_outputs
 
+          - name: Extract release notes from CHANGELOG
+            run: |
+              tag="${GITHUB_REF#refs/tags/}"
+              awk -v tag="$tag" '
+                index($0, "## " tag) == 1 {found=1; next}
+                found && /^## / {exit}
+                found {print}
+              ' CHANGELOG.md > release-notes.md
+              if [ ! -s release-notes.md ]; then
+                echo "本版本暂无更新日志，详见 CHANGELOG.md。" > release-notes.md
+              fi
+              cat release-notes.md
+            shell: bash
+
           - name: Create release
             uses: softprops/action-gh-release@v2
             with:
+              body_path: release-notes.md
               files: |
                 windows_outputs/*.exe
                 windows_outputs/*.zip

@@ -39,11 +39,10 @@ abstract class _CollectController with Store {
     final int currentCollectType = getCollectType(bangumiItem);
     final int collectChangeAction = currentCollectType == 0 ? 1 : 2;
 
-    await _collectCrudRepository.addCollectible(bangumiItem, type);
-    await GStorage.appendCollectChange(
-      bangumiId: bangumiItem.id,
-      action: collectChangeAction,
-      type: type,
+    await _collectCrudRepository.addCollectibleWithChange(
+      bangumiItem,
+      type,
+      collectChangeAction,
     );
     loadCollectibles();
   }
@@ -54,12 +53,7 @@ abstract class _CollectController with Store {
   }
 
   Future<void> _deleteCollectLocally(BangumiItem bangumiItem) async {
-    await _collectCrudRepository.deleteCollectible(bangumiItem.id);
-    await GStorage.appendCollectChange(
-      bangumiId: bangumiItem.id,
-      action: 3,
-      type: 5,
-    );
+    await _collectCrudRepository.deleteCollectibleWithChange(bangumiItem.id);
     loadCollectibles();
   }
 
@@ -122,11 +116,10 @@ abstract class _CollectController with Store {
         // Migration must work before Bangumi is initialized.
         final int currentCollectType = getCollectType(bangumiItem);
         final int collectChangeAction = currentCollectType == 0 ? 1 : 2;
-        await _collectCrudRepository.addCollectible(bangumiItem, 1);
-        await GStorage.appendCollectChange(
-          bangumiId: bangumiItem.id,
-          action: collectChangeAction,
-          type: 1,
+        await _collectCrudRepository.addCollectibleWithChange(
+          bangumiItem,
+          1,
+          collectChangeAction,
         );
         count++;
       }

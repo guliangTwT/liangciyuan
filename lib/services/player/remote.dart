@@ -10,80 +10,106 @@ class RemotePlay {
     final searcher = DLNAManager();
     final dlna = await searcher.start();
     List<Widget> dlnaDevice = [];
-    await KazumiDialog.show(builder: (BuildContext context) {
-      return StatefulBuilder(builder: (context, setState) {
-        return AlertDialog(
-          title: const Text('远程投屏'),
-          content: SingleChildScrollView(
-            child: Column(
-              children: dlnaDevice,
-            ),
-          ),
-          actions: [
-            const SizedBox(width: 20),
-            TextButton(
-              onPressed: () {
-                KazumiDialog.dismiss();
-              },
-              child: Text(
-                '退出',
-                style: TextStyle(color: Theme.of(context).colorScheme.outline),
+    StreamSubscription? deviceSubscription;
+    var dialogOpen = true;
+
+    void stopWatchingDevices() {
+      deviceSubscription?.cancel();
+      deviceSubscription = null;
+    }
+
+    await KazumiDialog.show(
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('远程投屏'),
+              content: SingleChildScrollView(
+                child: Column(children: dlnaDevice),
               ),
-            ),
-            TextButton(
-                onPressed: () {
-                  setState(() {});
-                  KazumiDialog.showToast(
-                    message: '开始搜索',
-                  );
-                  dlna.devices.stream.listen((deviceList) {
-                    dlnaDevice = [];
-                    deviceList.forEach((key, value) async {
-                      KazumiLogger().i('RemotePlay: key: $key');
-                      KazumiLogger().i(
-                          'RemotePlay: value: ${value.info.friendlyName} ${value.info.deviceType} ${value.info.URLBase}');
-                      setState(() {
-                        dlnaDevice.add(ListTile(
-                            leading: _deviceUPnPIcon(
-                                value.info.deviceType.split(':')[3]),
+              actions: [
+                const SizedBox(width: 20),
+                TextButton(
+                  onPressed: () => KazumiDialog.dismiss(),
+                  child: Text(
+                    '退出',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      dlnaDevice = [];
+                    });
+                    KazumiDialog.showToast(message: '开始搜索');
+                    stopWatchingDevices();
+                    deviceSubscription = dlna.devices.stream.listen((
+                      deviceList,
+                    ) {
+                      final items = <Widget>[];
+                      for (final value in deviceList.values) {
+                        KazumiLogger().i(
+                          'RemotePlay: ${value.info.friendlyName} ${value.info.deviceType}',
+                        );
+                        final typeName = _deviceTypeName(value.info.deviceType);
+                        items.add(
+                          ListTile(
+                            leading: _deviceUPnPIcon(typeName),
                             title: Text(value.info.friendlyName),
-                            subtitle: Text(value.info.deviceType.split(':')[3]),
-                            onTap: () {
+                            subtitle: Text(typeName),
+                            onTap: () async {
                               try {
                                 KazumiDialog.showToast(
                                   message: '尝试投屏至 ${value.info.friendlyName}',
                                 );
-                                DLNADevice(value.info).setUrl(video);
-                                DLNADevice(value.info).play();
+                                final device = DLNADevice(value.info);
+                                await device.setUrl(video);
+                                await device.play();
                               } catch (e) {
                                 KazumiLogger().e(
-                                    'RemotePlay: failed to cast to device',
-                                    error: e);
+                                  'RemotePlay: failed to cast to device',
+                                  error: e,
+                                );
                                 KazumiDialog.showToast(
                                   message: 'DLNA 异常: $e \n尝试重新进入 DLNA 投屏或切换设备',
                                 );
                               }
-                            }));
-                      });
+                            },
+                          ),
+                        );
+                      }
+                      if (!dialogOpen) return;
+                      setState(() => dlnaDevice = items);
                     });
-                  });
-                  // Timer(const Duration(seconds: 30), () {
-                  //   KazumiDialog.showToast(
-                  //     message: '已搜索30s，若未发现设备请尝试重新进入 DLNA 投屏',
-                  //   );
-                  // });
-                },
-                child: Text(
-                  '搜索',
-                  style:
-                      TextStyle(color: Theme.of(context).colorScheme.outline),
-                )),
-          ],
+                  },
+                  child: Text(
+                    '搜索',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
         );
-      });
-    }, onDismiss: () {
-      searcher.stop();
-    });
+      },
+      onDismiss: () {
+        dialogOpen = false;
+        stopWatchingDevices();
+        searcher.stop();
+      },
+    );
+    dialogOpen = false;
+    stopWatchingDevices();
+  }
+
+  /// 兼容 `urn:schemas-upnp-org:device:MediaRenderer:1` 与裸 `MediaRenderer`。
+  String _deviceTypeName(String deviceType) {
+    final parts = deviceType.split(':');
+    return parts.length > 3 ? parts[3] : deviceType;
   }
 
   Icon _deviceUPnPIcon(String deviceType) {

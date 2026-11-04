@@ -714,13 +714,27 @@ class WebDav {
     );
   }
 
+  /// MOVE 的兼容封装：部分服务器用 200 表示成功，客户端会误报失败。
+  Future<void> _moveRemoteFile(String sourcePath, String targetPath) async {
+    try {
+      await client.rename(sourcePath, targetPath, false);
+      return;
+    } catch (_) {
+      final sourceGone = !await _remoteEntryExists(sourcePath);
+      final targetPresent = await _remoteEntryExists(targetPath);
+      if (!sourceGone || !targetPresent) {
+        rethrow;
+      }
+    }
+  }
+
   Future<void> _quarantineRemoteFile({
     required String sourcePath,
     required String quarantinePath,
     required String description,
   }) async {
     try {
-      await client.rename(sourcePath, quarantinePath, false);
+      await _moveRemoteFile(sourcePath, quarantinePath);
       KazumiLogger().w('WebDav: moved invalid $description to $quarantinePath');
     } catch (e, stackTrace) {
       KazumiLogger().w(

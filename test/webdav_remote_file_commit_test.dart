@@ -41,7 +41,7 @@ void main() {
     },
   );
 
-  test('falls back to delete + move when overwrite MOVE is rejected', () async {
+  test('falls back to a direct PUT when overwrite MOVE is rejected', () async {
     final remote = _FakeRemote({destinationPath: 'old-content'});
 
     await _commit(
@@ -58,6 +58,8 @@ void main() {
     );
 
     expect(remote.files[destinationPath], 'new-content');
+    // 旧文件不应在替换前被删除。
+    expect(remote.removed, isNot(contains(destinationPath)));
   });
 
   test('falls back to a direct upload when MOVE is unsupported', () async {
@@ -86,6 +88,9 @@ void main() {
     );
 
     expect(remote.files[temporaryPath], 'new-content');
+    // 所有策略都失败时，旧的目标文件仍然保留。
+    expect(remote.files[destinationPath], 'old-content');
+    expect(remote.removed, isNot(contains(destinationPath)));
   });
 }
 
@@ -105,6 +110,7 @@ Future<void> _commit(
       if (remote.files.remove(path) == null) {
         throw StateError('404 $path');
       }
+      remote.removed.add(path);
     },
     uploadFromFile: (source, destination) async {
       if (failUploadToDestination && destination == destinationPath) {
@@ -121,4 +127,5 @@ class _FakeRemote {
   _FakeRemote(Map<String, String> initial) : files = Map.of(initial);
 
   final Map<String, String> files;
+  final List<String> removed = [];
 }

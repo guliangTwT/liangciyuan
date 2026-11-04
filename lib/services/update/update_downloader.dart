@@ -6,6 +6,8 @@ import 'package:dio/dio.dart';
 import 'package:kazumi/request/clients/download_http_client.dart';
 import 'package:kazumi/request/core/network_exception.dart';
 import 'package:kazumi/services/logging/logger.dart';
+import 'package:kazumi/services/update/update_download_mirrors.dart';
+import 'package:kazumi/services/update/parallel_downloader.dart';
 import 'package:kazumi/services/update/update_download_source.dart';
 import 'package:kazumi/utils/crypto.dart';
 
@@ -150,6 +152,11 @@ Future<double> _probeUpdateSource(String url, CancelToken parent) async {
 
 /// Reuses a verified cached file; otherwise downloads into a private temp
 /// directory and only moves the file to [filePath] after the hash matches.
+///
+/// Download strategy: measure every candidate source in parallel, pick the
+/// fastest, then pull the file with 8 concurrent ranged chunks (mirrors
+/// throttle per-connection, so parallelism is the only way to go fast).
+/// Sources without Range support fall back to a single connection.
 Future<String> downloadUpdateFile({
   required String url,
   required String filePath,
@@ -187,23 +194,54 @@ Future<String> downloadUpdateFile({
   final downloadDir = await file.parent.createTemp('kazumi-update-');
   try {
     final partial = File('${downloadDir.path}/download.part');
-    await DownloadHttpClient.instance.download(
-      url,
-      partial.path,
+    final candidates = updateDownloadCandidates(url);
+    final scores = await measureUpdateDownloadSpeed(
+      candidates,
       cancelToken: cancelToken,
-      onReceiveProgress: (received, total) {
-        if (!cancelToken.isCancelled) onReceiveProgress(received, total);
-      },
     );
     checkCancelled();
-    final downloadedHash = await calculateFileHash(partial);
-    checkCancelled();
-    if (downloadedHash != hash) {
-      throw UpdateIntegrityException(hash, downloadedHash);
+    final ordered = _rankBySpeed(candidates, scores, url);
+    final downloader = ParallelDownloader();
+    Object? lastError;
+    for (final candidate in ordered) {
+      if (cancelToken.isCancelled) throw cancelToken.cancelError!;
+      final speed = (scores[candidate] ?? 0) / 1024;
+      KazumiLogger().i(
+        'Update: downloading from $candidate (${speed.round()} KB/s measured)',
+      );
+      try {
+        await downloader.download(
+          url: candidate,
+          savePath: partial.path,
+          cancelToken: cancelToken,
+          onProgress: (received, total) {
+            if (!cancelToken.isCancelled) onReceiveProgress(received, total);
+          },
+        );
+        checkCancelled();
+        final downloadedHash = await calculateFileHash(partial);
+        checkCancelled();
+        if (downloadedHash != hash) {
+          throw UpdateIntegrityException(hash, downloadedHash);
+        }
+        await partial.rename(filePath);
+        onReceiveProgress(1, 1);
+        return filePath;
+      } catch (e) {
+        lastError = e;
+        if (cancelToken.isCancelled) rethrow;
+        KazumiLogger().w(
+          'Update: download source failed: $candidate',
+          error: e,
+        );
+        if (await partial.exists()) {
+          try {
+            await partial.delete();
+          } catch (_) {}
+        }
+      }
     }
-    await partial.rename(filePath);
-    onReceiveProgress(1, 1);
-    return filePath;
+    throw lastError ?? Exception('下载失败');
   } finally {
     try {
       await downloadDir.delete(recursive: true);
@@ -211,4 +249,20 @@ Future<String> downloadUpdateFile({
       KazumiLogger().w('Update: temp download cleanup failed', error: e);
     }
   }
+}
+
+/// 速度优先排序；测速为 0 的源靠后，直连垫底（国内网络不可靠）。
+List<String> _rankBySpeed(
+  List<String> candidates,
+  Map<String, double> scores,
+  String url,
+) {
+  final direct = unwrapGithubMirror(url) ?? (isGithubUrl(url) ? url : null);
+  return [...candidates]..sort((a, b) {
+    final byScore = (scores[b] ?? 0).compareTo(scores[a] ?? 0);
+    if (byScore != 0) return byScore;
+    final byMirror = (a == direct ? 1 : 0).compareTo(b == direct ? 1 : 0);
+    if (byMirror != 0) return byMirror;
+    return candidates.indexOf(a).compareTo(candidates.indexOf(b));
+  });
 }

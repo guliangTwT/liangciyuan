@@ -29,7 +29,29 @@ String generateBangumiMirrorSearchSignature({
 }
 
 Future<String> calculateFileHash(File file) async {
-  final bytes = await file.readAsBytes();
-  final digest = sha256.convert(bytes);
-  return digest.toString();
+  // 流式读取：更新包可达 50MB，一次 readAsBytes 会造成内存尖峰。
+  // crypto 的 startChunkedConversion 接收 Sink<Digest>；摘要完成时回调一次。
+  final sink = _DigestSink();
+  final input = sha256.startChunkedConversion(sink);
+  await for (final chunk in file.openRead()) {
+    input.add(chunk);
+  }
+  input.close();
+  if (sink.value == null) {
+    throw StateError('哈希计算未产生结果');
+  }
+  return sink.value!;
+}
+
+/// 极简摘要 Sink：crypto 完成摘要时调用 add。
+class _DigestSink implements Sink<Digest> {
+  String? value;
+
+  @override
+  void add(Digest digest) {
+    value = digest.toString();
+  }
+
+  @override
+  void close() {}
 }

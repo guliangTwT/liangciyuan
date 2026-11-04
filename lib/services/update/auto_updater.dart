@@ -490,8 +490,9 @@ class AutoUpdater {
   ) async {
     final tempDir = await getTemporaryDirectory();
     final filePath = '${tempDir.path}/${_getFileNameFromUrl(url, version)}';
-    Future<String> download(String target) => downloadUpdateFile(
-      url: target,
+    // 测速、择优、分块并行下载与校验都由 downloadUpdateFile 内部处理。
+    return downloadUpdateFile(
+      url: url,
       filePath: filePath,
       expectedHash: expectedHash,
       cancelToken: cancelToken,
@@ -499,39 +500,6 @@ class AutoUpdater {
         _downloadProgress.value = total > 0 ? received / total : 0;
       },
     );
-    final candidates = updateDownloadCandidates(url);
-    final scores = await measureUpdateDownloadSpeed(
-      candidates,
-      cancelToken: cancelToken,
-    );
-    final direct = unwrapGithubMirror(url) ?? (isGithubUrl(url) ? url : null);
-    final ordered = [...candidates]
-      ..sort((a, b) {
-        final byScore = (scores[b] ?? 0).compareTo(scores[a] ?? 0);
-        if (byScore != 0) return byScore;
-        // 测速失败（含 0）时优先尝试加速镜像，直连放在最后。
-        final byMirror = (a == direct ? 1 : 0).compareTo(b == direct ? 1 : 0);
-        if (byMirror != 0) return byMirror;
-        return candidates.indexOf(a).compareTo(candidates.indexOf(b));
-      });
-    Object? lastError;
-    for (final candidate in ordered) {
-      if (cancelToken.isCancelled) throw cancelToken.cancelError!;
-      final speed = (scores[candidate] ?? 0) / 1024;
-      KazumiLogger().i('Update: trying $candidate (${speed.round()} KB/s)');
-      try {
-        return await download(candidate);
-      } catch (e) {
-        lastError = e;
-        if (cancelToken.isCancelled) rethrow;
-        KazumiLogger().w(
-          'Update: download source failed: $candidate',
-          error: e,
-        );
-        _downloadProgress.value = 0;
-      }
-    }
-    throw lastError ?? Exception('下载失败');
   }
 
   void _installUpdate(

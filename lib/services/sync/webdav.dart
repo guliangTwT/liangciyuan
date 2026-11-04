@@ -63,7 +63,7 @@ class WebDav {
     client.setHeaders({'accept-charset': 'utf-8'});
     client.c.options.contentType = 'application/octet-stream';
     try {
-      await client.ping();
+      await _ping();
       await _ensureRemoteDirectory(_syncRootPath);
       await _ensureLocalTempDirectory();
       initialized = true;
@@ -89,6 +89,82 @@ class WebDav {
     return _webDavOperationQueue.run(action);
   }
 
+  /// 两次远端请求之间的最小间隔，避免云盘因突发请求返回 503/429。
+  static const Duration _minRemoteRequestInterval = Duration(milliseconds: 150);
+  static const int _maxRemoteAttempts = 4;
+
+  DateTime _nextRemoteRequestAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// 408/429/5xx 与连接类错误都值得重试；4xx 业务错误立即失败。
+  static bool _isTransientRemoteError(Object error) {
+    if (error is DioException) {
+      switch (error.type) {
+        case DioExceptionType.connectionTimeout:
+        case DioExceptionType.sendTimeout:
+        case DioExceptionType.receiveTimeout:
+        case DioExceptionType.connectionError:
+          return true;
+        default:
+          break;
+      }
+      final code = error.response?.statusCode;
+      if (code != null) {
+        return code == 408 || code == 429 || code >= 500;
+      }
+    }
+    final text = error.toString();
+    return RegExp(r'\b(408|429|5\d\d)\b').hasMatch(text);
+  }
+
+  Future<void> _paceRemoteRequest() async {
+    final now = DateTime.now();
+    if (_nextRemoteRequestAt.isAfter(now)) {
+      await Future<void>.delayed(_nextRemoteRequestAt.difference(now));
+    }
+    _nextRemoteRequestAt = DateTime.now().add(_minRemoteRequestInterval);
+  }
+
+  /// 远端调用统一走这里：限速 + 瞬时错误指数退避重试。
+  Future<T> _remote<T>(Future<T> Function() action) async {
+    var delay = const Duration(seconds: 1);
+    for (var attempt = 1; ; attempt++) {
+      await _paceRemoteRequest();
+      try {
+        return await action();
+      } catch (error) {
+        if (attempt >= _maxRemoteAttempts || !_isTransientRemoteError(error)) {
+          rethrow;
+        }
+        KazumiLogger().w(
+          'WebDav: transient remote error, retry $attempt/$_maxRemoteAttempts '
+          'in ${delay.inMilliseconds}ms',
+          error: error,
+        );
+        await Future<void>.delayed(delay);
+        final next = delay.inMilliseconds * 2;
+        delay = Duration(milliseconds: next > 8000 ? 8000 : next);
+      }
+    }
+  }
+
+  Future<List<webdav.File>> _readDir(String path) =>
+      _remote(() => client.readDir(path));
+
+  Future<void> _downloadFile(String remotePath, String localPath) =>
+      _remote(() => client.read2File(remotePath, localPath));
+
+  Future<void> _uploadFile(String localPath, String remotePath) =>
+      _remote(() => client.writeFromFile(localPath, remotePath));
+
+  Future<void> _removeFile(String path) => _remote(() => client.remove(path));
+
+  Future<void> _renameFile(String from, String to, bool overwrite) =>
+      _remote(() => client.rename(from, to, overwrite));
+
+  Future<void> _mkdir(String path) => _remote(() => client.mkdir(path));
+
+  Future<void> _ping() => _remote(() => client.ping());
+
   bool get isDanmakuShieldSyncEnabled =>
       GStorage.getSetting(SettingsKeys.webDavEnable) &&
       GStorage.getSetting(SettingsKeys.webDavEnableDanmakuShield);
@@ -96,12 +172,16 @@ class WebDav {
   /// 把底层异常转成用户可读的一句话，便于定位同步失败的具体原因。
   static String describeError(Object error) {
     if (error is NetworkException) {
+      final code = error.statusCode;
+      if (code != null) {
+        return _describeStatus(code);
+      }
       return error.message;
     }
     if (error is DioException) {
       final code = error.response?.statusCode;
       if (code != null) {
-        return code == 401 || code == 403 ? '账号或密码错误（$code）' : '服务器返回 $code';
+        return _describeStatus(code);
       }
       return '网络异常，请检查连接';
     }
@@ -113,7 +193,36 @@ class WebDav {
     if (text.isEmpty) {
       return '未知错误';
     }
+    final status = RegExp(
+      r'(?:status(?:\s*code)?|code)[^\d]{0,12}(\d{3})',
+      caseSensitive: false,
+    ).firstMatch(text)?.group(1);
+    if (status != null) {
+      return _describeStatus(int.parse(status));
+    }
     return text.length > 120 ? '${text.substring(0, 120)}…' : text;
+  }
+
+  static String _describeStatus(int code) {
+    if (code == 401 || code == 403) {
+      return '账号或密码错误（$code）';
+    }
+    if (code == 404) {
+      return '服务器路径不存在（404），请检查 WebDAV 地址';
+    }
+    if (code == 408) {
+      return '请求超时（408），请检查网络后重试';
+    }
+    if (code == 429) {
+      return '请求过于频繁（429），可能是云盘限流，请稍后重试';
+    }
+    if (code == 503) {
+      return '服务器暂时不可用（503），可能是云盘限流或维护，请稍后重试';
+    }
+    if (code >= 500) {
+      return '服务器错误（$code），请稍后重试';
+    }
+    return '服务器返回 $code';
   }
 
   Future<void> syncDanmakuShield({
@@ -132,7 +241,7 @@ class WebDav {
       );
       try {
         var remote = DanmakuShieldSyncState();
-        final entries = await client.readDir(_danmakuShieldPath);
+        final entries = await _readDir(_danmakuShieldPath);
         var index = 0;
         for (final entry in entries) {
           final name = entry.name ?? '';
@@ -141,7 +250,7 @@ class WebDav {
             continue;
           }
           final file = File('${runDirectory.path}/remote-${index++}.json');
-          await client.read2File('$_danmakuShieldPath/$name', file.path);
+          await _downloadFile('$_danmakuShieldPath/$name', file.path);
           // 任意远端文件损坏都中止整次同步：宁可不同步，也不覆盖远端数据。
           remote = remote.merge(
             DanmakuShieldSyncState.decode(await file.readAsString()),
@@ -214,7 +323,7 @@ class WebDav {
     if (await existingFile.exists()) {
       await existingFile.delete();
     }
-    await client.read2File('$_syncRootPath/$fileName', existingFile.path);
+    await _downloadFile('$_syncRootPath/$fileName', existingFile.path);
   }
 
   Future<void> syncCollectibles() async {
@@ -226,7 +335,7 @@ class WebDav {
     List<CollectedBangumi> remoteCollectibles = [];
     List<CollectedBangumiChange> remoteChanges = [];
 
-    final files = await client.readDir(_syncRootPath);
+    final files = await _readDir(_syncRootPath);
     final collectiblesExists = files.any(
       (file) => file.name == 'collectibles.tmp',
     );
@@ -522,7 +631,7 @@ class WebDav {
     required String deviceId,
   }) async {
     File? snapshotFile;
-    final historyEntries = await client.readDir(_historyRootPath);
+    final historyEntries = await _readDir(_historyRootPath);
     final hasSnapshot = historyEntries.any(
       (file) => file.name == 'snapshot.json',
     );
@@ -530,12 +639,12 @@ class WebDav {
       snapshotFile = File(
         '${runDirectory.path}${Platform.pathSeparator}remote-snapshot.json',
       );
-      await client.read2File(_historySnapshotPath, snapshotFile.path);
+      await _downloadFile(_historySnapshotPath, snapshotFile.path);
     }
 
     final eventFiles = <_DownloadedHistoryEventFile>[];
     var currentDeviceLogOversized = false;
-    final changeEntries = await client.readDir(_historyChangesPath);
+    final changeEntries = await _readDir(_historyChangesPath);
     var index = 0;
     for (final entry in changeEntries) {
       final name = entry.name ?? '';
@@ -546,7 +655,7 @@ class WebDav {
         '${runDirectory.path}${Platform.pathSeparator}'
         'remote-events-${index++}.jsonl',
       );
-      await client.read2File('$_historyChangesPath/$name', localFile.path);
+      await _downloadFile('$_historyChangesPath/$name', localFile.path);
       if (name == '$deviceId.jsonl' &&
           await localFile.length() >
               HistorySyncService.checkpointLogThresholdBytes) {
@@ -596,11 +705,11 @@ class WebDav {
       sourceFilePath: sourceFilePath,
       temporaryPath: temporaryPath,
       destinationPath: destinationPath,
-      remove: (path) => client.remove(path),
+      remove: (path) => _removeFile(path),
       uploadFromFile: (sourceFilePath, remotePath) =>
-          client.writeFromFile(sourceFilePath, remotePath),
+          _uploadFile(sourceFilePath, remotePath),
       rename: (sourcePath, targetPath) =>
-          client.rename(sourcePath, targetPath, true),
+          _renameFile(sourcePath, targetPath, true),
       exists: _remoteEntryExists,
     );
   }
@@ -608,7 +717,7 @@ class WebDav {
   Future<void> _removeDeviceHistoryChanges(String deviceId) async {
     final remotePath = '$_historyChangesPath/$deviceId.jsonl';
     try {
-      await client.remove(remotePath);
+      await _removeFile(remotePath);
     } catch (e) {
       KazumiLogger().w(
         'WebDav: failed to remove checkpointed device history log',
@@ -644,7 +753,7 @@ class WebDav {
 
   Future<void> _ensureRemoteDirectory(String path) async {
     try {
-      await client.mkdir(path);
+      await _mkdir(path);
     } catch (e) {
       if (!await _remoteEntryExists(path)) {
         rethrow;
@@ -660,7 +769,7 @@ class WebDav {
     final parent = index <= 0 ? '/' : normalized.substring(0, index);
     final name = normalized.substring(index + 1);
     try {
-      final files = await client.readDir(parent);
+      final files = await _readDir(parent);
       return files.any((file) => file.name == name);
     } catch (_) {
       return false;
@@ -668,7 +777,7 @@ class WebDav {
   }
 
   Future<bool> _tryImportLegacyHistory(Directory runDirectory) async {
-    final syncEntries = await client.readDir(_syncRootPath);
+    final syncEntries = await _readDir(_syncRootPath);
     if (!syncEntries.any((file) => file.name == 'histories.tmp')) {
       return false;
     }
@@ -678,7 +787,7 @@ class WebDav {
       '${runDirectory.path}${Platform.pathSeparator}$fileName',
     );
     try {
-      await client.read2File('$_syncRootPath/$fileName', existingFile.path);
+      await _downloadFile('$_syncRootPath/$fileName', existingFile.path);
     } catch (e, stackTrace) {
       KazumiLogger().w(
         'WebDav: failed to download legacy history backup, skipping import',
@@ -717,7 +826,7 @@ class WebDav {
   /// MOVE 的兼容封装：部分服务器用 200 表示成功，客户端会误报失败。
   Future<void> _moveRemoteFile(String sourcePath, String targetPath) async {
     try {
-      await client.rename(sourcePath, targetPath, false);
+      await _renameFile(sourcePath, targetPath, false);
       return;
     } catch (_) {
       final sourceGone = !await _remoteEntryExists(sourcePath);
@@ -747,7 +856,7 @@ class WebDav {
 
   Future<void> ping() async {
     try {
-      await client.ping();
+      await _ping();
     } catch (e) {
       KazumiLogger().e('WebDav: WebDav ping failed', error: e);
       rethrow;

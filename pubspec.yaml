@@ -1,7 +1,7 @@
 name: kazumi
 description: "凉次元：改编自 Kazumi 的跨平台番剧探索与播放应用。"
 publish_to: "none"
-version: 3.0.11+30011
+version: 3.0.12+30012
 
 environment:
   sdk: ">=3.10.0 <4.0.0"

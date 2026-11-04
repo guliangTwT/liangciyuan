@@ -16,6 +16,11 @@
 - 删除 `BangumiSyncService`、`BangumiSyncPriority`、`BangumiCollection` 模型及对应的同步设置项（`bangumiSyncEnable`、`bangumiSyncPriority`、`bangumiImmediateSyncToastEnable`）。
 - 删除 `BangumiApi.getBangumiCollectibles` / `updateBangumiByType` 与相关测试。
 
+### 升级说明
+
+- 3.0.1～3.0.7 的安装包使用调试签名，**从这些版本升级到 3.0.8/3.0.9 需要先卸载旧版再安装**（仅此一次）。
+- 从 3.0.8 起 Android 安装包使用固定的正式发布密钥签名，**3.0.8 及之后的版本可以正常覆盖升级**，本地数据会保留。
+
 ### 说明
 
 - 已同步到 Bangumi 的追番状态不会被修改或删除，只是应用不再读写它；本地收藏与 WebDAV 备份不受影响。

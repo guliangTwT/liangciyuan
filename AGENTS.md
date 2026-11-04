@@ -26,3 +26,19 @@
 - Release 说明由工作流自动从 `CHANGELOG.md` 提取同名 `## <tag>` 小节；
   因此 CHANGELOG 的标题必须与 tag 完全一致，否则说明会退化为默认提示。
 - 不要用 `gh release create` 手工补发，统一走 tag 触发，保证渠道一致。
+
+## Android 发布签名（重要）
+
+- 密钥文件：`android/liangciyuan-release.jks`，已被 `.gitignore` 排除，**绝不入库**。
+  仓库外必须保留备份，丢失后无法再覆盖升级，只能让用户卸载重装。
+- 密钥别名：`liangciyuan`（4096 位 RSA，有效期至 2126 年）。
+- 证书 SHA-256：`AC:EC:CE:98:A5:9C:BE:05:B7:2C:DF:EB:A7:1D:DA:59:8F:1D:6C:A0:E6:D9:36:9C:7C:16:F5:7D:C2:26:48:B1`
+- CI 通过以下仓库 Secrets 读取，缺任意一个都会退回调试签名并打警告：
+  - `ANDROID_KEYSTORE_BASE64`：`base64 -w0 android/liangciyuan-release.jks`
+  - `ANDROID_KEYSTORE_PASSWORD`
+  - `ANDROID_KEY_ALIAS`
+  - `ANDROID_KEY_PASSWORD`
+- 发布后必须确认 Android 作业日志里是
+  `certificate DN: CN=Liangciyuan, OU=Release, ...`；若是 `CN=Android Debug`
+  说明密钥未生效，该包不能作为正式发布。
+- 更换密钥属于破坏性操作：所有已安装用户都必须卸载重装。非必要不要更换。

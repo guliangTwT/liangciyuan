@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
 import 'package:kazumi/request/clients/download_http_client.dart';
@@ -8,11 +10,14 @@ import 'package:kazumi/services/update/update_download_source.dart';
 import 'package:kazumi/utils/crypto.dart';
 
 String getUpdateDownloadUrlFromAsset(
-    Map<String, dynamic>? asset, UpdateDownloadSource source) {
-  final url = asset?[switch (source) {
-    UpdateDownloadSource.mirror => 'mirror_download_url',
-    UpdateDownloadSource.github => 'browser_download_url',
-  }];
+  Map<String, dynamic>? asset,
+  UpdateDownloadSource source,
+) {
+  final url =
+      asset?[switch (source) {
+        UpdateDownloadSource.mirror => 'mirror_download_url',
+        UpdateDownloadSource.github => 'browser_download_url',
+      }];
   return url is String ? url.trim() : '';
 }
 
@@ -40,13 +45,17 @@ Iterable<Object> _errorChain(Object error) sync* {
 }
 
 String describeUpdateDownloadError(Object error, StackTrace stackTrace) {
-  final causes = _errorChain(error).map((cause) => switch (cause) {
-        DioException() => 'DioException(type=${cause.type.name}, '
+  final causes = _errorChain(error).map(
+    (cause) => switch (cause) {
+      DioException() =>
+        'DioException(type=${cause.type.name}, '
             'status=${cause.response?.statusCode}, message=${cause.message})',
-        _ => '${cause.runtimeType}: $cause',
-      });
-  final stack =
-      error is NetworkException ? error.stackTrace ?? stackTrace : stackTrace;
+      _ => '${cause.runtimeType}: $cause',
+    },
+  );
+  final stack = error is NetworkException
+      ? error.stackTrace ?? stackTrace
+      : stackTrace;
   return '${causes.join(' -> ')} | stack=$stack';
 }
 
@@ -67,25 +76,75 @@ String getUpdateDownloadErrorMessage(Object error) {
   if (error is UpdateIntegrityException) {
     return '文件完整性验证失败，可能是网络传输错误';
   }
-  final networkType =
-      causes.whereType<NetworkException>().firstOrNull?.type;
+  final networkType = causes.whereType<NetworkException>().firstOrNull?.type;
   switch (networkType) {
     case NetworkExceptionType.connectionTimeout ||
-          NetworkExceptionType.receiveTimeout ||
-          NetworkExceptionType.sendTimeout:
+        NetworkExceptionType.receiveTimeout ||
+        NetworkExceptionType.sendTimeout:
       return '下载超时，请稍后重试';
     case NetworkExceptionType.connectionError ||
-          NetworkExceptionType.badResponse ||
-          NetworkExceptionType.badCertificate:
+        NetworkExceptionType.badResponse ||
+        NetworkExceptionType.badCertificate:
       return '网络连接错误';
     default:
-      if (causes.any((cause) =>
-          cause is SocketException ||
-          cause is HttpException ||
-          cause is HandshakeException)) {
+      if (causes.any(
+        (cause) =>
+            cause is SocketException ||
+            cause is HttpException ||
+            cause is HandshakeException,
+      )) {
         return '网络连接错误';
       }
       return '下载失败';
+  }
+}
+
+/// Measures rough throughput for every candidate with a small ranged request.
+/// Probing runs in parallel and never throws; failed sources score 0.
+Future<Map<String, double>> measureUpdateDownloadSpeed(
+  List<String> candidates, {
+  required CancelToken cancelToken,
+}) async {
+  final scores = <String, double>{};
+  await Future.wait(
+    candidates.map((url) async {
+      scores[url] = await _probeUpdateSource(url, cancelToken);
+    }),
+  );
+  return scores;
+}
+
+Future<double> _probeUpdateSource(String url, CancelToken parent) async {
+  if (parent.isCancelled) return 0;
+  final token = CancelToken();
+  unawaited(
+    parent.whenCancel.then((_) {
+      if (!token.isCancelled) token.cancel();
+    }),
+  );
+  final stopwatch = Stopwatch()..start();
+  var bytes = 0;
+  try {
+    final response = await DownloadHttpClient.instance.getStream(
+      url,
+      headers: const {'range': 'bytes=0-262143'},
+      receiveTimeout: const Duration(seconds: 6),
+      cancelToken: token,
+    );
+    await for (final chunk in response.data!.stream) {
+      bytes += chunk.length;
+      if (bytes >= 256 * 1024 ||
+          stopwatch.elapsed > const Duration(seconds: 6)) {
+        break;
+      }
+    }
+    final elapsed = math.max(stopwatch.elapsedMilliseconds, 1);
+    return bytes * 1000 / elapsed;
+  } catch (_) {
+    return 0;
+  } finally {
+    stopwatch.stop();
+    if (!token.isCancelled) token.cancel();
   }
 }
 

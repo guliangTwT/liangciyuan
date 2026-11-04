@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
@@ -7,6 +8,7 @@ import 'package:kazumi/bean/dialog/update_available_dialog.dart';
 import 'package:kazumi/request/clients/download_http_client.dart';
 import 'package:kazumi/request/config/api_endpoints.dart';
 import 'package:kazumi/services/logging/logger.dart';
+import 'package:kazumi/services/update/update_download_mirrors.dart';
 import 'package:kazumi/services/update/update_download_source.dart';
 import 'package:kazumi/services/update/update_downloader.dart';
 import 'package:kazumi/services/storage/storage.dart';
@@ -112,9 +114,9 @@ List<String> getUpdateFilePatterns(InstallationType installationType) {
 /// GitHub 直连在国内网络环境不可靠；gh-proxy.org 可以代理 API 与资产下载。
 Uri? githubFallbackUrl(String url) =>
     url.startsWith('https://github.com/') ||
-            url.startsWith('https://api.github.com/')
-        ? Uri.parse('https://gh-proxy.org/$url')
-        : null;
+        url.startsWith('https://api.github.com/')
+    ? Uri.parse('https://gh-proxy.org/$url')
+    : null;
 
 class AutoUpdater {
   static final AutoUpdater _instance = AutoUpdater._internal();
@@ -196,23 +198,33 @@ class AutoUpdater {
 
   /// GitHub 直连在国内网络环境不可靠；gh-proxy.org 可以代理 API 与资产下载。
   Future<Map<String, dynamic>> _latestRelease() async {
-    final primary = ApiEndpoints.latestAppMirror;
-    final fallback = githubFallbackUrl(primary);
-    Object? lastError;
-    for (final url in [primary, if (fallback != null) fallback.toString()]) {
-      try {
-        final raw = await _downloadClient.getPlain(url);
-        final data = json.decode(raw);
-        if (data is! Map) {
-          throw Exception('Invalid update response');
+    final candidates = updateDownloadCandidates(ApiEndpoints.latestApp);
+    final completer = Completer<Map<String, dynamic>>();
+    var failures = 0;
+    for (final url in candidates) {
+      unawaited(() async {
+        try {
+          final raw = await _downloadClient.getPlain(
+            url,
+            receiveTimeout: const Duration(seconds: 8),
+          );
+          final data = json.decode(raw);
+          if (data is! Map) {
+            throw Exception('Invalid update response');
+          }
+          if (!completer.isCompleted) {
+            completer.complete(Map<String, dynamic>.from(data));
+          }
+        } catch (e) {
+          failures++;
+          KazumiLogger().w('Update: release query failed for $url', error: e);
+          if (failures == candidates.length && !completer.isCompleted) {
+            completer.completeError(Exception('Update check failed'));
+          }
         }
-        return Map<String, dynamic>.from(data);
-      } catch (e) {
-        lastError = e;
-        KazumiLogger().w('Update: release query failed for $url', error: e);
-      }
+      }());
     }
-    throw lastError ?? Exception('Update check failed');
+    return completer.future;
   }
 
   Future<void> autoCheckForUpdates() async {
@@ -487,18 +499,31 @@ class AutoUpdater {
         _downloadProgress.value = total > 0 ? received / total : 0;
       },
     );
-    try {
-      return await download(url);
-    } catch (e) {
-      final fallback = githubFallbackUrl(url);
-      if (fallback == null || cancelToken.isCancelled) rethrow;
-      KazumiLogger().w(
-        'Update: retrying asset download via fallback mirror',
-        error: e,
-      );
-      _downloadProgress.value = 0;
-      return download(fallback.toString());
+    final candidates = updateDownloadCandidates(url);
+    final scores = await measureUpdateDownloadSpeed(
+      candidates,
+      cancelToken: cancelToken,
+    );
+    final ordered = [...candidates]
+      ..sort((a, b) => (scores[b] ?? 0).compareTo(scores[a] ?? 0));
+    Object? lastError;
+    for (final candidate in ordered) {
+      if (cancelToken.isCancelled) throw cancelToken.cancelError!;
+      final speed = (scores[candidate] ?? 0) / 1024;
+      KazumiLogger().i('Update: trying $candidate (${speed.round()} KB/s)');
+      try {
+        return await download(candidate);
+      } catch (e) {
+        lastError = e;
+        if (cancelToken.isCancelled) rethrow;
+        KazumiLogger().w(
+          'Update: download source failed: $candidate',
+          error: e,
+        );
+        _downloadProgress.value = 0;
+      }
     }
+    throw lastError ?? Exception('下载失败');
   }
 
   void _installUpdate(

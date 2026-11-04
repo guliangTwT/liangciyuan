@@ -294,7 +294,14 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                BangumiAvatar(imageUrl: comment.avatarUrl),
+                GestureDetector(
+                  onTap: comment.userId <= 0
+                      ? null
+                      : () => context.pushNamed(
+                          '/settings/profile/${comment.userId}',
+                        ),
+                  child: BangumiAvatar(imageUrl: comment.avatarUrl),
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(

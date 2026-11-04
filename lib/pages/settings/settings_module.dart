@@ -18,6 +18,7 @@ import 'package:kazumi/pages/settings/settings_page.dart';
 import 'package:kazumi/pages/settings/storage_settings.dart';
 import 'package:kazumi/pages/settings/super_resolution_settings.dart';
 import 'package:kazumi/pages/account/account_page.dart';
+import 'package:kazumi/pages/account/account_profile_page.dart';
 import 'package:kazumi/pages/settings/theme_settings_page.dart';
 import 'package:kazumi/pages/settings/update_settings.dart';
 import 'package:kazumi/request/config/api_endpoints.dart';
@@ -32,6 +33,12 @@ final settingsModule = createModule(
         sub
           ..route('/', child: (context, state) => const SettingsIndexPage())
           ..route('/account', child: (context, state) => const AccountPage())
+          ..route(
+            '/profile/:userId',
+            child: (context, state) => AccountProfilePage(
+              userId: int.tryParse(state.params['userId'] ?? '') ?? 0,
+            ),
+          )
           ..route(
             '/update',
             child: (context, state) => const UpdateSettingsPage(),

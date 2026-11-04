@@ -389,6 +389,26 @@ class AccountApi {
       spoiler: spoiler,
     );
   }
+
+  /// 他人公开主页：昵称、头像、吐槽数与最近发布的吐槽。
+  Future<AccountUserProfile> getUserProfile(int userId) async {
+    final body = await _request('GET', '/v1/users/$userId');
+    final user = body['user'];
+    if (user is! Map<String, dynamic>) {
+      throw const AccountException('读取用户主页失败');
+    }
+    final comments = body['comments'];
+    return AccountUserProfile.fromJson(
+      user,
+      (body['avatarUrl'] ?? '').toString(),
+      (body['commentCount'] as num?)?.toInt() ?? 0,
+      [
+        if (comments is List)
+          for (final item in comments)
+            if (item is Map<String, dynamic>) AccountComment.fromJson(item),
+      ],
+    );
+  }
 }
 
 class AccountCommentPage {
@@ -431,6 +451,40 @@ class AccountComment {
       nickname: (map['nickname'] ?? '').toString(),
       avatarUrl: (map['avatarUrl'] ?? '').toString(),
       mine: json['mine'] == true,
+    );
+  }
+}
+
+class AccountUserProfile {
+  const AccountUserProfile({
+    required this.id,
+    required this.nickname,
+    required this.avatarUrl,
+    required this.joinedAt,
+    required this.commentCount,
+    required this.comments,
+  });
+
+  final int id;
+  final String nickname;
+  final String avatarUrl;
+  final int joinedAt;
+  final int commentCount;
+  final List<AccountComment> comments;
+
+  factory AccountUserProfile.fromJson(
+    Map<String, dynamic> json,
+    String avatarUrl,
+    int commentCount,
+    List<AccountComment> comments,
+  ) {
+    return AccountUserProfile(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      nickname: (json['nickname'] ?? '').toString(),
+      avatarUrl: avatarUrl,
+      joinedAt: (json['createdAt'] as num?)?.toInt() ?? 0,
+      commentCount: commentCount,
+      comments: comments,
     );
   }
 }

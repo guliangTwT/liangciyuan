@@ -1,0 +1,286 @@
+import 'package:flutter/material.dart';
+
+import 'package:kazumi/bean/card/account_comment_card.dart';
+import 'package:kazumi/bean/widget/bangumi_avatar.dart';
+import 'package:kazumi/bean/widget/error_widget.dart';
+import 'package:kazumi/modules/my/watch_stats.dart';
+import 'package:kazumi/services/account/account_api.dart';
+import 'package:kazumi/utils/date_time.dart';
+
+/// 抖音式头部：大头像 + 昵称 + 加入时间，下方统计行。
+class ProfileHeaderView extends StatelessWidget {
+  const ProfileHeaderView({
+    super.key,
+    required this.avatarUrl,
+    required this.nickname,
+    required this.joinedAt,
+    required this.subtitle,
+    this.onAvatarTap,
+  });
+
+  final String avatarUrl;
+  final String nickname;
+  final int? joinedAt;
+  final String subtitle;
+  final VoidCallback? onAvatarTap;
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final theme = Theme.of(context).textTheme;
+    final joinedText = joinedAt == null || joinedAt! <= 0
+        ? null
+        : '加入于 ${formatDateTime(DateTime.fromMillisecondsSinceEpoch(joinedAt! * 1000))}';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              GestureDetector(
+                onTap: onAvatarTap,
+                child: Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [colors.primary, colors.tertiary],
+                    ),
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: colors.surface,
+                    ),
+                    child: ClipOval(
+                      child: SizedBox(
+                        width: 88,
+                        height: 88,
+                        child: avatarUrl.isEmpty
+                            ? Icon(
+                                Icons.person_rounded,
+                                size: 48,
+                                color: colors.onSurfaceVariant,
+                              )
+                            : BangumiAvatar(imageUrl: avatarUrl, radius: 44),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 18),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      nickname.isEmpty ? '凉次元用户' : nickname,
+                      style: theme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (subtitle.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: theme.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                    if (joinedText != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        joinedText,
+                        style: theme.labelSmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 观看足迹头部卡片（个人主页用），点击进入历史记录页。
+class ProfileStatsBar extends StatelessWidget {
+  const ProfileStatsBar({
+    super.key,
+    required this.stats,
+    required this.onOpenHistory,
+  });
+
+  final WatchStats stats;
+  final VoidCallback onOpenHistory;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onOpenHistory,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          decoration: BoxDecoration(
+            color: colors.primaryContainer,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.sentiment_satisfied_alt_rounded,
+                color: colors.onPrimaryContainer,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '观看足迹',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: colors.onPrimaryContainer,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              _stat(colors, '${stats.watchedBangumiCount} 部番剧'),
+              const SizedBox(width: 12),
+              _stat(colors, '${stats.watchedEpisodeCount} 集'),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: colors.onPrimaryContainer,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _stat(ColorScheme colors, String text) {
+    return Text(text, style: TextStyle(color: colors.onPrimaryContainer));
+  }
+}
+
+/// 他人主页：展示公开资料与其发布的吐槽。
+class AccountProfilePage extends StatefulWidget {
+  const AccountProfilePage({super.key, required this.userId});
+
+  final int userId;
+
+  @override
+  State<AccountProfilePage> createState() => _AccountProfilePageState();
+}
+
+class _AccountProfilePageState extends State<AccountProfilePage> {
+  AccountUserProfile? _profile;
+  bool _loading = true;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _failed = false;
+    });
+    try {
+      final profile = await AccountApi.instance.getUserProfile(widget.userId);
+      if (!mounted) return;
+      setState(() {
+        _profile = profile;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _failed = true;
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final profile = _profile;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          profile == null
+              ? '用户主页'
+              : (profile.nickname.isEmpty ? '凉次元用户' : profile.nickname),
+        ),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _failed
+          ? GeneralErrorWidget(
+              title: '用户主页加载失败',
+              errMsg: '请检查网络后重试。',
+              onRetry: _load,
+            )
+          : ListView(
+              padding: const EdgeInsets.only(bottom: 32),
+              children: [
+                ProfileHeaderView(
+                  avatarUrl: profile?.avatarUrl ?? '',
+                  nickname: profile?.nickname ?? '',
+                  joinedAt: profile?.joinedAt,
+                  subtitle: '${profile?.commentCount ?? 0} 条吐槽',
+                ),
+                const SizedBox(height: 8),
+                if (profile == null || profile.comments.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 48),
+                    child: Center(
+                      child: Text(
+                        '还没有发布过吐槽',
+                        style: TextStyle(color: colors.onSurfaceVariant),
+                      ),
+                    ),
+                  )
+                else
+                  for (final comment in profile.comments)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: AccountCommentCard(comment),
+                    ),
+              ],
+            ),
+    );
+  }
+}
+
+/// 「个人主页」标签页的头部数据（自己登录的账号）。
+class ProfileHeaderData {
+  const ProfileHeaderData({
+    required this.avatarUrl,
+    required this.nickname,
+    required this.joinedAt,
+    required this.subtitle,
+    required this.isOwn,
+  });
+
+  final String avatarUrl;
+  final String nickname;
+
+  /// 账号用户 ID；未登录为 null。
+  final int? joinedAt;
+  final String subtitle;
+  final bool isOwn;
+}

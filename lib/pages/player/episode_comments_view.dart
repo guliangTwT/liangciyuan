@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/card/account_comment_card.dart';
 import 'package:kazumi/bean/widget/error_widget.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
@@ -123,6 +124,8 @@ class EpisodeCommentsView extends StatelessWidget {
                         child: AccountCommentCard(
                           comments[index].comment.toAccountComment(),
                           compact: true,
+                          onAvatarTap: (userId) =>
+                              context.pushNamed('/settings/profile/$userId'),
                         ),
                       ),
                     ),

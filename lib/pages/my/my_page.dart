@@ -5,8 +5,10 @@ import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/appbar/sys_app_bar.dart';
 import 'package:kazumi/pages/menu/route_visibility.dart';
 import 'package:kazumi/navigation.dart';
+import 'package:kazumi/pages/account/account_profile_page.dart';
 import 'package:kazumi/pages/my/my_controller.dart';
 import 'package:kazumi/pages/my/my_space_view.dart';
+import 'package:kazumi/services/account/account_service.dart';
 
 class MyPage extends StatefulWidget {
   const MyPage({super.key, required this.controller});
@@ -33,6 +35,8 @@ class _MyPageState extends State<MyPage> {
       oldWidget.controller.detach();
       widget.controller.attach();
     }
+    // 登录/资料变更后刷新头部。
+    setState(() {});
   }
 
   @override
@@ -46,6 +50,7 @@ class _MyPageState extends State<MyPage> {
     _attached = value;
     if (value) {
       widget.controller.attach();
+      AccountService().ensureLoaded();
     } else {
       widget.controller.detach();
     }
@@ -66,6 +71,7 @@ class _MyPageState extends State<MyPage> {
 
   @override
   Widget build(BuildContext context) {
+    final account = AccountService()..ensureLoaded();
     return Scaffold(
       appBar: SysAppBar(
         toolbarHeight: 72,
@@ -77,7 +83,7 @@ class _MyPageState extends State<MyPage> {
               )
             : null,
         title: Text(
-          '我的',
+          '个人主页',
           style: Theme.of(
             context,
           ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
@@ -96,8 +102,28 @@ class _MyPageState extends State<MyPage> {
         top: false,
         bottom: false,
         child: Observer(
-          builder: (context) =>
-              MySpaceView(stats: widget.controller.watchStats, onOpen: _open),
+          builder: (context) {
+            final stats = widget.controller.watchStats;
+            final loggedIn = account.loggedIn;
+            return MySpaceView(
+              stats: stats,
+              onOpen: _open,
+              profile: ProfileHeaderData(
+                avatarUrl: account.avatarUrl,
+                nickname: loggedIn ? account.nickname : '',
+                joinedAt: null,
+                subtitle: loggedIn
+                    ? '看过 ${stats.watchedBangumiCount} 部番剧 · ${stats.watchedEpisodeCount} 集'
+                    : '登录凉次元账号，同步收藏与观看足迹',
+                isOwn: true,
+              ),
+              onProfileTap: loggedIn
+                  ? () => context.pushNamed(
+                      '/settings/profile/${account.profile?.id ?? 0}',
+                    )
+                  : () => context.pushNamed('/settings/account'),
+            );
+          },
         ),
       ),
     );

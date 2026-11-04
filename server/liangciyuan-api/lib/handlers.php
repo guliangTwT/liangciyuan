@@ -628,3 +628,51 @@ function handle_comments_delete(Request $request): void
         ->execute([now(), $id]);
     Response::ok();
 }
+
+// ---- 用户主页 ----
+
+function handle_user_profile(Request $request): void
+{
+    $id = (int) ($request->params['id'] ?? 0);
+    if ($id <= 0) {
+        throw new HttpException(400, '用户 ID 不正确');
+    }
+    $pdo = db();
+    $stmt = $pdo->prepare('SELECT * FROM users WHERE id = ?');
+    $stmt->execute([$id]);
+    $user = $stmt->fetch();
+    if (!$user) {
+        throw new HttpException(400, '用户不存在');
+    }
+
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(*) AS c FROM comments WHERE user_id = ? AND deleted = 0'
+    );
+    $stmt->execute([$id]);
+    $commentCount = (int) ($stmt->fetch()['c'] ?? 0);
+
+    // 该用户最近发布的吐槽（公开主页展示，倒序取前 20 条）。
+    $stmt = $pdo->prepare(
+        'SELECT c.*, u.nickname, u.avatar
+         FROM comments c JOIN users u ON u.id = c.user_id
+         WHERE c.user_id = ? AND c.deleted = 0
+         ORDER BY c.created_at DESC, c.id DESC
+         LIMIT 20'
+    );
+    $stmt->execute([$id]);
+
+    // 公开主页只暴露昵称、头像、吐槽数与最近吐槽。
+    Response::ok([
+        'user' => [
+            'id' => (int) $user['id'],
+            'nickname' => (string) $user['nickname'],
+            'createdAt' => (int) $user['created_at'],
+        ],
+        'avatarUrl' => avatar_url($user),
+        'commentCount' => $commentCount,
+        'comments' => array_map(
+            static fn (array $row): array => comment_view($row, 0),
+            $stmt->fetchAll()
+        ),
+    ]);
+}

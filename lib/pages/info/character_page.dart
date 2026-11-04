@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 
@@ -199,7 +200,11 @@ class _CharacterPageState extends State<CharacterPage> {
             keepAlive: true,
             child: IndexedSemantics(
               index: index,
-              child: AccountCommentCard(_comments[index]),
+              child: AccountCommentCard(
+                _comments[index],
+                onAvatarTap: (userId) =>
+                    context.pushNamed('/settings/profile/$userId'),
+              ),
             ),
           );
         },

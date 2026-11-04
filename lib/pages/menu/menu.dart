@@ -21,7 +21,7 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
   DateTime? _lastExitPromptAt;
   bool _isCovered = false;
 
-  static const _labels = ['推荐', '时间表', '追番', '我的'];
+  static const _labels = ['推荐', '时间表', '追番', '个人主页'];
   static const _icons = [
     Icons.auto_awesome_rounded,
     Icons.calendar_month_rounded,

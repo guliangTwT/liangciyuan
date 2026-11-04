@@ -7,10 +7,18 @@ import 'package:skeletonizer/skeletonizer.dart';
 
 /// 自建账号服务的评论卡片：条目吐槽、人物吐槽与单集讨论共用。
 class AccountCommentCard extends StatelessWidget {
-  const AccountCommentCard(this.comment, {super.key, this.compact = false});
+  const AccountCommentCard(
+    this.comment, {
+    super.key,
+    this.compact = false,
+    this.onAvatarTap,
+  });
 
   final AccountComment comment;
   final bool compact;
+
+  /// 点击头像进入发布者主页；为空时不可点。
+  final void Function(int userId)? onAvatarTap;
 
   @override
   Widget build(BuildContext context) {
@@ -30,9 +38,14 @@ class AccountCommentCard extends StatelessWidget {
               Row(
                 children: [
                   ExcludeSemantics(
-                    child: BangumiAvatar(
-                      radius: compact ? 16 : 22,
-                      imageUrl: comment.avatarUrl,
+                    child: GestureDetector(
+                      onTap: onAvatarTap == null || comment.userId <= 0
+                          ? null
+                          : () => onAvatarTap!(comment.userId),
+                      child: BangumiAvatar(
+                        radius: compact ? 16 : 22,
+                        imageUrl: comment.avatarUrl,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -152,18 +165,20 @@ class AccountCommentCardBone extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(children: [
-              const Bone.circle(size: 44),
-              const SizedBox(width: 12),
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Bone.text(width: 96),
-                  SizedBox(height: 2),
-                  Bone.text(width: 64, fontSize: 11),
-                ],
-              ),
-            ]),
+            Row(
+              children: [
+                const Bone.circle(size: 44),
+                const SizedBox(width: 12),
+                const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Bone.text(width: 96),
+                    SizedBox(height: 2),
+                    Bone.text(width: 64, fontSize: 11),
+                  ],
+                ),
+              ],
+            ),
             const SizedBox(height: 16),
             const Bone.multiText(lines: 2),
           ],

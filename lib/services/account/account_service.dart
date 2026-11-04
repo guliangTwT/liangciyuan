@@ -94,8 +94,16 @@ class AccountService extends ChangeNotifier {
   Future<void> refresh() async {
     ensureLoaded();
     if (_token.isEmpty) return;
-    final profile = await _api.me(_token);
-    await _persistProfile(profile);
+    try {
+      final profile = await _api.me(_token);
+      await _persistProfile(profile);
+    } on AccountException catch (e) {
+      // 令牌失效时清除本地登录态，避免每次启动都重复失败。
+      if (e.statusCode == 401) {
+        await logout();
+      }
+      rethrow;
+    }
   }
 
   Future<void> updateNickname(String nickname) async {

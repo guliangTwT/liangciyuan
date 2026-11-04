@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_modular/flutter_modular.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import 'package:kazumi/bean/settings/settings_detail_scaffold.dart';
 import 'package:kazumi/bean/settings/settings_list.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
+import 'package:kazumi/pages/collect/collect_controller.dart';
 import 'package:kazumi/pages/settings/sync/sync_settings_widgets.dart';
 import 'package:kazumi/services/account/account_api.dart';
 import 'package:kazumi/services/account/account_service.dart';
@@ -103,6 +105,13 @@ class _AccountPageState extends State<AccountPage> {
           _message = e.message;
         });
       }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _failed = true;
+          _message = '操作失败：$e';
+        });
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -156,6 +165,13 @@ class _AccountPageState extends State<AccountPage> {
           _message = e.message;
         });
       }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _failed = true;
+          _message = '操作失败：$e';
+        });
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -169,6 +185,7 @@ class _AccountPageState extends State<AccountPage> {
     });
     try {
       await AccountSyncService().syncCollectibles();
+      inject<CollectController>().loadCollectibles();
       if (mounted) setState(() => _message = '收藏已同步');
     } on AccountException catch (e) {
       if (mounted) {

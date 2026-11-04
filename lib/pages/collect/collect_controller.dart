@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/modules/collect/collect_module.dart';
+import 'package:kazumi/services/account/account_service.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/services/sync/webdav.dart';
 import 'package:kazumi/repositories/collect_crud_repository.dart';
@@ -76,22 +77,26 @@ abstract class _CollectController with Store {
   }
 
   Future<bool> _connectWebDav(ValueChanged<String> onError) async {
-    final bool webDavCollectEnable = GStorage.getSetting(
-      SettingsKeys.webDavEnableCollect,
-    );
-    if (!webDavCollectEnable) {
-      _reportSyncError('请开启 WebDAV 收藏同步', onError);
+    if (!GStorage.getSetting(SettingsKeys.accountSyncEnable)) {
+      _reportSyncError('请先开启账号云同步', onError);
+      return false;
+    }
+    if (!GStorage.getSetting(SettingsKeys.webDavEnableCollect)) {
+      _reportSyncError('请开启收藏同步', onError);
+      return false;
+    }
+    final account = AccountService()..ensureLoaded();
+    if (!account.loggedIn) {
+      _reportSyncError('请先登录凉次元账号', onError);
       return false;
     }
     if (!WebDav().initialized) {
-      _reportSyncError('WebDAV 未连接，请检查配置', onError);
-      return false;
-    }
-    try {
-      await WebDav().ping();
-    } catch (e) {
-      _reportSyncError('WebDAV 连接失败，请检查网络或配置', onError, error: e);
-      return false;
+      try {
+        await WebDav().init();
+      } catch (e) {
+        _reportSyncError('云同步连接失败', onError, error: e);
+        return false;
+      }
     }
     return true;
   }
@@ -101,7 +106,7 @@ abstract class _CollectController with Store {
     try {
       await WebDav().syncCollectibles();
     } catch (e) {
-      _reportSyncError('WebDAV 同步失败，请检查连接', onError, error: e);
+      _reportSyncError('云同步失败，请稍后重试', onError, error: e);
       return false;
     }
     loadCollectibles();

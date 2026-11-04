@@ -59,7 +59,7 @@ class _MyPageState extends State<MyPage> {
         MyDestination.rules => '/settings/plugin/',
         MyDestination.history => '/settings/history/',
         MyDestination.downloads => '/settings/download/',
-        MyDestination.sync => '/settings/sync',
+        MyDestination.sync => '/settings/account',
         MyDestination.storage => '/settings/storage',
         MyDestination.about => '/settings/about/',
       });
@@ -78,8 +78,9 @@ class _MyPageState extends State<MyPage> {
             : null,
         title: Text(
           '我的',
-          style: Theme.of(context).textTheme.headlineSmall
-              ?.copyWith(fontWeight: FontWeight.w700),
+          style: Theme.of(
+            context,
+          ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
         ),
         needTopOffset: false,
         actions: [

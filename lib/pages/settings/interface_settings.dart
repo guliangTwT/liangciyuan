@@ -20,8 +20,9 @@ class _InterfaceSettingsPageState extends State<InterfaceSettingsPage> {
   late CollectLayout _defaultCollectLayout;
   bool _savingCollectLayout = false;
   static const _exitBehaviorTitles = ['退出凉次元', '最小化至托盘', '每次都询问'];
-  int _exitBehavior = GStorage.getSetting(SettingsKeys.exitBehavior)
-      .clamp(0, _exitBehaviorTitles.length - 1);
+  int _exitBehavior = GStorage.getSetting(
+    SettingsKeys.exitBehavior,
+  ).clamp(0, _exitBehaviorTitles.length - 1);
 
   static const Map<String, String> defaultPageMap = {
     '/tab/popular/': '推荐',

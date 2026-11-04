@@ -10,6 +10,8 @@ import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/modules/collect/collect_module.dart';
 import 'package:kazumi/modules/collect/collect_change_module.dart';
 import 'package:kazumi/services/sync/history_sync_service.dart';
+import 'package:kazumi/services/account/account_service.dart';
+import 'package:kazumi/services/sync/account_remote_client.dart';
 import 'package:kazumi/services/sync/webdav_remote_file_commit.dart';
 import 'package:kazumi/utils/async_serial_queue.dart';
 import 'package:kazumi/utils/async_single_flight.dart';
@@ -46,43 +48,23 @@ class WebDav {
 
   Future<void> _init() async {
     initialized = false;
-    var directory = await getApplicationSupportDirectory();
-    webDavLocalTempDirectory = Directory('${directory.path}/webdavTemp');
-    webDavURL = GStorage.getSetting(SettingsKeys.webDavURL);
-    webDavUsername = GStorage.getSetting(SettingsKeys.webDavUsername);
-    webDavPassword = GStorage.getSetting(SettingsKeys.webDavPassword);
-    if (webDavURL.isEmpty) {
-      throw Exception('请先填写WebDAV URL');
+    final directory = await getApplicationSupportDirectory();
+    webDavLocalTempDirectory = Directory('${directory.path}/cloudSyncTemp');
+    final account = AccountService()..ensureLoaded();
+    if (!account.loggedIn) {
+      throw Exception('请先登录凉次元账号');
     }
-    client = webdav.newClient(
-      webDavURL,
-      user: webDavUsername,
-      password: webDavPassword,
-      debug: false,
-    );
-    client.setHeaders({'accept-charset': 'utf-8'});
-    client.c.options.contentType = 'application/octet-stream';
+    client = AccountRemoteClient(token: account.token);
     try {
       await _ping();
       await _ensureRemoteDirectory(_syncRootPath);
       await _ensureLocalTempDirectory();
       initialized = true;
-      KazumiLogger().i('WebDav: webDav backup directory ready');
+      KazumiLogger().i('CloudSync: account storage ready');
     } catch (e) {
-      KazumiLogger().e('WebDav: WebDAV ping failed', error: e);
+      KazumiLogger().e('CloudSync: account storage ping failed', error: e);
       rethrow;
     }
-  }
-
-  Future<void> setEnabled(bool enabled) async {
-    if (enabled && !initialized) await init();
-    if (!enabled) {
-      // Collection sync reads its own flag independently of the master switch.
-      await GStorage.putSetting(SettingsKeys.webDavEnableHistory, false);
-      await GStorage.putSetting(SettingsKeys.webDavEnableCollect, false);
-      await GStorage.putSetting(SettingsKeys.webDavEnableDanmakuShield, false);
-    }
-    await GStorage.putSetting(SettingsKeys.webDavEnable, enabled);
   }
 
   Future<T> _runWebDavExclusive<T>(Future<T> Function() action) {
@@ -166,7 +148,7 @@ class WebDav {
   Future<void> _ping() => _remote(() => client.ping());
 
   bool get isDanmakuShieldSyncEnabled =>
-      GStorage.getSetting(SettingsKeys.webDavEnable) &&
+      GStorage.getSetting(SettingsKeys.accountSyncEnable) &&
       GStorage.getSetting(SettingsKeys.webDavEnableDanmakuShield);
 
   /// 把底层异常转成用户可读的一句话，便于定位同步失败的具体原因。

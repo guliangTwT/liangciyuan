@@ -326,7 +326,7 @@ function handle_get_avatar(Request $request): void
 function sync_kind(Request $request): string
 {
     $kind = (string) ($request->params['kind'] ?? '');
-    if (!preg_match('/^[a-zA-Z0-9_\-]{1,48}$/', $kind)) {
+    if (!preg_match('/^[a-zA-Z0-9_\-]{1,200}$/', $kind)) {
         throw new HttpException(400, '同步类型不合法');
     }
     return $kind;

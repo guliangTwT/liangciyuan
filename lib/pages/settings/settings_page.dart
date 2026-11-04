@@ -86,14 +86,8 @@ const List<_SettingsGroup> _settingsGroups = [
         path: '/settings/interface',
       ),
       _SettingsCategory(
-        label: '同步设置',
-        description: 'WebDAV 多设备同步',
-        icon: Icons.cloud_rounded,
-        path: '/settings/sync',
-      ),
-      _SettingsCategory(
         label: '账号与云同步',
-        description: '登录、资料与收藏云同步',
+        description: '登录、资料与多设备同步',
         icon: Icons.account_circle_rounded,
         path: '/settings/account',
       ),
@@ -139,9 +133,6 @@ bool _isWithinPath(String location, String path) =>
 String _categoryPath(String location) {
   if (location == '/settings') {
     return '/settings/player';
-  }
-  if (_isWithinPath(location, '/settings/webdav')) {
-    return '/settings/sync';
   }
   for (final group in _settingsGroups) {
     for (final category in group.categories) {

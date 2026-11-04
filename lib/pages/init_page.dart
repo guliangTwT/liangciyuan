@@ -12,7 +12,6 @@ import 'package:kazumi/plugins/plugins_controller.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/pages/collect/collect_controller.dart';
 import 'package:kazumi/services/account/account_service.dart';
-import 'package:kazumi/services/sync/account_sync_service.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/shaders/shader_asset_service.dart';
 import 'package:kazumi/pages/download/download_controller.dart';
@@ -64,7 +63,6 @@ class _InitPageState extends State<InitPage> {
     _loadShaders();
     unawaited(myController.loadShieldList());
     _webDavInit();
-    _accountSyncInit();
     try {
       await downloadController.init();
       _setupBackgroundDownloadNavigation();
@@ -158,38 +156,27 @@ class _InitPageState extends State<InitPage> {
     await shaderAssetService.copyShadersToExternalDirectory();
   }
 
-  Future<void> _accountSyncInit() async {
-    final account = AccountService()..ensureLoaded();
-    if (!account.loggedIn) return;
-    try {
-      await account.refresh();
-    } catch (e, stackTrace) {
-      KazumiLogger().w(
-        'Account: profile refresh failed',
-        error: e,
-        stackTrace: stackTrace,
-      );
-    }
-    if (!GStorage.getSetting(SettingsKeys.accountSyncEnable)) return;
-    try {
-      await AccountSyncService().syncCollectibles();
-      widget.collectController.loadCollectibles();
-    } catch (e, stackTrace) {
-      KazumiLogger().w(
-        'Account: automatic collect sync failed',
-        error: e,
-        stackTrace: stackTrace,
-      );
-    }
-  }
-
   Future<void> _webDavInit() async {
     // 无论当前是否启用，都先注入依赖：用户稍后开启 WebDAV 时定时器可直接工作。
     WebDavAutoSync().configure(
       danmakuShieldSync: widget.danmakuShieldSync,
       webDav: WebDav(),
     );
-    bool webDavEnable = await GStorage.getSetting(SettingsKeys.webDavEnable);
+    final account = AccountService()..ensureLoaded();
+    if (account.loggedIn) {
+      try {
+        await account.refresh();
+      } catch (e, stackTrace) {
+        KazumiLogger().w(
+          'Account: profile refresh failed',
+          error: e,
+          stackTrace: stackTrace,
+        );
+      }
+    }
+    bool webDavEnable =
+        account.loggedIn &&
+        await GStorage.getSetting(SettingsKeys.accountSyncEnable);
     bool webDavEnableHistory = await GStorage.getSetting(
       SettingsKeys.webDavEnableHistory,
     );

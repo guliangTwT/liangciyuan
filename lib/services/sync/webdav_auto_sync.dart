@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:kazumi/services/account/account_service.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/services/sync/danmaku_shield_sync_service.dart';
@@ -51,8 +52,9 @@ class WebDavAutoSync {
       KazumiLogger().i('WebDav: auto sync disabled');
       return;
     }
-    if (!GStorage.getSetting(SettingsKeys.webDavEnable)) {
-      KazumiLogger().i('WebDav: auto sync skipped, WebDAV disabled');
+    if (!GStorage.getSetting(SettingsKeys.accountSyncEnable) ||
+        !(AccountService()..ensureLoaded()).loggedIn) {
+      KazumiLogger().i('CloudSync: auto sync skipped, account not ready');
       return;
     }
 
@@ -66,12 +68,16 @@ class WebDavAutoSync {
   /// 立即执行一次自动同步（定时器与手动触发共用）。
   Future<void> syncNow() async {
     if (_running) return;
-    if (!GStorage.getSetting(SettingsKeys.webDavEnable)) return;
+    if (!GStorage.getSetting(SettingsKeys.accountSyncEnable) ||
+        !(AccountService()..ensureLoaded()).loggedIn) {
+      return;
+    }
 
     final enableHistory = GStorage.getSetting(SettingsKeys.webDavEnableHistory);
     final enableCollect = GStorage.getSetting(SettingsKeys.webDavEnableCollect);
-    final enableShield =
-        GStorage.getSetting(SettingsKeys.webDavEnableDanmakuShield);
+    final enableShield = GStorage.getSetting(
+      SettingsKeys.webDavEnableDanmakuShield,
+    );
     if (!enableHistory && !enableCollect && !enableShield) return;
 
     final webDav = _webDav ?? WebDav();

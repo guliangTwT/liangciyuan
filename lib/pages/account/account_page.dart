@@ -13,7 +13,10 @@ import 'package:kazumi/pages/settings/sync/sync_settings_widgets.dart';
 import 'package:kazumi/services/account/account_api.dart';
 import 'package:kazumi/services/account/account_service.dart';
 import 'package:kazumi/services/storage/storage.dart';
-import 'package:kazumi/services/sync/account_sync_service.dart';
+import 'package:kazumi/services/sync/webdav.dart';
+import 'package:kazumi/services/sync/webdav_auto_sync.dart';
+import 'package:kazumi/services/sync/danmaku_shield_sync_service.dart';
+import 'package:kazumi/bean/settings/settings_dropdown_tile.dart';
 
 class AccountPage extends StatefulWidget {
   const AccountPage({super.key});
@@ -178,15 +181,31 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   Future<void> _syncNow() async {
+    final account = _account..ensureLoaded();
+    if (!account.loggedIn) {
+      setState(() {
+        _failed = true;
+        _message = '请先登录凉次元账号';
+      });
+      return;
+    }
     setState(() {
       _busy = true;
       _failed = false;
-      _message = '正在同步收藏…';
+      _message = '正在同步…';
     });
     try {
-      await AccountSyncService().syncCollectibles();
-      inject<CollectController>().loadCollectibles();
-      if (mounted) setState(() => _message = '收藏已同步');
+      final sync = WebDav();
+      if (!sync.initialized) await sync.init();
+      if (GStorage.getSetting(SettingsKeys.webDavEnableHistory)) {
+        await sync.syncHistory();
+      }
+      if (GStorage.getSetting(SettingsKeys.webDavEnableCollect)) {
+        await sync.syncCollectibles();
+        inject<CollectController>().loadCollectibles();
+      }
+      await inject<DanmakuShieldSyncService>().syncIfEnabled();
+      if (mounted) setState(() => _message = '同步完成');
     } on AccountException catch (e) {
       if (mounted) {
         setState(() {
@@ -331,7 +350,7 @@ class _AccountPageState extends State<AccountPage> {
             const SyncPageIntro(
               icon: Icons.account_circle_rounded,
               title: '凉次元账号',
-              description: '登录后可把收藏同步到自己的云端；只支持 QQ 邮箱注册，需要邮箱验证码。',
+              description: '登录后可把收藏、观看记录与弹幕屏蔽词同步到自己的云端；只支持 QQ 邮箱注册，需要邮箱验证码。',
             ),
             _account.loggedIn ? _profileCard() : _authCard(),
             if (_message != null)
@@ -416,11 +435,85 @@ class _AccountPageState extends State<AccountPage> {
                 if (value == true) await _syncNow();
               },
             ),
+            SettingsTile.switchTile(
+              leading: Icons.history_rounded,
+              title: const Text('观看记录'),
+              initialValue: GStorage.getSetting(
+                SettingsKeys.webDavEnableHistory,
+              ),
+              enabled: !_busy,
+              onToggle: (value) async {
+                await GStorage.putSetting(
+                  SettingsKeys.webDavEnableHistory,
+                  value ?? false,
+                );
+                if (mounted) setState(() {});
+              },
+            ),
+            SettingsTile.switchTile(
+              leading: Icons.collections_bookmark_rounded,
+              title: const Text('收藏'),
+              initialValue: GStorage.getSetting(
+                SettingsKeys.webDavEnableCollect,
+              ),
+              enabled: !_busy,
+              onToggle: (value) async {
+                await GStorage.putSetting(
+                  SettingsKeys.webDavEnableCollect,
+                  value ?? false,
+                );
+                if (mounted) setState(() {});
+              },
+            ),
+            SettingsTile.switchTile(
+              leading: Icons.shield_rounded,
+              title: const Text('弹幕屏蔽词'),
+              initialValue: GStorage.getSetting(
+                SettingsKeys.webDavEnableDanmakuShield,
+              ),
+              enabled: !_busy,
+              onToggle: (value) async {
+                await GStorage.putSetting(
+                  SettingsKeys.webDavEnableDanmakuShield,
+                  value ?? false,
+                );
+                if (mounted) setState(() {});
+              },
+            ),
+          ],
+        ),
+        SettingsSection(
+          title: const Text('自动同步'),
+          margin: EdgeInsets.zero,
+          tiles: [
+            SettingsDropdownTile<int>(
+              leading: Icons.schedule_rounded,
+              title: const Text('按时间自动同步'),
+              description: Text(
+                GStorage.getSetting(SettingsKeys.webDavAutoSyncMinutes) == 0
+                    ? '仅在启动应用时同步一次'
+                    : '后台${WebDavAutoSync.describeInterval(GStorage.getSetting(SettingsKeys.webDavAutoSyncMinutes))}自动同步',
+              ),
+              value: GStorage.getSetting(SettingsKeys.webDavAutoSyncMinutes),
+              enabled: !_busy,
+              options: {
+                for (final minutes in WebDavAutoSync.intervalOptions)
+                  minutes: WebDavAutoSync.describeInterval(minutes),
+              },
+              onChanged: (value) async {
+                await GStorage.putSetting(
+                  SettingsKeys.webDavAutoSyncMinutes,
+                  value,
+                );
+                WebDavAutoSync().reschedule();
+                if (mounted) setState(() {});
+              },
+            ),
           ],
         ),
         StateActionButton(
           onPressed: _busy ? null : _syncNow,
-          text: _busy ? '请稍候…' : '立即同步收藏',
+          text: _busy ? '请稍候…' : '立即同步全部数据',
           icon: Icons.sync_rounded,
         ),
         TextButton.icon(

@@ -52,6 +52,13 @@ class AccountBlob {
   final int updatedAt;
 }
 
+class AccountBlobInfo {
+  const AccountBlobInfo({required this.kind, required this.size});
+
+  final String kind;
+  final int size;
+}
+
 class AccountApi {
   AccountApi._();
 
@@ -214,6 +221,33 @@ class AccountApi {
       Map<String, dynamic>.from(user),
       (body['avatarUrl'] ?? '').toString(),
     );
+  }
+
+  Future<bool> health() async {
+    try {
+      final body = await _request('GET', '/v1/health');
+      return body['ok'] == true && body['db'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<List<AccountBlobInfo>> listBlobInfos(String token) async {
+    final body = await _request('GET', '/v1/sync', token: token);
+    final items = body['items'];
+    if (items is! List) return const [];
+    return [
+      for (final item in items)
+        if (item is Map && item['kind'] != null)
+          AccountBlobInfo(
+            kind: item['kind'].toString(),
+            size: (item['size'] as num?)?.toInt() ?? 0,
+          ),
+    ];
+  }
+
+  Future<void> deleteBlob(String token, String kind) async {
+    await _request('DELETE', '/v1/sync/$kind', token: token);
   }
 
   Future<List<String>> listBlobs(String token) async {

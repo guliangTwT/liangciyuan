@@ -83,7 +83,7 @@ class _CollectPageState extends State<CollectPage> with KazumiDialogOwner {
       );
       task.withContext(
         (context) => context.pushNamed(switch (destination) {
-          CollectSyncDestination.webDavSettings => '/settings/webdav/',
+          CollectSyncDestination.webDavSettings => '/settings/account/',
         }),
       );
     }, errorMessage: '同步未完成，请稍后重试');

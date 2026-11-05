@@ -13,7 +13,7 @@ import 'package:kazumi/utils/media.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/services/video_source/services.dart';
-import 'package:kazumi/request/apis/danmaku_api.dart';
+import 'package:kazumi/services/account/account_api.dart';
 import 'package:mobx/mobx.dart';
 
 part 'download_controller.g.dart';
@@ -401,13 +401,13 @@ abstract class _DownloadController with Store {
     }
   }
 
-  /// 写入弹幕数据到文件 (新格式，包含 danDanBangumiID)
+  /// 写入弹幕数据到文件（沿用旧包装字段以兼容已有缓存）。
   Future<void> _writeDanmakuToFile(String downloadDirectory,
-      List<DanmakuEntry> danmakus, int danDanBangumiID) async {
+      List<DanmakuEntry> danmakus, int bangumiId) async {
     if (downloadDirectory.isEmpty) return;
     final file = File(_danmakuFilePath(downloadDirectory));
     final wrapper = {
-      'danDanBangumiID': danDanBangumiID,
+      'danDanBangumiID': bangumiId,
       'danmakus': danmakus.map((d) => d.toJson()).toList(),
     };
     await file.writeAsString(jsonEncode(wrapper));
@@ -422,7 +422,13 @@ abstract class _DownloadController with Store {
     // 从文件读取
     final fromFile = await _readDanmakuFromFile(episode.downloadDirectory);
     if (fromFile != null && fromFile.danmakus.isNotEmpty) {
-      return fromFile.danmakus;
+      // 旧版本缓存里可能混有第三方弹幕，只保留凉次元自有数据。
+      final selfHosted = fromFile.danmakus
+          .where((danmaku) => danmaku.source == 'liangciyuan')
+          .toList();
+      if (selfHosted.isNotEmpty) {
+        return selfHosted;
+      }
     }
 
     return null;
@@ -433,7 +439,7 @@ abstract class _DownloadController with Store {
     String pluginName,
     int episodeNumber,
     List<DanmakuEntry> danmakus,
-    int danDanBangumiID,
+    int cachedBangumiId,
   ) async {
     final recordKey = '${pluginName}_$bangumiId';
     final record = _repository.getRecord(recordKey);
@@ -444,7 +450,7 @@ abstract class _DownloadController with Store {
     try {
       // 写入独立文件而非 Hive
       await _writeDanmakuToFile(
-          episode.downloadDirectory, danmakus, danDanBangumiID);
+          episode.downloadDirectory, danmakus, cachedBangumiId);
       // 确保 Hive 中不存储弹幕大数据
       if (episode.danmakuData.isNotEmpty) {
         episode.danmakuData = '';
@@ -715,18 +721,12 @@ abstract class _DownloadController with Store {
         KazumiLogger().i(
             'DownloadController: fetching danmaku for episode $episodeNumber (async)');
 
-        // 获取 DanDan 番剧 ID
-        final danDanBangumiID =
-            await DanmakuApi.getDanDanBangumiIDByBgmBangumiID(bangumiId);
-        if (danDanBangumiID == 0) {
-          KazumiLogger().w(
-              'DownloadController: failed to get DanDan bangumiID for $bangumiId');
-          return;
-        }
-
-        // 获取弹幕列表
-        final danmakus =
-            await DanmakuApi.getDanDanmaku(danDanBangumiID, episodeNumber);
+        // 只缓存凉次元自有弹幕库的数据，不再向第三方接口请求。
+        final page = await AccountApi.instance.listDanmaku(
+          bangumiId: bangumiId,
+          episode: episodeNumber,
+        );
+        final danmakus = [for (final item in page.items) item.toDanmakuEntry()];
         if (danmakus.isEmpty) {
           KazumiLogger().i(
               'DownloadController: no danmaku found for episode $episodeNumber');
@@ -756,7 +756,7 @@ abstract class _DownloadController with Store {
         }
 
         // 写入独立文件
-        await _writeDanmakuToFile(downloadDirectory, danmakus, danDanBangumiID);
+        await _writeDanmakuToFile(downloadDirectory, danmakus, bangumiId);
 
         KazumiLogger().i(
             'DownloadController: cached ${danmakus.length} danmakus for episode $episodeNumber');

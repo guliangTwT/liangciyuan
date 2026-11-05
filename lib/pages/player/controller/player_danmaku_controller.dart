@@ -5,7 +5,6 @@ import 'package:canvas_danmaku/models/danmaku_content_item.dart';
 import 'package:flutter/material.dart';
 import 'package:kazumi/modules/danmaku/danmaku_module.dart';
 import 'package:kazumi/pages/download/download_controller.dart';
-import 'package:kazumi/request/apis/danmaku_api.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/services/account/account_api.dart';
 import 'package:kazumi/services/account/account_service.dart';
@@ -274,7 +273,7 @@ abstract class _PlayerDanmakuController with Store {
       int bangumiId, String pluginName, int episode) async {
     KazumiLogger().i(
         'PlayerController: attempting to load cached danmaku for episode $episode');
-    var nextBangumiID = bangumiID;
+    var nextBangumiID = bangumiId;
     try {
       final cachedDanmakus = await downloadController.getCachedDanmakus(
         bangumiId,
@@ -366,23 +365,6 @@ abstract class _PlayerDanmakuController with Store {
           'PlayerController: failed to load account danmaku $bgmBangumiID/$episode',
           error: e);
       return DanmakuLoadResult.failed(bangumiID: bgmBangumiID);
-    }
-  }
-
-  @action
-  Future<bool> getDanDanmakuByEpisodeID(int episodeID) async {
-    KazumiLogger().i('PlayerController: attempting to get danmaku $episodeID');
-    danmakuLoading = true;
-    try {
-      danDanmakus.clear();
-      var res = await DanmakuApi.getDanDanmakuByEpisodeID(episodeID);
-      addDanmakus(res);
-      return res.isNotEmpty;
-    } catch (e) {
-      KazumiLogger().w('PlayerController: failed to get danmaku', error: e);
-      rethrow;
-    } finally {
-      danmakuLoading = false;
     }
   }
 

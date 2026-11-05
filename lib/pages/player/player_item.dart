@@ -29,7 +29,6 @@ import 'package:kazumi/pages/history/history_controller.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/modules/danmaku/danmaku_module.dart';
 import 'package:kazumi/pages/player/controller/player_danmaku_controller.dart';
-import 'package:kazumi/pages/player/danmaku_source_sheet.dart';
 import 'package:kazumi/pages/player/player_item_surface.dart';
 import 'package:mobx/mobx.dart' as mobx;
 import 'package:kazumi/pages/my/my_controller.dart';
@@ -103,9 +102,6 @@ class _PlayerItemState extends State<PlayerItem>
   late bool _hideScroll;
   late bool _massiveMode;
   late bool _danmakuColor;
-  late bool _danmakuBiliBiliSource;
-  late bool _danmakuGamerSource;
-  late bool _danmakuDanDanSource;
   late double _danmakuDuration;
   late double _danmakuLineHeight;
   late int _danmakuFontWeight;
@@ -579,11 +575,6 @@ class _PlayerItemState extends State<PlayerItem>
     if (playerController.danmaku.danmakuOn) {
       playerController.danmaku.setDanmakuEnabled(false);
       GStorage.putSetting(SettingsKeys.danmakuEnabledByDefault, false);
-      unawaited(_updateAndroidPIPActions(force: true));
-      return;
-    }
-    if (playerController.danmaku.danDanmakus.isEmpty) {
-      showDanmakuSwitch();
       unawaited(_updateAndroidPIPActions(force: true));
       return;
     }
@@ -1119,21 +1110,6 @@ class _PlayerItemState extends State<PlayerItem>
     hideTimer = null;
   }
 
-  bool _isDanmakuSourceEnabled(DanmakuEntry danmaku) {
-    if (!_danmakuBiliBiliSource && danmaku.source.contains('BiliBili')) {
-      return false;
-    }
-    if (!_danmakuGamerSource && danmaku.source.contains('Gamer')) {
-      return false;
-    }
-    if (!_danmakuDanDanSource &&
-        !(danmaku.source.contains('BiliBili') ||
-            danmaku.source.contains('Gamer'))) {
-      return false;
-    }
-    return true;
-  }
-
   DanmakuItemType _danmakuItemType(DanmakuEntry danmaku) {
     if (danmaku.type == 4) {
       return DanmakuItemType.bottom;
@@ -1163,10 +1139,6 @@ class _PlayerItemState extends State<PlayerItem>
     for (final entry in danmakus.asMap().entries) {
       final idx = entry.key;
       final danmaku = entry.value;
-      if (!_isDanmakuSourceEnabled(danmaku)) {
-        continue;
-      }
-
       final color = _danmakuColor ? danmaku.color : Colors.white;
       final delay = DanmakuTimeline.staggerDelayMilliseconds(
         index: idx,
@@ -1256,18 +1228,6 @@ class _PlayerItemState extends State<PlayerItem>
       }
       playerController.setSyncPlayCurrentPosition();
     });
-  }
-
-  void showDanmakuSwitch() {
-    unawaited(
-      showDanmakuSourceSheet(
-        context,
-        bangumiId: videoPageController.bangumiItem.id,
-        initialKeyword: videoPageController.title,
-        danmakuController: playerController.danmaku,
-        onBeforeApply: videoPageController.cancelAutomaticDanmakuLoad,
-      ),
-    );
   }
 
   void showVideoInfo() {
@@ -1362,13 +1322,6 @@ class _PlayerItemState extends State<PlayerItem>
     _danmakuColor = GStorage.getSetting(SettingsKeys.danmakuColor);
     _danmakuDuration = GStorage.getSetting(SettingsKeys.danmakuDuration);
     _danmakuLineHeight = GStorage.getSetting(SettingsKeys.danmakuLineHeight);
-    _danmakuBiliBiliSource = GStorage.getSetting(
-      SettingsKeys.danmakuBiliBiliSource,
-    );
-    _danmakuGamerSource = GStorage.getSetting(SettingsKeys.danmakuGamerSource);
-    _danmakuDanDanSource = GStorage.getSetting(
-      SettingsKeys.danmakuDanDanSource,
-    );
     _danmakuFontWeight = GStorage.getSetting(SettingsKeys.danmakuFontWeight);
     _danmakuUseSystemFont = GStorage.getSetting(SettingsKeys.useSystemFont);
     _danmakuBorderSize = GStorage.getSetting(SettingsKeys.danmakuBorderSize);
@@ -1566,7 +1519,6 @@ class _PlayerItemState extends State<PlayerItem>
                               videoPageController: videoPageController,
                               onBackPressed: widget.onBackPressed,
                               setPlaybackSpeed: setPlaybackSpeed,
-                              showDanmakuSwitch: showDanmakuSwitch,
                               onToggleSidePanel: widget.onToggleSidePanel,
                               handleFullscreen: handleFullscreen,
                               enterAndroidPictureInPicture:

@@ -29,9 +29,6 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
   late bool danmakuMassive;
   late bool danmakuDeduplication;
   late bool pauseOnDanmakuEdit;
-  late bool danmakuBiliBiliSource;
-  late bool danmakuGamerSource;
-  late bool danmakuDanDanSource;
   late bool danmakuFollowSpeed;
   late bool danmakuRoomEnabled;
   late bool danmakuRoomOnly;
@@ -73,15 +70,6 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
     );
     pauseOnDanmakuEdit = GStorage.getSetting<bool>(
       SettingsKeys.pauseOnDanmakuEdit,
-    );
-    danmakuBiliBiliSource = GStorage.getSetting<bool>(
-      SettingsKeys.danmakuBiliBiliSource,
-    );
-    danmakuGamerSource = GStorage.getSetting<bool>(
-      SettingsKeys.danmakuGamerSource,
-    );
-    danmakuDanDanSource = GStorage.getSetting<bool>(
-      SettingsKeys.danmakuDanDanSource,
     );
     danmakuFollowSpeed = GStorage.getSetting<bool>(
       SettingsKeys.danmakuFollowSpeed,
@@ -176,50 +164,6 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
       title: const Text('弹幕设置'),
       body: SettingsList(
         sections: [
-          SettingsSection(
-            title: Text('弹幕来源'),
-            tiles: [
-              SettingsTile.switchTile(
-                leading: Icons.live_tv_rounded,
-                onToggle: (value) async {
-                  danmakuBiliBiliSource = value ?? !danmakuBiliBiliSource;
-                  await GStorage.putSetting<bool>(
-                    SettingsKeys.danmakuBiliBiliSource,
-                    danmakuBiliBiliSource,
-                  );
-                  setState(() {});
-                },
-                title: Text('BiliBili'),
-                initialValue: danmakuBiliBiliSource,
-              ),
-              SettingsTile.switchTile(
-                leading: Icons.sports_esports_rounded,
-                onToggle: (value) async {
-                  danmakuGamerSource = value ?? !danmakuGamerSource;
-                  await GStorage.putSetting<bool>(
-                    SettingsKeys.danmakuGamerSource,
-                    danmakuGamerSource,
-                  );
-                  setState(() {});
-                },
-                title: Text('Gamer'),
-                initialValue: danmakuGamerSource,
-              ),
-              SettingsTile.switchTile(
-                leading: Icons.forum_rounded,
-                onToggle: (value) async {
-                  danmakuDanDanSource = value ?? !danmakuDanDanSource;
-                  await GStorage.putSetting<bool>(
-                    SettingsKeys.danmakuDanDanSource,
-                    danmakuDanDanSource,
-                  );
-                  setState(() {});
-                },
-                title: Text('弹弹play'),
-                initialValue: danmakuDanDanSource,
-              ),
-            ],
-          ),
           SettingsSection(
             title: Text('弹幕屏蔽'),
             tiles: [

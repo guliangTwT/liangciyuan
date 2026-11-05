@@ -37,7 +37,6 @@ class PlayerItemPanel extends StatefulWidget {
     required this.fillsWindow,
     required this.onBackPressed,
     required this.setPlaybackSpeed,
-    required this.showDanmakuSwitch,
     required this.handleFullscreen,
     required this.enterAndroidPictureInPicture,
     required this.handleScreenShot,
@@ -64,7 +63,6 @@ class PlayerItemPanel extends StatefulWidget {
   final bool fillsWindow;
   final VoidCallback onBackPressed;
   final Future<void> Function(double) setPlaybackSpeed;
-  final VoidCallback showDanmakuSwitch;
   final VoidCallback? onToggleSidePanel;
   final VoidCallback handleFullscreen;
   final Future<void> Function() enterAndroidPictureInPicture;
@@ -967,10 +965,6 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
                     ),
                     _syncPlayMenuItem,
                   ],
-                  KazumiMenuItem(
-                    onPressed: widget.showDanmakuSwitch,
-                    label: '弹幕切换',
-                  ),
                   if (compact) _danmakuSettingsMenuItem,
                   KazumiMenuItem(
                     onPressed: widget.showVideoInfo,

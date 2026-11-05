@@ -192,21 +192,6 @@ class SettingsKeys {
     false,
     group: SettingGroup.danmaku,
   );
-  static const danmakuBiliBiliSource = SettingKey<bool>(
-    _SettingBoxKey.danmakuBiliBiliSource,
-    true,
-    group: SettingGroup.danmaku,
-  );
-  static const danmakuGamerSource = SettingKey<bool>(
-    _SettingBoxKey.danmakuGamerSource,
-    true,
-    group: SettingGroup.danmaku,
-  );
-  static const danmakuDanDanSource = SettingKey<bool>(
-    _SettingBoxKey.danmakuDanDanSource,
-    true,
-    group: SettingGroup.danmaku,
-  );
   static const danmakuFontWeight = SettingKey<int>(
     _SettingBoxKey.danmakuFontWeight,
     4,
@@ -651,9 +636,6 @@ class SettingsKeys {
     danmakuLineHeight,
     danmakuTimeOffset,
     danmakuEnabledByDefault,
-    danmakuBiliBiliSource,
-    danmakuGamerSource,
-    danmakuDanDanSource,
     danmakuFontWeight,
     danmakuFollowSpeed,
     danmakuRoomEnabled,
@@ -778,9 +760,6 @@ class _SettingBoxKey {
       danmakuLineHeight = 'danmakuLineHeight',
       danmakuTimeOffset = 'danmakuTimeOffset',
       danmakuEnabledByDefault = 'danmakuEnabledByDefault',
-      danmakuBiliBiliSource = 'danmakuBiliBiliSource',
-      danmakuGamerSource = 'danmakuGamerSource',
-      danmakuDanDanSource = 'danmakuDanDanSource',
       danmakuFontWeight = 'danmakuFontWeight',
       danmakuFollowSpeed = 'danmakuFollowSpeed',
       themeMode = 'themeMode',

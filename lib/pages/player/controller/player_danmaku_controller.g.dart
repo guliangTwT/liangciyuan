@@ -41,16 +41,6 @@ mixin _$PlayerDanmakuController on _PlayerDanmakuController, Store {
     });
   }
 
-  late final _$getDanDanmakuByEpisodeIDAsyncAction = AsyncAction(
-      '_PlayerDanmakuController.getDanDanmakuByEpisodeID',
-      context: context);
-
-  @override
-  Future<bool> getDanDanmakuByEpisodeID(int episodeID) {
-    return _$getDanDanmakuByEpisodeIDAsyncAction
-        .run(() => super.getDanDanmakuByEpisodeID(episodeID));
-  }
-
   late final _$_PlayerDanmakuControllerActionController =
       ActionController(name: '_PlayerDanmakuController', context: context);
 

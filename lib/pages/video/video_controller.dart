@@ -674,10 +674,6 @@ abstract class _VideoPageController with Store implements Disposable {
     }
   }
 
-  void cancelAutomaticDanmakuLoad() {
-    _danmakuSessions.cancel();
-  }
-
   String? _getLocalVideoPath(
     int bangumiId,
     String pluginName,

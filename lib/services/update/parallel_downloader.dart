@@ -29,18 +29,12 @@ class ParallelDownloader {
     required CancelToken cancelToken,
     required void Function(int received, int total) onProgress,
   }) async {
+    // 一次探测同时回答两件事：总大小、是否支持 Range。
+    // 返回 206+content-range 就说明支持，无需再发第二个探测请求
+    // （多发一轮在慢镜像上会白等好几秒）。
     final total = await _resolveTotalLength(url, cancelToken);
     if (total <= 0 || total < _minChunkBytes * 2) {
-      // 太小不值得分块，或无法确定大小。
-      await _singleConnection(
-        url: url,
-        savePath: savePath,
-        cancelToken: cancelToken,
-        onProgress: onProgress,
-      );
-      return;
-    }
-    if (!await _serverAcceptsRanges(url, cancelToken)) {
+      // 太小不值得分块；或服务器忽略 Range（返回 200）。
       await _singleConnection(
         url: url,
         savePath: savePath,
@@ -124,7 +118,8 @@ class ParallelDownloader {
       final response = await DownloadHttpClient.instance.getStream(
         url,
         headers: const {'range': 'bytes=0-0'},
-        receiveTimeout: const Duration(seconds: 15),
+        connectTimeout: const Duration(seconds: 3),
+        receiveTimeout: const Duration(seconds: 5),
         cancelToken: cancelToken,
       );
       final contentRange = response.headers.value('content-range');
@@ -141,25 +136,6 @@ class ParallelDownloader {
       return -1;
     } catch (_) {
       return -1;
-    }
-  }
-
-  Future<bool> _serverAcceptsRanges(
-    String url,
-    CancelToken cancelToken,
-  ) async {
-    try {
-      final response = await DownloadHttpClient.instance.getStream(
-        url,
-        headers: const {'range': 'bytes=0-1023'},
-        receiveTimeout: const Duration(seconds: 15),
-        cancelToken: cancelToken,
-      );
-      final accepts = response.statusCode == 206;
-      await _drain(response);
-      return accepts;
-    } catch (_) {
-      return false;
     }
   }
 

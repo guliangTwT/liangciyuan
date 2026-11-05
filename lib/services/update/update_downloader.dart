@@ -102,23 +102,59 @@ String getUpdateDownloadErrorMessage(Object error) {
 }
 
 /// Measures rough throughput for every candidate with a small ranged request.
-/// Probing runs in parallel and never throws; failed sources score 0.
+///
+/// 关键点是**不能等所有源**：镜像里总有一个连不上（连接超时默认 15s），
+/// 用户会看到「检查更新后卡住十几秒」。这里给整轮测速一个短预算：
+/// 有源测出可用速度、或预算耗尽，就立刻拿现有结果开工。
+/// 探测本身也限死连接/接收超时，不会挂住。
 Future<Map<String, double>> measureUpdateDownloadSpeed(
   List<String> candidates, {
   required CancelToken cancelToken,
+  Duration budget = const Duration(milliseconds: 1500),
+  double goodEnoughBytesPerSecond = 300 * 1024,
 }) async {
   final scores = <String, double>{};
-  await Future.wait(
-    candidates.map((url) async {
-      scores[url] = await _probeUpdateSource(url, cancelToken);
-    }),
-  );
+  if (candidates.isEmpty) return scores;
+  final done = Completer<void>();
+  var remaining = candidates.length;
+  final probeTokens = <CancelToken>[];
+
+  void finishIfDone() {
+    if (!done.isCompleted) done.complete();
+  }
+
+  for (final url in candidates) {
+    final token = CancelToken();
+    probeTokens.add(token);
+    unawaited(
+      _probeUpdateSource(url, cancelToken, token).then((score) {
+        scores[url] = score;
+        remaining--;
+        if (remaining <= 0) finishIfDone();
+        // 已经有一个足够快的源，不必再等其余探测。
+        if (score >= goodEnoughBytesPerSecond) finishIfDone();
+      }).catchError((Object _) {
+        scores[url] = 0;
+        remaining--;
+        if (remaining <= 0) finishIfDone();
+      }),
+    );
+  }
+
+  await done.future.timeout(budget, onTimeout: () {});
+  // 预算到期后仍在跑的探测一律取消，避免后台占用连接。
+  for (final token in probeTokens) {
+    if (!token.isCancelled) token.cancel();
+  }
   return scores;
 }
 
-Future<double> _probeUpdateSource(String url, CancelToken parent) async {
+Future<double> _probeUpdateSource(
+  String url,
+  CancelToken parent,
+  CancelToken token,
+) async {
   if (parent.isCancelled) return 0;
-  final token = CancelToken();
   unawaited(
     parent.whenCancel.then((_) {
       if (!token.isCancelled) token.cancel();
@@ -129,14 +165,16 @@ Future<double> _probeUpdateSource(String url, CancelToken parent) async {
   try {
     final response = await DownloadHttpClient.instance.getStream(
       url,
-      headers: const {'range': 'bytes=0-262143'},
-      receiveTimeout: const Duration(seconds: 6),
+      headers: const {'range': 'bytes=0-65535'},
+      connectTimeout: const Duration(seconds: 2),
+      receiveTimeout: const Duration(seconds: 2),
       cancelToken: token,
     );
     await for (final chunk in response.data!.stream) {
       bytes += chunk.length;
-      if (bytes >= 256 * 1024 ||
-          stopwatch.elapsed > const Duration(seconds: 6)) {
+      // 64KB 足够区分「能连」和「连不上」；再多只是空耗流量和时间。
+      if (bytes >= 64 * 1024 ||
+          stopwatch.elapsed > const Duration(seconds: 2)) {
         break;
       }
     }

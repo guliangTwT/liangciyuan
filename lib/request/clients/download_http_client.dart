@@ -10,6 +10,7 @@ class DownloadHttpClient {
   Future<Response<ResponseBody>> getStream(
     String url, {
     Map<String, dynamic> headers = const {},
+    Duration? connectTimeout,
     Duration? receiveTimeout,
     CancelToken? cancelToken,
   }) async {
@@ -19,6 +20,7 @@ class DownloadHttpClient {
         options: Options(
           headers: headers,
           responseType: ResponseType.stream,
+          connectTimeout: connectTimeout,
           receiveTimeout: receiveTimeout,
         ),
         cancelToken: cancelToken,

@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/services/update/parallel_downloader.dart';
+import 'package:kazumi/services/update/update_downloader.dart';
 import 'package:kazumi/utils/crypto.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 
@@ -123,6 +124,37 @@ void main() {
 
     final downloaded = await File(savePath).readAsBytes();
     expect(downloaded, equals(data));
+  });
+
+  test('speed probing returns on budget instead of waiting for a dead source',
+      () async {
+    // 一个永远不响应的地址（模拟挂掉的镜像）+ 一个可用的本地源；
+    // 探测必须在预算内返回，不能等连接超时。
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    final payload = List<int>.filled(256 * 1024, 7);
+    server.listen((request) async {
+      request.response.statusCode = 206;
+      request.response.headers.set('content-range', 'bytes 0-${payload.length - 1}/${payload.length}');
+      request.response.contentLength = payload.length;
+      request.response.add(payload);
+      await request.response.close();
+    });
+
+    final stopwatch = Stopwatch()..start();
+    final scores = await measureUpdateDownloadSpeed(
+      [
+        // 10.255.255.1 是不可路由地址，连接会挂起。
+        'http://10.255.255.1/dead.bin',
+        'http://127.0.0.1:${server.port}/ok.bin',
+      ],
+      cancelToken: CancelToken(),
+      budget: const Duration(milliseconds: 800),
+    );
+    stopwatch.stop();
+
+    expect(scores['http://127.0.0.1:${server.port}/ok.bin'], greaterThan(0));
+    expect(stopwatch.elapsed, lessThan(const Duration(seconds: 3)));
   });
 }
 class _TestPaths extends PathProviderPlatform {

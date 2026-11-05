@@ -33,6 +33,8 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
   late bool danmakuGamerSource;
   late bool danmakuDanDanSource;
   late bool danmakuFollowSpeed;
+  late bool danmakuRoomEnabled;
+  late bool danmakuRoomOnly;
 
   @override
   void didChangeDependencies() {
@@ -83,6 +85,12 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
     );
     danmakuFollowSpeed = GStorage.getSetting<bool>(
       SettingsKeys.danmakuFollowSpeed,
+    );
+    danmakuRoomEnabled = GStorage.getSetting<bool>(
+      SettingsKeys.danmakuRoomEnabled,
+    );
+    danmakuRoomOnly = GStorage.getSetting<bool>(
+      SettingsKeys.danmakuRoomOnly,
     );
   }
 
@@ -429,6 +437,39 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
                 onChanged: (value) => updateDanmakuOpacity(
                   double.parse(value.toStringAsFixed(2)),
                 ),
+              ),
+            ],
+          ),
+          SettingsSection(
+            title: Text('一起看'),
+            tiles: [
+              SettingsTile.switchTile(
+                leading: Icons.groups_rounded,
+                onToggle: (value) async {
+                  danmakuRoomEnabled = value ?? !danmakuRoomEnabled;
+                  await GStorage.putSetting<bool>(
+                    SettingsKeys.danmakuRoomEnabled,
+                    danmakuRoomEnabled,
+                  );
+                  setState(() {});
+                },
+                title: Text('房间弹幕'),
+                description: Text('房间聊天会直接以弹幕显示在视频上'),
+                initialValue: danmakuRoomEnabled,
+              ),
+              SettingsTile.switchTile(
+                leading: Icons.visibility_outlined,
+                onToggle: (value) async {
+                  danmakuRoomOnly = value ?? !danmakuRoomOnly;
+                  await GStorage.putSetting<bool>(
+                    SettingsKeys.danmakuRoomOnly,
+                    danmakuRoomOnly,
+                  );
+                  setState(() {});
+                },
+                title: Text('只看房间弹幕'),
+                description: Text('隐藏其他普通弹幕，仅显示当前房间的聊天'),
+                initialValue: danmakuRoomOnly,
               ),
             ],
           ),

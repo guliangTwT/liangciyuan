@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:canvas_danmaku/models/danmaku_content_item.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:mobx/mobx.dart' as mobx;
@@ -73,7 +72,6 @@ class _VideoPageState extends State<VideoPage>
 
   late final bool disableAnimations;
 
-  StreamSubscription<SyncPlayChatMessage>? _syncChatSubscription;
   late final mobx.ReactionDisposer _pipModeListener;
   LocalHistoryEntry? _desktopPipEntry;
   late ModalRoute<Object?> _route;
@@ -120,27 +118,6 @@ class _VideoPageState extends State<VideoPage>
     } else {
       _initOnlineMode();
     }
-
-    _syncChatSubscription =
-        playerController.syncplay.chatStream.listen((event) {
-      final localUsername =
-          playerController.syncplay.syncplayController?.username ?? '';
-      final String displayText = '${event.username}：${event.message}';
-
-      if (playerController.danmaku.danmakuOn &&
-          event.username != localUsername &&
-          event.fromRemote) {
-        playerController.danmaku.canvasController.addDanmaku(
-          DanmakuContentItem(
-            displayText,
-            color: Colors.orange,
-            isColorful: true,
-            type: DanmakuItemType.bottom,
-            extra: DateTime.now().millisecondsSinceEpoch,
-          ),
-        );
-      }
-    });
   }
 
   void _initOfflineMode() {
@@ -212,9 +189,6 @@ class _VideoPageState extends State<VideoPage>
     clearExternalNavigationMark(_route);
     try {
       windowManager.removeListener(this);
-    } catch (_) {}
-    try {
-      _syncChatSubscription?.cancel();
     } catch (_) {}
     try {
       _logSubscription?.cancel();

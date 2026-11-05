@@ -217,6 +217,16 @@ class SettingsKeys {
     true,
     group: SettingGroup.danmaku,
   );
+  static const danmakuRoomEnabled = SettingKey<bool>(
+    'danmakuRoomEnabled',
+    true,
+    group: SettingGroup.danmaku,
+  );
+  static const danmakuRoomOnly = SettingKey<bool>(
+    'danmakuRoomOnly',
+    false,
+    group: SettingGroup.danmaku,
+  );
   static const themeMode = SettingKey<String>(
     _SettingBoxKey.themeMode,
     'system',
@@ -646,6 +656,8 @@ class SettingsKeys {
     danmakuDanDanSource,
     danmakuFontWeight,
     danmakuFollowSpeed,
+    danmakuRoomEnabled,
+    danmakuRoomOnly,
     themeMode,
     themeColor,
     privateMode,

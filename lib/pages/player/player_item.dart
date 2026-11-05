@@ -1150,6 +1150,11 @@ class _PlayerItemState extends State<PlayerItem>
         playerController.danmaku.danmakuOn != true) {
       return;
     }
+    // 只看房间弹幕：房间内聊天仍由消息回调即时绘制，这里跳过普通弹幕。
+    if (playerController.danmaku.roomDanmakuOnly &&
+        playerController.syncplay.syncplayRoom.isNotEmpty) {
+      return;
+    }
 
     final danmakus = playerController.danmaku.danmakusForPlaybackPosition(
       playerController.playback.currentPosition,
@@ -1174,6 +1179,8 @@ class _PlayerItemState extends State<PlayerItem>
             !playerController.playback.playerPlaying ||
             playerController.playback.playerBuffering ||
             !playerController.danmaku.danmakuOn ||
+            (playerController.danmaku.roomDanmakuOnly &&
+                playerController.syncplay.syncplayRoom.isNotEmpty) ||
             playerController.danmaku.scheduledDanmakuGeneration !=
                 scheduledDanmakuGeneration ||
             myController.isDanmakuBlocked(danmaku.message)) {
@@ -1521,7 +1528,7 @@ class _PlayerItemState extends State<PlayerItem>
                         child: DanmakuScreen(
                           key: _danmuKey,
                           createdController: (DanmakuController e) {
-                            playerController.danmaku.canvasController = e;
+                            playerController.danmaku.attachCanvasController(e);
                             WidgetsBinding.instance.addPostFrameCallback((_) {
                               playerController.updateDanmakuSpeed();
                             });

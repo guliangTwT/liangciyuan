@@ -8,7 +8,6 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:kazumi/bean/widget/kazumi_menu.dart';
 import 'package:kazumi/bean/widget/play_pause_icon.dart';
 import 'package:kazumi/pages/player/player_adjustment_hud.dart';
-import 'package:kazumi/pages/player/danmaku_destination_sheet.dart';
 import 'package:kazumi/pages/player/controller/player_aspect_ratio.dart';
 import 'package:kazumi/pages/player/controller/player_super_resolution.dart';
 import 'package:kazumi/bean/widget/embedded_native_control_area.dart';
@@ -107,7 +106,25 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
   /// the ownership even if the panel was rebuilt in between.
   bool get _pausedByDanmakuEdit =>
       _danmakuPauseTick == TimedShutdownService().expiryTicks.value;
-  bool _holdResumeForDestinationSheet = false;
+
+  /// 加入一起看后默认把消息发到房间弹幕，可临时切回普通弹幕。
+  bool? _sendToRoomOverride;
+  String? _sendToRoomOverrideRoom;
+
+  bool get _syncPlayRoomConnected =>
+      playerController.syncplay.syncplayRoom.isNotEmpty;
+
+  bool get _sendToRoom {
+    final room = playerController.syncplay.syncplayRoom;
+    if (room.isEmpty) {
+      return false;
+    }
+    // 每进入一个新房间都回到「发房间弹幕」的默认选择。
+    if (_sendToRoomOverrideRoom != room) {
+      return true;
+    }
+    return _sendToRoomOverride ?? true;
+  }
 
   String? _cachedDanmakuColorHex;
   late Widget _cachedDanmakuOnIcon;
@@ -126,59 +143,35 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
   }
 
   Future<void> _submitDanmakuText(String message) async {
-    _holdResumeForDestinationSheet = true;
     textFieldFocus.unfocus();
 
-    if (message.trim().isEmpty) {
+    final text = message.trim();
+    if (text.isEmpty) {
       KazumiDialog.showToast(message: '弹幕内容为空');
-      _holdResumeForDestinationSheet = false;
-      _onDanmakuEditFocusChanged();
       return;
     }
-
-    final destination = await showDanmakuDestinationSheet(context);
-    _holdResumeForDestinationSheet = false;
-    if (!mounted) {
-      return;
-    }
-    _onDanmakuEditFocusChanged();
-    if (destination == null) {
-      return;
-    }
-
-    widget.keyboardFocus.requestFocus();
-    if (message.length > 100) {
+    if (text.length > 100) {
       KazumiDialog.showToast(message: '弹幕内容过长');
       return;
     }
 
-    if (destination == DanmakuDestination.chatRoom) {
-      if (playerController.syncplay.syncplayRoom.isEmpty) {
-        KazumiDialog.showToast(message: '你还没有加入一起看，无法发送聊天室弹幕');
+    widget.keyboardFocus.requestFocus();
+
+    if (_sendToRoom) {
+      if (!_syncPlayRoomConnected) {
+        KazumiDialog.showToast(message: '你还没有加入一起看，无法发送房间弹幕');
         return;
       }
-
-      final sender =
-          playerController.syncplay.syncplayController?.username ?? '我';
-      playerController.danmaku.canvasController.addDanmaku(
-        DanmakuContentItem(
-          '$sender：$message',
-          color: Colors.orange,
-          isColorful: true,
-          type: DanmakuItemType.bottom,
-          extra: DateTime.now().millisecondsSinceEpoch,
-        ),
-      );
-      unawaited(playerController.sendSyncPlayChatMessage(message));
+      unawaited(playerController.sendSyncPlayChatMessage(text));
     } else {
       // 直接发到凉次元自有弹幕库：不再依赖第三方弹幕源，也不需要先「找弹幕」。
       final position = playerController.playback.currentPosition;
       playerController.danmaku.canvasController.addDanmaku(
-        DanmakuContentItem(message, selfSend: true),
+        DanmakuContentItem(text, selfSend: true),
       );
       unawaited(
         playerController.danmaku.sendDanmaku(
-          content: message,
+          content: text,
           position: position,
         ),
       );
@@ -203,11 +196,10 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
   }
 
   /// Only undoes a pause this editor created, and only when nothing else owns
-  /// playback: no destination sheet, no app in the background (desktop window
-  /// switches report inactive), and no dialog on top.
+  /// playback: no app in the background (desktop window switches report
+  /// inactive), and no dialog on top.
   bool get _canResumeAfterDanmakuEdit =>
       _pausedByDanmakuEdit &&
-      !_holdResumeForDestinationSheet &&
       (WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed) ==
           AppLifecycleState.resumed &&
       (ModalRoute.of(context)?.isCurrent ?? false);
@@ -228,6 +220,11 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
   Widget get _danmakuTextField {
     return Observer(
       builder: (context) {
+        final bool roomConnected =
+            playerController.syncplay.syncplayRoom.isNotEmpty;
+        final bool sendToRoom = _sendToRoom;
+        // 房间弹幕独立于普通弹幕开关，未加载到普通弹幕时也能聊天。
+        final bool canSend = playerController.danmaku.danmakuOn || sendToRoom;
         return PlayerPanelHoldFocusRegion(
           acquirePlayerPanelHold: widget.acquirePlayerPanelHold,
           child: Container(
@@ -244,12 +241,12 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
               controller: textController,
               textAlignVertical: TextAlignVertical.center,
               decoration: InputDecoration(
-                enabled: playerController.danmaku.danmakuOn,
+                enabled: canSend,
                 filled: true,
                 fillColor: Colors.white38,
                 floatingLabelBehavior: FloatingLabelBehavior.never,
-                hintText: playerController.danmaku.danmakuOn
-                    ? '发个友善的弹幕见证当下'
+                hintText: canSend
+                    ? (sendToRoom ? '发个房间弹幕，同房间可见' : '发个友善的弹幕见证当下')
                     : '已关闭弹幕',
                 hintStyle: TextStyle(
                   fontSize: isDesktop() ? 15 : 13,
@@ -266,6 +263,35 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
                     Radius.circular(isDesktop() ? 8 : 20),
                   ),
                 ),
+                prefixIcon: roomConnected
+                    ? Tooltip(
+                        message: sendToRoom
+                            ? '房间弹幕（点击改为普通弹幕）'
+                            : '普通弹幕（点击改为房间弹幕）',
+                        child: IconButton(
+                          iconSize: 18,
+                          padding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                          constraints: const BoxConstraints(),
+                          onPressed: () => setState(() {
+                            _sendToRoomOverrideRoom =
+                                playerController.syncplay.syncplayRoom;
+                            _sendToRoomOverride = !sendToRoom;
+                          }),
+                          icon: Icon(
+                            sendToRoom
+                                ? Icons.groups_rounded
+                                : Icons.subtitles_outlined,
+                            color: sendToRoom
+                                ? Colors.orangeAccent
+                                : Colors.white70,
+                          ),
+                        ),
+                      )
+                    : null,
+                prefixIconConstraints: roomConnected
+                    ? const BoxConstraints(minWidth: 32, minHeight: 32)
+                    : null,
                 suffixIconConstraints: const BoxConstraints(minWidth: 0),
                 suffixIcon: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -275,10 +301,10 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
                         unawaited(_submitDanmakuText(textController.text));
                       },
                       style: TextButton.styleFrom(
-                        foregroundColor: playerController.danmaku.danmakuOn
+                        foregroundColor: canSend
                             ? Theme.of(context).colorScheme.onPrimaryContainer
                             : Colors.white60,
-                        backgroundColor: playerController.danmaku.danmakuOn
+                        backgroundColor: canSend
                             ? Theme.of(context).colorScheme.primaryContainer
                             : Theme.of(context).disabledColor,
                         shape: RoundedRectangleBorder(
@@ -627,7 +653,7 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
   void _showDanmakuSettings() {
     showDanmakuSettingsSheet(
       context: context,
-      danmakuController: playerController.danmaku.canvasController,
+      danmaku: playerController.danmaku,
       onUpdateDanmakuSpeed: playerController.updateDanmakuSpeed,
       onTimelineOffsetChanged:
           playerController.danmaku.clearAndInvalidateScheduledDanmakus,
@@ -721,7 +747,8 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
           onPressed: widget.handleDanmaku,
           tooltip: playerController.danmaku.danmakuOn ? '关闭弹幕' : '打开弹幕',
         ),
-        if (playerController.danmaku.danmakuOn) ...[
+        if (playerController.danmaku.danmakuOn ||
+            playerController.syncplay.syncplayRoom.isNotEmpty) ...[
           _danmakuSettingsButton,
           Expanded(child: _danmakuEditBarrier(_danmakuTextField)),
         ] else

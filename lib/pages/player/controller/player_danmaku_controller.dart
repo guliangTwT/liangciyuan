@@ -1,6 +1,7 @@
 // ignore_for_file: library_private_types_in_public_api
 
 import 'package:canvas_danmaku/canvas_danmaku.dart' as canvas;
+import 'package:canvas_danmaku/models/danmaku_content_item.dart';
 import 'package:flutter/material.dart';
 import 'package:kazumi/modules/danmaku/danmaku_module.dart';
 import 'package:kazumi/pages/download/download_controller.dart';
@@ -103,6 +104,77 @@ abstract class _PlayerDanmakuController with Store {
   final int Function() currentEpisodeNumber;
 
   late canvas.DanmakuController canvasController;
+  bool _canvasAttached = false;
+
+  /// 由播放器画布创建回调调用，房间弹幕在画布就绪前到达时会被丢弃。
+  void attachCanvasController(canvas.DanmakuController controller) {
+    canvasController = controller;
+    _canvasAttached = true;
+  }
+
+  bool get roomDanmakuEnabled =>
+      GStorage.getSetting(SettingsKeys.danmakuRoomEnabled);
+
+  bool get roomDanmakuOnly =>
+      GStorage.getSetting(SettingsKeys.danmakuRoomOnly);
+
+  /// 一起看房间消息以弹幕形式展示，房间内所有人都能看到。
+  ///
+  /// [local] 为本人刚发送的消息，即使关闭了房间弹幕显示也会回显。
+  void showRoomDanmaku({
+    required String username,
+    required String message,
+    bool local = false,
+  }) {
+    if (!_canvasAttached) {
+      return;
+    }
+    if (!local && !roomDanmakuEnabled) {
+      return;
+    }
+    final text = message.trim();
+    if (text.isEmpty) {
+      return;
+    }
+    final name = username.trim();
+    canvasController.addDanmaku(
+      DanmakuContentItem(
+        name.isEmpty ? text : '$name：$text',
+        color: Colors.orange,
+        isColorful: true,
+        type: _visibleRoomDanmakuType(),
+        extra: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+  }
+
+  /// 房间弹幕不应受「顶部/滚动/底部」显示开关影响而被整类隐藏，
+  /// 因此选用当前画布上可见的类型，优先底部。
+  DanmakuItemType _visibleRoomDanmakuType() {
+    final option = canvasController.option;
+    if (!option.hideBottom) {
+      return DanmakuItemType.bottom;
+    }
+    if (!option.hideScroll) {
+      return DanmakuItemType.scroll;
+    }
+    if (!option.hideTop) {
+      return DanmakuItemType.top;
+    }
+    return DanmakuItemType.scroll;
+  }
+
+  Future<void> setRoomDanmakuEnabled(bool value) {
+    return GStorage.putSetting<bool>(SettingsKeys.danmakuRoomEnabled, value);
+  }
+
+  /// 开启「只看房间弹幕」时清掉画布上已经排队的普通弹幕。
+  Future<void> setRoomDanmakuOnly(bool value) {
+    if (value && _canvasAttached) {
+      canvasController.clear();
+    }
+    return GStorage.putSetting<bool>(SettingsKeys.danmakuRoomOnly, value);
+  }
 
   final Map<int, List<DanmakuEntry>> danDanmakus = {};
   @observable

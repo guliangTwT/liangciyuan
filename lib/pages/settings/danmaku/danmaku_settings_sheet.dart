@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:canvas_danmaku/canvas_danmaku.dart';
 import 'package:flutter/material.dart';
 
@@ -6,6 +8,7 @@ import 'package:kazumi/bean/dialog/material_bottom_sheet.dart';
 import 'package:kazumi/bean/settings/settings_list.dart';
 import 'package:kazumi/bean/widget/connected_tabs.dart';
 import 'package:kazumi/bean/widget/content_section.dart';
+import 'package:kazumi/pages/player/controller/player_danmaku_controller.dart';
 import 'package:kazumi/pages/settings/danmaku/danmaku_ch_convert_tile.dart';
 import 'package:kazumi/pages/settings/danmaku/danmaku_shield_settings_sheet.dart';
 import 'package:kazumi/pages/settings/danmaku/danmaku_time_offset_sheet.dart';
@@ -15,7 +18,7 @@ enum _DanmakuSettingsDestination { timeOffset, shield }
 
 Future<void> showDanmakuSettingsSheet({
   required BuildContext context,
-  required DanmakuController danmakuController,
+  required PlayerDanmakuController danmaku,
   required VoidCallback onUpdateDanmakuSpeed,
   VoidCallback? onTimelineOffsetChanged,
 }) async {
@@ -24,7 +27,7 @@ Future<void> showDanmakuSettingsSheet({
         context: context,
         builder: (context) {
           return _DanmakuSettingsSheet(
-            danmakuController: danmakuController,
+            danmaku: danmaku,
             onUpdateDanmakuSpeed: onUpdateDanmakuSpeed,
           );
         },
@@ -43,11 +46,11 @@ Future<void> showDanmakuSettingsSheet({
 }
 
 class _DanmakuSettingsSheet extends StatefulWidget {
-  final DanmakuController danmakuController;
+  final PlayerDanmakuController danmaku;
   final VoidCallback onUpdateDanmakuSpeed;
 
   const _DanmakuSettingsSheet({
-    required this.danmakuController,
+    required this.danmaku,
     required this.onUpdateDanmakuSpeed,
   });
 
@@ -58,17 +61,25 @@ class _DanmakuSettingsSheet extends StatefulWidget {
 class _DanmakuSettingsSheetState extends State<_DanmakuSettingsSheet> {
   // The slider uses stored duration, before playback speed scales it.
   late double _duration;
+  late bool _roomDanmakuEnabled;
+  late bool _roomDanmakuOnly;
 
-  DanmakuOption get _option => widget.danmakuController.option;
+  DanmakuOption get _option => widget.danmaku.canvasController.option;
 
   @override
   void initState() {
     super.initState();
     _duration = GStorage.getSetting(SettingsKeys.danmakuDuration);
+    _roomDanmakuEnabled = GStorage.getSetting<bool>(
+      SettingsKeys.danmakuRoomEnabled,
+    );
+    _roomDanmakuOnly = GStorage.getSetting<bool>(
+      SettingsKeys.danmakuRoomOnly,
+    );
   }
 
   void _applyOption(DanmakuOption option) {
-    setState(() => widget.danmakuController.updateOption(option));
+    setState(() => widget.danmaku.canvasController.updateOption(option));
   }
 
   @override
@@ -267,6 +278,36 @@ class _DanmakuSettingsSheetState extends State<_DanmakuSettingsSheet> {
                           onPressed: (context) => Navigator.of(
                             context,
                           ).pop(_DanmakuSettingsDestination.shield),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    ContentSection.group(
+                      title: '一起看',
+                      children: [
+                        SettingsTile.switchTile(
+                          onToggle: (value) {
+                            final next = value ?? !_roomDanmakuEnabled;
+                            setState(() => _roomDanmakuEnabled = next);
+                            unawaited(
+                              widget.danmaku.setRoomDanmakuEnabled(next),
+                            );
+                          },
+                          title: const Text('房间弹幕'),
+                          description: const Text('房间聊天直接显示在弹幕层，默认开启'),
+                          initialValue: _roomDanmakuEnabled,
+                        ),
+                        SettingsTile.switchTile(
+                          onToggle: (value) {
+                            final next = value ?? !_roomDanmakuOnly;
+                            setState(() => _roomDanmakuOnly = next);
+                            unawaited(
+                              widget.danmaku.setRoomDanmakuOnly(next),
+                            );
+                          },
+                          title: const Text('只看房间弹幕'),
+                          description: const Text('隐藏其他普通弹幕'),
+                          initialValue: _roomDanmakuOnly,
                         ),
                       ],
                     ),

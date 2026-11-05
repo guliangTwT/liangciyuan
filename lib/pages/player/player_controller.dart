@@ -37,7 +37,19 @@ class PlayerController implements Disposable {
       currentBangumiId: () => bangumiId,
       currentEpisodeNumber: () => currentDanmakuEpisodeNumber,
     );
+    _roomDanmakuSubscription = syncplay.chatStream.listen((message) {
+      // 本人的消息在发送时本地回显，避免服务端回传造成重复。
+      if (!message.fromRemote) {
+        return;
+      }
+      danmaku.showRoomDanmaku(
+        username: message.username,
+        message: message.message,
+      );
+    });
   }
+
+  StreamSubscription<SyncPlayChatMessage>? _roomDanmakuSubscription;
 
   final ShaderAssetService shaderAssetService;
   final AudioController audioController;
@@ -404,6 +416,8 @@ class PlayerController implements Disposable {
   }
 
   Future<void> _shutdownResources() async {
+    await _roomDanmakuSubscription?.cancel();
+    _roomDanmakuSubscription = null;
     await Future.wait([
       _releasePlaybackResources(),
       syncplay.dispose(),
@@ -487,6 +501,12 @@ class PlayerController implements Disposable {
   }
 
   Future<void> sendSyncPlayChatMessage(String message) async {
+    final username = syncplay.syncplayController?.username ?? '';
+    danmaku.showRoomDanmaku(
+      username: username,
+      message: message,
+      local: true,
+    );
     await syncplay.sendChatMessage(message);
   }
 

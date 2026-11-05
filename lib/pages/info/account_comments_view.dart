@@ -24,7 +24,6 @@ class AccountCommentsView extends StatefulWidget {
 class _AccountCommentsViewState extends State<AccountCommentsView> {
   static const _pageSize = 20;
 
-  final _scrollController = ScrollController();
   final _api = AccountApi.instance;
 
   final List<AccountComment> _items = [];
@@ -40,30 +39,31 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
   @override
   void initState() {
     super.initState();
-    _scrollController.addListener(_onScroll);
+    // 登录/退出后（从账号页返回）需要刷新发布入口的状态。
+    AccountService().addListener(_onAccountChanged);
     _load(reset: true);
+  }
+
+  void _onAccountChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
-    _scrollController.removeListener(_onScroll);
-    _scrollController.dispose();
+    AccountService().removeListener(_onAccountChanged);
     super.dispose();
   }
 
-  void _onScroll() {
-    if (!_scrollController.hasClients) return;
-    final position = _scrollController.position;
-    if (position.pixels >= position.maxScrollExtent - 240) {
-      // 滚动事件高频触发；失败后 3 秒冷却，避免连续失败重试风暴。
-      final last = _lastLoadMoreAt;
-      final now = DateTime.now();
-      if (last != null && now.difference(last) < const Duration(seconds: 3)) {
-        return;
-      }
-      _lastLoadMoreAt = now;
-      _loadMore();
+  /// 滚动通知是高频的；失败后 3 秒冷却，避免连续失败的重试风暴。
+  void _maybeLoadMore() {
+    if (_loading || !_loaded || _items.length >= _total) return;
+    final last = _lastLoadMoreAt;
+    final now = DateTime.now();
+    if (last != null && now.difference(last) < const Duration(seconds: 3)) {
+      return;
     }
+    _lastLoadMoreAt = now;
+    _loadMore();
   }
 
   Future<void> _load({required bool reset}) async {
@@ -146,6 +146,11 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
       await _load(reset: true);
     } catch (e) {
       if (!mounted) return;
+      if (e is AccountException && e.statusCode == 401) {
+        // 令牌失效：清掉本地登录态，入口回到「登录后可发表」。
+        await AccountService().logout();
+      }
+      if (!mounted) return;
       KazumiDialog.showToast(message: _describe(e));
     }
   }
@@ -177,6 +182,10 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
       });
     } catch (e) {
       if (!mounted) return;
+      if (e is AccountException && e.statusCode == 401) {
+        await AccountService().logout();
+      }
+      if (!mounted) return;
       KazumiDialog.showToast(message: _describe(e));
     }
   }
@@ -184,20 +193,41 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 950),
-        child: ListView.builder(
-          controller: _scrollController,
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-          itemCount: _items.length + 2,
-          itemBuilder: (context, index) {
-            if (index == 0) return _writeEntry(colors);
-            if (index == _items.length + 1) return _footer(colors);
-            final comment = _items[index - 1];
-            return _commentCard(comment, colors);
-          },
-        ),
+    // 与其它 Tab 一致：CustomScrollView + SliverOverlapInjector，
+    // 否则列表会钻到 pinned 的 SliverAppBar 底下，也无法收起头部。
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        // 贴近底部时加载下一页；ScrollController 交给 NestedScrollView，
+        // 显式 controller 会打断它和头部折叠的联动。
+        if (notification.metrics.pixels >=
+            notification.metrics.maxScrollExtent - 240) {
+          _maybeLoadMore();
+        }
+        return false;
+      },
+      child: CustomScrollView(
+        key: const PageStorageKey<String>('account-comments'),
+        slivers: [
+          SliverOverlapInjector(
+            handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            sliver: SliverToBoxAdapter(child: _writeEntry(colors)),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            sliver: SliverList.builder(
+              itemCount: _items.length,
+              itemBuilder: (context, index) =>
+                  _commentCard(_items[index], colors),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+            sliver: SliverToBoxAdapter(child: _footer(colors)),
+          ),
+        ],
       ),
     );
   }

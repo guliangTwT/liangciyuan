@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
 import 'package:kazumi/bean/card/account_comment_card.dart';
+import 'package:kazumi/bean/settings/settings_detail_scaffold.dart';
 import 'package:kazumi/bean/widget/bangumi_avatar.dart';
 import 'package:kazumi/bean/widget/error_widget.dart';
 import 'package:kazumi/modules/my/watch_stats.dart';
 import 'package:kazumi/services/account/account_api.dart';
+import 'package:kazumi/services/account/account_service.dart';
 import 'package:kazumi/utils/date_time.dart';
 
 /// 抖音式头部：大头像 + 昵称 + 加入时间，下方统计行。
@@ -163,9 +165,11 @@ class ProfileStatsBar extends StatelessWidget {
                       ),
                     ),
                   ),
-                  _stat(colors, '${stats.watchedBangumiCount} 部番剧'),
-                  const SizedBox(width: 12),
-                  _stat(colors, '${stats.watchedEpisodeCount} 集'),
+                  _stat(
+                    colors,
+                    '${stats.watchedBangumiCount} 部番剧 · '
+                    '${stats.watchedEpisodeCount} 集',
+                  ),
                   const SizedBox(width: 8),
                   Icon(
                     Icons.chevron_right_rounded,
@@ -180,8 +184,17 @@ class ProfileStatsBar extends StatelessWidget {
     );
   }
 
+  /// 统计文案用弹性宽度 + 省略号：窄屏或大字号下不会顶出 Row。
   Widget _stat(ColorScheme colors, String text) {
-    return Text(text, style: TextStyle(color: colors.onPrimaryContainer));
+    return Flexible(
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.end,
+        style: TextStyle(color: colors.onPrimaryContainer),
+      ),
+    );
   }
 }
 
@@ -218,7 +231,10 @@ class _AccountProfilePageState extends State<AccountProfilePage> {
       _failed = false;
     });
     try {
-      final profile = await AccountApi.instance.getUserProfile(widget.userId);
+      final profile = await AccountApi.instance.getUserProfile(
+        widget.userId,
+        token: AccountService().token,
+      );
       if (!mounted) return;
       setState(() {
         _profile = profile;
@@ -237,13 +253,11 @@ class _AccountProfilePageState extends State<AccountProfilePage> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final profile = _profile;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          profile == null
-              ? '用户主页'
-              : (profile.nickname.isEmpty ? '凉次元用户' : profile.nickname),
-        ),
+    return SettingsDetailScaffold(
+      title: Text(
+        profile == null
+            ? '用户主页'
+            : (profile.nickname.isEmpty ? '凉次元用户' : profile.nickname),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())

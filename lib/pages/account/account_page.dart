@@ -238,30 +238,10 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   Future<void> _editNickname() async {
-    final controller = TextEditingController(text: _account.nickname);
     final value = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('修改昵称'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 24,
-          decoration: const InputDecoration(labelText: '昵称'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('保存'),
-          ),
-        ],
-      ),
+      builder: (context) => _NicknameDialog(initial: _account.nickname),
     );
-    controller.dispose();
     if (value == null || value.isEmpty || !mounted) return;
     setState(() {
       _busy = true;
@@ -315,6 +295,14 @@ class _AccountPageState extends State<AccountPage> {
         setState(() {
           _failed = true;
           _message = e.message;
+        });
+      }
+    } catch (e) {
+      // 文件可能已被系统清理或无权读取（FileSystemException 等）。
+      if (mounted) {
+        setState(() {
+          _failed = true;
+          _message = '头像上传失败：$e';
         });
       }
     } finally {
@@ -439,12 +427,12 @@ class _AccountPageState extends State<AccountPage> {
               initialValue: GStorage.getSetting(SettingsKeys.accountSyncEnable),
               enabled: !_busy,
               onToggle: (value) async {
-                await GStorage.putSetting(
-                  SettingsKeys.accountSyncEnable,
-                  value ?? false,
-                );
+                // 点整行时 value 为 null，需按当前值取反而不是强制关闭。
+                final next = value ??
+                    !GStorage.getSetting(SettingsKeys.accountSyncEnable);
+                await GStorage.putSetting(SettingsKeys.accountSyncEnable, next);
                 if (mounted) setState(() {});
-                if (value == true) await _syncNow();
+                if (next) await _syncNow();
               },
             ),
             SettingsTile.switchTile(
@@ -455,10 +443,9 @@ class _AccountPageState extends State<AccountPage> {
               ),
               enabled: !_busy,
               onToggle: (value) async {
-                await GStorage.putSetting(
-                  SettingsKeys.webDavEnableHistory,
-                  value ?? false,
-                );
+                final next = value ??
+                    !GStorage.getSetting(SettingsKeys.webDavEnableHistory);
+                await GStorage.putSetting(SettingsKeys.webDavEnableHistory, next);
                 if (mounted) setState(() {});
               },
             ),
@@ -470,10 +457,9 @@ class _AccountPageState extends State<AccountPage> {
               ),
               enabled: !_busy,
               onToggle: (value) async {
-                await GStorage.putSetting(
-                  SettingsKeys.webDavEnableCollect,
-                  value ?? false,
-                );
+                final next = value ??
+                    !GStorage.getSetting(SettingsKeys.webDavEnableCollect);
+                await GStorage.putSetting(SettingsKeys.webDavEnableCollect, next);
                 if (mounted) setState(() {});
               },
             ),
@@ -485,9 +471,11 @@ class _AccountPageState extends State<AccountPage> {
               ),
               enabled: !_busy,
               onToggle: (value) async {
+                final next = value ??
+                    !GStorage.getSetting(SettingsKeys.webDavEnableDanmakuShield);
                 await GStorage.putSetting(
                   SettingsKeys.webDavEnableDanmakuShield,
-                  value ?? false,
+                  next,
                 );
                 if (mounted) setState(() {});
               },
@@ -873,6 +861,51 @@ class _Avatar extends StatelessWidget {
         fit: BoxFit.cover,
         errorWidget: (context, _, _) => Icon(Icons.person_rounded, size: size),
       ),
+    );
+  }
+}
+
+/// 昵称编辑对话框：controller 由对话框自身持有并在 dispose 释放，
+/// 避免页面在退场动画结束前就 dispose 掉仍在使用的 TextField。
+class _NicknameDialog extends StatefulWidget {
+  const _NicknameDialog({required this.initial});
+
+  final String initial;
+
+  @override
+  State<_NicknameDialog> createState() => _NicknameDialogState();
+}
+
+class _NicknameDialogState extends State<_NicknameDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('修改昵称'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        maxLength: 24,
+        decoration: const InputDecoration(labelText: '昵称'),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_controller.text.trim()),
+          child: const Text('保存'),
+        ),
+      ],
     );
   }
 }

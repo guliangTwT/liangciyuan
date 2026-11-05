@@ -22,6 +22,8 @@ class EpisodeCommentsView extends StatelessWidget {
     required this.onSelectEpisode,
     required this.onRefresh,
     this.total,
+    this.onLoadMore,
+    this.loadingMore = false,
   });
 
   final int episode;
@@ -36,6 +38,10 @@ class EpisodeCommentsView extends StatelessWidget {
 
   /// 服务端总数；为空时回退到当前列表长度。
   final int? total;
+
+  /// 还有更多讨论时用于追加下一页。
+  final VoidCallback? onLoadMore;
+  final bool loadingMore;
 
   @override
   Widget build(BuildContext context) {
@@ -148,13 +154,28 @@ class EpisodeCommentsView extends StatelessWidget {
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                  child: Text(
-                    '共 ${total ?? comments.length} 条讨论 · 凉次元账号服务',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelMedium
-                        ?.copyWith(color: colors.onSurfaceVariant),
+                  child: Column(
+                    children: [
+                      if (onLoadMore != null && comments.length < (total ?? 0))
+                        OutlinedButton(
+                          onPressed: loadingMore ? null : onLoadMore,
+                          child: Text(
+                            loadingMore
+                                ? '加载中…'
+                                : '加载更多（已显示 ${comments.length}/$total）',
+                          ),
+                        ),
+                      if (onLoadMore != null && comments.length < (total ?? 0))
+                        const SizedBox(height: 12),
+                      Text(
+                        '共 ${total ?? comments.length} 条讨论 · 凉次元账号服务',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelMedium
+                            ?.copyWith(color: colors.onSurfaceVariant),
+                      ),
+                    ],
                   ),
                 ),
               ),

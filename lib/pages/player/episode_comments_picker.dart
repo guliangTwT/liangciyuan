@@ -53,8 +53,11 @@ class EpisodeCommentsPicker extends StatelessWidget {
                       info.nameCn.isNotEmpty ? info.nameCn : info.name;
                   // 用剧集号（sort）而非列表序号：列表可能混含 SP/OP/ED
                   // 或集数缺口，序号会错位到别的集的讨论。
+                  // sort 是 num，小数集号（如 0.5）取整后用 int 返回，
+                  // 避免 push<int> 收到 double 触发运行时类型错误。
                   final episodeNumber = info.episode;
-                  final selected = episodeNumber == selectedEpisode;
+                  final episodeKey = episodeNumber.toInt();
+                  final selected = episodeKey == selectedEpisode;
                   final Material listTile = Material(
                     color: selected
                         ? colors.primaryContainer
@@ -94,8 +97,8 @@ class EpisodeCommentsPicker extends StatelessWidget {
                         color:
                             selected ? colors.primary : colors.onSurfaceVariant,
                       ),
-                      // 返回真实剧集号，评论与标题查询都用它。
-                      onTap: () => Navigator.pop(context, episodeNumber),
+                      // 返回真实剧集号（int），评论与标题查询都用它。
+                      onTap: () => Navigator.pop(context, episodeKey),
                     ),
                   );
                   return listTile;

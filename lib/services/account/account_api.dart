@@ -19,6 +19,7 @@ class AccountProfile {
     required this.nickname,
     required this.avatarUrl,
     required this.emailVerified,
+    this.createdAt = 0,
   });
 
   final int id;
@@ -27,6 +28,9 @@ class AccountProfile {
   final String avatarUrl;
   final bool emailVerified;
 
+  /// 注册时间（秒级 Unix 时间戳）；0 表示未知。
+  final int createdAt;
+
   factory AccountProfile.fromJson(Map<String, dynamic> json, String avatarUrl) {
     return AccountProfile(
       id: (json['id'] as num?)?.toInt() ?? 0,
@@ -34,6 +38,7 @@ class AccountProfile {
       nickname: (json['nickname'] ?? '').toString(),
       avatarUrl: avatarUrl,
       emailVerified: json['emailVerified'] == true,
+      createdAt: (json['createdAt'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -396,8 +401,13 @@ class AccountApi {
   }
 
   /// 他人公开主页：昵称、头像、吐槽数与最近发布的吐槽。
-  Future<AccountUserProfile> getUserProfile(int userId) async {
-    final body = await _request('GET', '/v1/users/$userId');
+  Future<AccountUserProfile> getUserProfile(int userId, {String? token}) async {
+    // 带 token 时服务端会标出「我的」吐槽；匿名浏览也可以。
+    final body = await _request(
+      'GET',
+      '/v1/users/$userId',
+      token: (token == null || token.isEmpty) ? null : token,
+    );
     final user = body['user'];
     if (user is! Map<String, dynamic>) {
       throw const AccountException('读取用户主页失败');

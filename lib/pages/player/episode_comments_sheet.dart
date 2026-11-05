@@ -119,8 +119,9 @@ class _EpisodeCommentsSheetState extends State<EpisodeCommentsSheet>
         KazumiDialog.showToast(message: '未找到分集列表');
         return;
       }
-      for (var index = 0; index < episodes.length; index++) {
-        _rememberEpisodeInfo(index + 1, episodes[index]);
+      for (final episode in episodes) {
+        // 以真实剧集号（sort）为键，与 _selectedEpisode 语义一致。
+        _rememberEpisodeInfo(episode.episode.toInt(), episode);
       }
       final selected = await task.show<int>(
         builder: (context) => EpisodeCommentsPicker(
@@ -152,6 +153,13 @@ class _EpisodeCommentsSheetState extends State<EpisodeCommentsSheet>
         onSelectEpisode: _showEpisodeSelection,
         onRefresh: _loadComments,
         total: matchesEpisode ? _controller.commentsTotal : null,
+        loadingMore: _controller.episodeCommentsLoading,
+        onLoadMore: () => unawaited(
+          _controller.loadMoreEpisodeComments(
+            _controller.bangumiItem.id,
+            _selectedEpisode,
+          ),
+        ),
       );
     });
   }

@@ -25,6 +25,40 @@ mixin _$VideoPageController on _VideoPageController, Store {
     });
   }
 
+  late final _$commentsTotalAtom =
+      Atom(name: '_VideoPageController.commentsTotal', context: context);
+
+  @override
+  int get commentsTotal {
+    _$commentsTotalAtom.reportRead();
+    return super.commentsTotal;
+  }
+
+  @override
+  set commentsTotal(int value) {
+    _$commentsTotalAtom.reportWrite(value, super.commentsTotal, () {
+      super.commentsTotal = value;
+    });
+  }
+
+  late final _$episodeCommentsLoadingAtom = Atom(
+      name: '_VideoPageController.episodeCommentsLoading',
+      context: context);
+
+  @override
+  bool get episodeCommentsLoading {
+    _$episodeCommentsLoadingAtom.reportRead();
+    return super.episodeCommentsLoading;
+  }
+
+  @override
+  set episodeCommentsLoading(bool value) {
+    _$episodeCommentsLoadingAtom.reportWrite(value,
+        super.episodeCommentsLoading, () {
+      super.episodeCommentsLoading = value;
+    });
+  }
+
   late final _$_loadingAtom =
       Atom(name: '_VideoPageController._loading', context: context);
 
@@ -279,6 +313,16 @@ mixin _$VideoPageController on _VideoPageController, Store {
     }
   }
 
+  late final _$loadMoreEpisodeCommentsAsyncAction = AsyncAction(
+    '_VideoPageController.loadMoreEpisodeComments',
+    context: context);
+
+  @override
+  Future<bool> loadMoreEpisodeComments(int id, int episode) {
+    return _$loadMoreEpisodeCommentsAsyncAction
+        .run(() => super.loadMoreEpisodeComments(id, episode));
+  }
+
   @override
   void _applyEpisodeComments(
       int episode, EpisodeInfo info, List<EpisodeCommentItem> comments,
@@ -307,6 +351,8 @@ mixin _$VideoPageController on _VideoPageController, Store {
   String toString() {
     return '''
 episodeCommentsList: ${episodeCommentsList},
+commentsTotal: ${commentsTotal},
+episodeCommentsLoading: ${episodeCommentsLoading},
 selectedEpisode: ${selectedEpisode},
 playingEpisode: ${playingEpisode},
 commentsEpisode: ${commentsEpisode},

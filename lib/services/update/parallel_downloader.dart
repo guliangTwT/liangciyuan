@@ -64,6 +64,8 @@ class ParallelDownloader {
       final partPaths = [
         for (var i = 0; i < ranges.length; i++) '${partDir.path}/part-$i.bin',
       ];
+      // eagerError：任意分块永久失败立即让整次下载失败，
+      // 其余块停下，避免继续空耗带宽、进度假前进。
       await Future.wait([
         for (var i = 0; i < ranges.length; i++)
           _downloadRange(
@@ -74,7 +76,7 @@ class ParallelDownloader {
             onBytes: (chunkBytes, {reset = false}) =>
                 progress.update(i, chunkBytes, reset: reset),
           ),
-      ]);
+      ], eagerError: true);
       if (cancelToken.isCancelled) throw cancelToken.cancelError!;
 
       // 校验各分块大小后按序拼接。
@@ -103,10 +105,14 @@ class ParallelDownloader {
     }
   }
 
-  /// 只需要响应头；把流排空以释放连接。
+  /// 只需要响应头：取消订阅而不是排空。排空会把整个安装包读完，
+  /// 在「不支持 Range」的服务器上等于白下一次 50MB。
   Future<void> _drain(Response<ResponseBody> response) async {
+    final stream = response.data?.stream;
+    if (stream == null) return;
     try {
-      await response.data?.stream.drain<void>();
+      // listen(null).cancel() 立即释放底层连接，不消费响应体。
+      await stream.listen(null).cancel();
     } catch (_) {}
   }
 
@@ -243,18 +249,26 @@ class _ChunkProgress {
   final int total;
   final void Function(int received, int total) onProgress;
   final CancelToken _cancelToken;
-  final List<int> _counts = [];
+  final List<int> _current = [];
+  final List<int> _maxSeen = [];
 
+  /// 进度只用「每块历史最大字节数」汇总：重试整块重来时该块当前计数
+  /// 归零，但历史最大值保留，进度条因此单调递增不会倒退；
+  /// 只有每块都至少完整下过一次，汇总才会到达 total。
   void update(int chunkIndex, int chunkBytes, {bool reset = false}) {
-    while (_counts.length <= chunkIndex) {
-      _counts.add(0);
+    while (_current.length <= chunkIndex) {
+      _current.add(0);
+      _maxSeen.add(0);
     }
     if (reset) {
-      _counts[chunkIndex] = 0;
+      _current[chunkIndex] = 0;
     } else {
-      _counts[chunkIndex] += chunkBytes;
+      _current[chunkIndex] += chunkBytes;
     }
-    final sum = _counts.fold(0, (a, b) => a + b).clamp(0, total);
+    if (_current[chunkIndex] > _maxSeen[chunkIndex]) {
+      _maxSeen[chunkIndex] = _current[chunkIndex];
+    }
+    final sum = _maxSeen.fold(0, (a, b) => a + b).clamp(0, total);
     if (!_cancelToken.isCancelled) {
       onProgress(sum, total);
     }

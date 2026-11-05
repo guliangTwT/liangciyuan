@@ -15,8 +15,19 @@ function avatar_url(array $user): string
     if ($avatar === '') {
         return '';
     }
+    // v 用账号的 updated_at：同格式重传时文件名不变，只靠文件名会让
+    // 客户端（Cache-Control 24h）持续看到旧头像。
+    $version = (int) ($user['updated_at'] ?? 0);
+    if ($version <= 0) {
+        $version = (int) @filemtime(avatar_dir_path() . '/' . $avatar);
+    }
     return api_base_url() . '/v1/avatar/' . (int) $user['id']
-        . '?v=' . rawurlencode($avatar);
+        . '?v=' . ($version > 0 ? $version : rawurlencode($avatar));
+}
+
+function avatar_dir_path(): string
+{
+    return (string) app_config()['avatar_dir'];
 }
 
 function handle_ping(Request $request): void
@@ -33,7 +44,9 @@ function handle_health(Request $request): void
         db()->query('SELECT 1');
     } catch (Throwable $e) {
         $dbOk = false;
-        $error = $e->getMessage();
+        // 不把数据库异常原文（含路径/驱动信息）返回给未鉴权的调用方。
+        error_log('liangciyuan api health: ' . $e->getMessage());
+        $error = '数据库不可用';
     }
     Response::json([
         'ok' => $dbOk,
@@ -55,10 +68,21 @@ function handle_send_code(Request $request): void
         throw new HttpException(400, '只支持 QQ 邮箱（@qq.com / @foxmail.com）');
     }
 
+    // 先做 60 秒重发节流，再扣每小时配额：否则用户连续点几次重发
+    // 就把整点配额烧光，随后一小时都收不到验证码。
+    $pdo = db();
+    $stmt = $pdo->prepare(
+        'SELECT created_at FROM email_codes WHERE email = ? ORDER BY id DESC LIMIT 1'
+    );
+    $stmt->execute([$email]);
+    $last = $stmt->fetch();
+    if ($last && now() - (int) $last['created_at'] < (int) $config['code_resend_seconds']) {
+        throw new HttpException(429, '发送过于频繁，请稍后再试');
+    }
+
     rate_limit('send-code:ip:' . client_ip(), (int) $config['code_ip_hourly_limit'], 3600);
     rate_limit('send-code:email:' . $email, (int) $config['code_email_hourly_limit'], 3600);
 
-    $pdo = db();
     // 清理过期与已使用的验证码，避免表无限增长。
     $pdo->prepare('DELETE FROM email_codes WHERE expires_at < ? OR (used = 1 AND created_at < ?)')
         ->execute([now(), now() - 86400]);
@@ -70,15 +94,6 @@ function handle_send_code(Request $request): void
     }
     if ($purpose === 'reset' && !$existingUser) {
         throw new HttpException(400, '该邮箱尚未注册，请先注册');
-    }
-
-    $stmt = $pdo->prepare(
-        'SELECT created_at FROM email_codes WHERE email = ? ORDER BY id DESC LIMIT 1'
-    );
-    $stmt->execute([$email]);
-    $last = $stmt->fetch();
-    if ($last && now() - (int) $last['created_at'] < (int) $config['code_resend_seconds']) {
-        throw new HttpException(429, '发送过于频繁，请稍后再试');
     }
 
     $code = (string) random_int(100000, 999999);
@@ -152,6 +167,8 @@ function handle_reset_password(Request $request): void
             throw new HttpException(400, '验证码已过期，请重新获取');
         }
         if (!hash_equals((string) $row['code_hash'], hash('sha256', $code))) {
+            // 按邮箱限制验证尝试次数，避免换 IP 对同一邮箱爆破 6 位码。
+            rate_limit('verify:email:' . $email, 20, 3600);
             throw new HttpException(400, '验证码不正确');
         }
 
@@ -226,6 +243,8 @@ function handle_register(Request $request): void
             throw new HttpException(400, '验证码已过期，请重新获取');
         }
         if (!hash_equals((string) $row['code_hash'], hash('sha256', $code))) {
+            // 按邮箱限制验证尝试次数，避免换 IP 对同一邮箱爆破 6 位码。
+            rate_limit('verify:email:' . $email, 20, 3600);
             throw new HttpException(400, '验证码不正确');
         }
 
@@ -454,30 +473,47 @@ function handle_sync_put(Request $request): void
     }
 
     $pdo = db();
-    $stmt = $pdo->prepare(
-        'SELECT COUNT(*) AS c, COALESCE(SUM(length(payload)), 0) AS s
-         FROM sync_blobs WHERE user_id = ? AND kind <> ?'
-    );
-    $stmt->execute([(int) $user['id'], $kind]);
-    $existing = $stmt->fetch() ?: ['c' => 0, 's' => 0];
-    if ((int) $existing['c'] >= (int) $config['max_sync_kinds']) {
-        throw new HttpException(413, '同步内容类型过多');
+    // 配额检查与写入必须在同一 IMMEDIATE 事务里完成，否则并发 PUT 不同 kind
+    // 会同时通过 COUNT/SUM 检查，突破类型与总字节上限。
+    $pdo->exec('BEGIN IMMEDIATE');
+    $committed = false;
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT COUNT(*) AS c, COALESCE(SUM(length(payload)), 0) AS s
+             FROM sync_blobs WHERE user_id = ? AND kind <> ?'
+        );
+        $stmt->execute([(int) $user['id'], $kind]);
+        $existing = $stmt->fetch() ?: ['c' => 0, 's' => 0];
+        if ((int) $existing['c'] >= (int) $config['max_sync_kinds']) {
+            throw new HttpException(413, '同步内容类型过多');
+        }
+        if ((int) $existing['s'] + strlen($payload) > (int) $config['max_sync_total_bytes']) {
+            throw new HttpException(413, '同步数据总量超出限制');
+        }
+        // 客户端在上传前已经拉取并合并过云端数据，这里以服务端接收时间落库，
+        // 避免设备时钟偏差导致 PUT 永远 409。
+        $storedAt = (int) round(microtime(true) * 1000);
+        $checksum = hash('sha256', $payload);
+        $pdo->prepare(
+            'INSERT INTO sync_blobs(user_id, kind, payload, checksum, updated_at)
+             VALUES(?, ?, ?, ?, ?)
+             ON CONFLICT(user_id, kind) DO UPDATE SET
+               payload = excluded.payload,
+               checksum = excluded.checksum,
+               updated_at = excluded.updated_at'
+        )->execute([(int) $user['id'], $kind, $payload, $checksum, $storedAt]);
+        $pdo->exec('COMMIT');
+        $committed = true;
+    } catch (Throwable $e) {
+        if (!$committed) {
+            try {
+                $pdo->exec('ROLLBACK');
+            } catch (Throwable $ignored) {
+                // SQLite 可能已自动回滚。
+            }
+        }
+        throw $e;
     }
-    if ((int) $existing['s'] + strlen($payload) > (int) $config['max_sync_total_bytes']) {
-        throw new HttpException(413, '同步数据总量超出限制');
-    }
-    // 客户端在上传前已经拉取并合并过云端数据，这里以服务端接收时间落库，
-    // 避免设备时钟偏差导致 PUT 永远 409。
-    $storedAt = (int) round(microtime(true) * 1000);
-    $checksum = hash('sha256', $payload);
-    $pdo->prepare(
-        'INSERT INTO sync_blobs(user_id, kind, payload, checksum, updated_at)
-         VALUES(?, ?, ?, ?, ?)
-         ON CONFLICT(user_id, kind) DO UPDATE SET
-           payload = excluded.payload,
-           checksum = excluded.checksum,
-           updated_at = excluded.updated_at'
-    )->execute([(int) $user['id'], $kind, $payload, $checksum, $storedAt]);
 
     Response::ok(['updatedAt' => $storedAt, 'checksum' => $checksum]);
 }

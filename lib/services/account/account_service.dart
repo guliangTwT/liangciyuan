@@ -119,13 +119,32 @@ class AccountService extends ChangeNotifier {
     }
   }
 
+  /// 写操作统一兜底：令牌在会话中途失效（401）时清掉本地登录态，
+/// 让界面回到「未登录」而不是卡在「已登录但所有写操作都失败」。
+  Future<T> _withAuth<T>(Future<T> Function(String token) action) async {
+    ensureLoaded();
+    if (_token.isEmpty) throw const AccountException('请先登录凉次元账号');
+    try {
+      return await action(_token);
+    } on AccountException catch (e) {
+      if (e.statusCode == 401) {
+        await logout();
+      }
+      rethrow;
+    }
+  }
+
   Future<void> updateNickname(String nickname) async {
-    final profile = await _api.updateNickname(_token, nickname.trim());
+    final profile = await _withAuth(
+      (token) => _api.updateNickname(token, nickname.trim()),
+    );
     await _persistProfile(profile);
   }
 
   Future<void> uploadAvatar(String filePath) async {
-    final profile = await _api.uploadAvatar(_token, filePath);
+    final profile = await _withAuth(
+      (token) => _api.uploadAvatar(token, filePath),
+    );
     await _persistProfile(profile);
   }
 

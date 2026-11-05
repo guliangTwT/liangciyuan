@@ -62,12 +62,17 @@ class _AccountCommentCardState extends State<AccountCommentCard> {
                         ? '查看用户主页'
                         : '查看 ${comment.nickname} 的主页',
                     child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
                       onTap: widget.onAvatarTap == null || comment.userId <= 0
                           ? null
                           : () => widget.onAvatarTap!(comment.userId),
-                      child: BangumiAvatar(
-                        radius: widget.compact ? 16 : 22,
-                        imageUrl: comment.avatarUrl,
+                      child: Padding(
+                        // 补足 48dp 最小点击热区（compact 头像只有 32dp）。
+                        padding: EdgeInsets.all(widget.compact ? 8 : 2),
+                        child: BangumiAvatar(
+                          radius: widget.compact ? 16 : 22,
+                          imageUrl: comment.avatarUrl,
+                        ),
                       ),
                     ),
                   ),
@@ -184,7 +189,8 @@ class _AccountCommentCardState extends State<AccountCommentCard> {
 /// 渲染时会经过 [toAccountComment] 还原（见 [AccountCommentExtras]）。
 class AccountCommentItem extends EpisodeCommentItem {
   AccountCommentItem.fromAccountComment(AccountComment comment)
-    : _spoiler = comment.spoiler,
+    : commentId = comment.id,
+      _spoiler = comment.spoiler,
       _mine = comment.mine,
       super(
         comment: EpisodeComment(
@@ -206,6 +212,9 @@ class AccountCommentItem extends EpisodeCommentItem {
         replies: const [],
       );
 
+  /// 服务端评论 ID（去重/删除需要真实 ID，不能用用户 ID 顶替）。
+  final int commentId;
+
   /// 单集讨论视图无法从 EpisodeComment 取回的额外标记。
   final bool _spoiler;
   final bool _mine;
@@ -216,7 +225,7 @@ extension AccountCommentEpisodeComment on EpisodeCommentItem {
   AccountComment toAccountComment() {
     final item = this;
     return AccountComment(
-      id: item.comment.user.id,
+      id: item is AccountCommentItem ? item.commentId : item.comment.user.id,
       content: item.comment.comment,
       spoiler: item is AccountCommentItem && item._spoiler,
       createdAt: item.comment.createdAt,

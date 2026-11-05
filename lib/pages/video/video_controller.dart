@@ -788,6 +788,10 @@ abstract class _VideoPageController with Store implements Disposable {
   @observable
   int commentsTotal = 0;
 
+  /// 追加分页请求进行中（与首屏加载区分，避免重复请求）。
+  @observable
+  bool episodeCommentsLoading = false;
+
   Future<bool> queryBangumiEpisodeCommentsByID(int id, int episode) async {
     final session = _commentSessions.begin();
     final latestEpisodeInfo = await _loadEpisodeInfo(id, episode, session);
@@ -835,6 +839,53 @@ abstract class _VideoPageController with Store implements Disposable {
   String? _episodeCommentsToken() {
     final account = AccountService()..ensureLoaded();
     return account.loggedIn ? account.token : null;
+  }
+
+  /// 追加下一页单集讨论（服务端每页最多 50 条）。
+  @action
+  Future<bool> loadMoreEpisodeComments(int id, int episode) async {
+    if (commentsEpisode != episode) return false;
+    if (episodeCommentsLoading) return false;
+    final loaded = episodeCommentsList.length;
+    if (loaded >= commentsTotal) return false;
+    episodeCommentsLoading = true;
+    try {
+      final page = await AccountApi.instance.listEpisodeComments(
+        bangumiId: id,
+        episode: episode,
+        offset: loaded,
+        token: _episodeCommentsToken(),
+      );
+      if (commentsEpisode != episode) return false;
+      // 按服务端评论 ID 去重，避免并发插入导致同一页重复出现。
+      final seen = {
+        for (final item in episodeCommentsList)
+          if (item is AccountCommentItem) item.commentId else -1,
+      };
+      final additions = [
+        for (final comment in page.items)
+          if (!seen.contains(comment.id))
+            AccountCommentItem.fromAccountComment(comment),
+      ];
+      if (additions.isEmpty) {
+        commentsTotal = episodeCommentsList.length;
+        return false;
+      }
+      episodeCommentsList.addAll(additions);
+      commentsTotal = page.total;
+      if (!isCommentsAscending) {
+        episodeCommentsList.sort(
+          (a, b) => b.comment.createdAt.compareTo(a.comment.createdAt),
+        );
+      } else {
+        episodeCommentsList.sort(
+          (a, b) => a.comment.createdAt.compareTo(b.comment.createdAt),
+        );
+      }
+      return true;
+    } finally {
+      episodeCommentsLoading = false;
+    }
   }
 
   /// 分集标题仍取自 Bangumi（纯元数据）；评论内容全部来自自建服务。

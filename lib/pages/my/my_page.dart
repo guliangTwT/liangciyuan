@@ -122,7 +122,9 @@ class _MyPageState extends State<MyPage> {
               profile: ProfileHeaderData(
                 avatarUrl: account.avatarUrl,
                 nickname: loggedIn ? account.nickname : '',
-                joinedAt: null,
+                joinedAt: loggedIn && account.profile!.createdAt > 0
+                    ? account.profile!.createdAt
+                    : null,
                 subtitle: loggedIn
                     ? '看过 ${stats.watchedBangumiCount} 部番剧 · ${stats.watchedEpisodeCount} 集'
                     : '登录凉次元账号，同步收藏与观看足迹',

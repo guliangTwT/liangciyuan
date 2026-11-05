@@ -113,7 +113,10 @@ function rate_limit(string $key, int $limit, int $windowSeconds): void
         $pdo->prepare('DELETE FROM rate_limits WHERE window_start < ?')
             ->execute([$now - 86400]);
     }
-    $pdo->beginTransaction();
+    // WAL 下延迟事务先读后写会撞 SQLITE_BUSY_SNAPSHOT（busy_timeout 不生效），
+    // 限流这类「读-改-写」必须用 IMMEDIATE 事务直接拿写锁。
+    $pdo->exec('BEGIN IMMEDIATE');
+    $committed = false;
     try {
         $stmt = $pdo->prepare('SELECT count, window_start FROM rate_limits WHERE key = ?');
         $stmt->execute([$key]);
@@ -123,17 +126,20 @@ function rate_limit(string $key, int $limit, int $windowSeconds): void
                 'INSERT INTO rate_limits(key, count, window_start) VALUES(?, 1, ?)
                  ON CONFLICT(key) DO UPDATE SET count = 1, window_start = excluded.window_start'
             )->execute([$key, $now]);
+        } elseif ((int) $row['count'] >= $limit) {
+            throw new HttpException(429, '请求过于频繁，请稍后再试');
         } else {
-            if ((int) $row['count'] >= $limit) {
-                $pdo->commit();
-                throw new HttpException(429, '请求过于频繁，请稍后再试');
-            }
             $pdo->prepare('UPDATE rate_limits SET count = count + 1 WHERE key = ?')->execute([$key]);
         }
-        $pdo->commit();
+        $pdo->exec('COMMIT');
+        $committed = true;
     } catch (Throwable $e) {
-        if ($pdo->inTransaction()) {
-            $pdo->rollBack();
+        if (!$committed) {
+            try {
+                $pdo->exec('ROLLBACK');
+            } catch (Throwable $ignored) {
+                // 事务可能已被 SQLite 自动回滚。
+            }
         }
         throw $e;
     }

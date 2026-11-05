@@ -729,3 +729,147 @@ function handle_user_profile(Request $request): void
         ),
     ]);
 }
+
+// ---------------------------------------------------------------------------
+// 自建弹幕：不再依赖第三方弹幕源，直接按 (番剧, 集数) 存取。
+// ---------------------------------------------------------------------------
+
+function danmaku_target(Request $request): array
+{
+    $id = (int) ($request->query['bangumiId'] ?? 0);
+    $episode = (int) ($request->query['episode'] ?? 0);
+    if ($id <= 0 || $id > 1000000000000) {
+        throw new HttpException(400, 'bangumiId 不正确');
+    }
+    if ($episode < 0 || $episode > 100000) {
+        throw new HttpException(400, 'episode 不正确');
+    }
+    return [$id, $episode];
+}
+
+function handle_danmaku_list(Request $request): void
+{
+    [$bangumiId, $episode] = danmaku_target($request);
+    $offset = max(0, (int) ($request->query['offset'] ?? 0));
+    $limit = (int) ($request->query['limit'] ?? 3000);
+    $limit = $limit <= 0 ? 3000 : min($limit, 5000);
+
+    $pdo = db();
+    $stmt = $pdo->prepare(
+        'SELECT d.id, d.position_ms, d.mode, d.color, d.content, d.user_id
+         FROM danmaku d
+         WHERE d.bangumi_id = ? AND d.episode = ? AND d.deleted = 0
+         ORDER BY d.position_ms ASC, d.id ASC
+         LIMIT ? OFFSET ?'
+    );
+    $stmt->bindValue(1, $bangumiId);
+    $stmt->bindValue(2, $episode);
+    $stmt->bindValue(3, $limit, PDO::PARAM_INT);
+    $stmt->bindValue(4, $offset, PDO::PARAM_INT);
+    $stmt->execute();
+
+    $totalStmt = $pdo->prepare(
+        'SELECT COUNT(*) AS c FROM danmaku
+         WHERE bangumi_id = ? AND episode = ? AND deleted = 0'
+    );
+    $totalStmt->execute([$bangumiId, $episode]);
+
+    Response::ok([
+        'total' => (int) ($totalStmt->fetch()['c'] ?? 0),
+        'offset' => $offset,
+        'items' => array_map(
+            static fn (array $row): array => [
+                'id' => (int) $row['id'],
+                'positionMs' => (int) $row['position_ms'],
+                'mode' => (int) $row['mode'],
+                'color' => (int) $row['color'],
+                'content' => (string) $row['content'],
+                'userId' => (int) $row['user_id'],
+            ],
+            $stmt->fetchAll()
+        ),
+    ]);
+}
+
+function handle_danmaku_create(Request $request): void
+{
+    $user = current_user($request);
+    $body = $request->json();
+    $bangumiId = (int) ($body['bangumiId'] ?? 0);
+    $episode = (int) ($body['episode'] ?? 0);
+    $positionMs = (int) ($body['positionMs'] ?? -1);
+    $mode = (int) ($body['mode'] ?? 1);
+    $color = (int) ($body['color'] ?? 16777215);
+    $content = trim((string) ($body['content'] ?? ''));
+
+    if ($bangumiId <= 0 || $bangumiId > 1000000000000) {
+        throw new HttpException(400, 'bangumiId 不正确');
+    }
+    if ($episode < 0 || $episode > 100000) {
+        throw new HttpException(400, 'episode 不正确');
+    }
+    if ($positionMs < 0 || $positionMs > 24 * 3600 * 1000) {
+        throw new HttpException(400, '播放位置不正确');
+    }
+    if (!in_array($mode, [1, 4, 5], true)) {
+        throw new HttpException(400, '弹幕类型不支持');
+    }
+    $length = mb_strlen($content, 'UTF-8');
+    if ($length < 1) {
+        throw new HttpException(400, '弹幕内容不能为空');
+    }
+    if ($length > 100) {
+        throw new HttpException(400, '弹幕最多 100 字');
+    }
+    if ($color < 0 || $color > 0xFFFFFF) {
+        $color = 0xFFFFFF;
+    }
+
+    // 单用户每分钟最多 30 条，避免刷屏。
+    rate_limit('danmaku:user:' . (int) $user['id'], 30, 60);
+
+    $pdo = db();
+    $pdo->prepare(
+        'INSERT INTO danmaku(bangumi_id, episode, position_ms, mode, color, content, user_id, created_at)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?)'
+    )->execute([
+        $bangumiId,
+        $episode,
+        $positionMs,
+        $mode,
+        $color,
+        $content,
+        (int) $user['id'],
+        now(),
+    ]);
+    $id = (int) $pdo->lastInsertId();
+
+    Response::ok([
+        'danmaku' => [
+            'id' => $id,
+            'positionMs' => $positionMs,
+            'mode' => $mode,
+            'color' => $color,
+            'content' => $content,
+            'userId' => (int) $user['id'],
+        ],
+    ]);
+}
+
+function handle_danmaku_delete(Request $request): void
+{
+    $user = current_user($request);
+    $id = (int) ($request->params['id'] ?? 0);
+    $pdo = db();
+    $stmt = $pdo->prepare('SELECT user_id FROM danmaku WHERE id = ? AND deleted = 0');
+    $stmt->execute([$id]);
+    $row = $stmt->fetch();
+    if (!$row) {
+        throw new HttpException(400, '弹幕不存在或已删除');
+    }
+    if ((int) $row['user_id'] !== (int) $user['id']) {
+        throw new HttpException(403, '只能删除自己的弹幕');
+    }
+    $pdo->prepare('UPDATE danmaku SET deleted = 1 WHERE id = ?')->execute([$id]);
+    Response::ok();
+}

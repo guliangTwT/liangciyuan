@@ -147,10 +147,6 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
     }
 
     widget.keyboardFocus.requestFocus();
-    if (playerController.danmaku.danDanmakus.isEmpty) {
-      KazumiDialog.showToast(message: '当前剧集不支持弹幕发送的说');
-      return;
-    }
     if (message.length > 100) {
       KazumiDialog.showToast(message: '弹幕内容过长');
       return;
@@ -175,9 +171,16 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
       );
       unawaited(playerController.sendSyncPlayChatMessage(message));
     } else {
-      // This provider has no send API; display a local echo.
+      // 直接发到凉次元自有弹幕库：不再依赖第三方弹幕源，也不需要先「找弹幕」。
+      final position = playerController.playback.currentPosition;
       playerController.danmaku.canvasController.addDanmaku(
         DanmakuContentItem(message, selfSend: true),
+      );
+      unawaited(
+        playerController.danmaku.sendDanmaku(
+          content: message,
+          position: position,
+        ),
       );
     }
     textController.clear();

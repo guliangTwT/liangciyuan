@@ -34,5 +34,8 @@ $router->add('GET', '/v1/comments', 'handle_comments_list');
 $router->add('POST', '/v1/comments', 'handle_comments_create');
 $router->add('DELETE', '/v1/comments/{id}', 'handle_comments_delete');
 $router->add('GET', '/v1/users/{id}', 'handle_user_profile');
+$router->add('GET', '/v1/danmaku', 'handle_danmaku_list');
+$router->add('POST', '/v1/danmaku', 'handle_danmaku_create');
+$router->add('DELETE', '/v1/danmaku/{id}', 'handle_danmaku_delete');
 
 $router->dispatch(Request::fromGlobals());

@@ -88,7 +88,33 @@ SQL);
         'CREATE INDEX IF NOT EXISTS idx_comments_target
          ON comments(target_type, target_id, created_at, id)'
     );
-    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_comments_user ON comments(user_id, created_at)');
+    $pdo->exec(
+        'CREATE INDEX IF NOT EXISTS idx_comments_user ON comments(user_id, created_at)'
+    );
+
+    // 自建弹幕：按 (番剧, 集数) 隔离，position_ms 为播放位置。
+    // mode 沿用 DanDanPlay 语义：1 滚动 / 4 底部 / 5 顶部。
+    $pdo->exec(<<<SQL
+CREATE TABLE IF NOT EXISTS danmaku (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bangumi_id INTEGER NOT NULL,
+  episode INTEGER NOT NULL,
+  position_ms INTEGER NOT NULL,
+  mode INTEGER NOT NULL DEFAULT 1,
+  color INTEGER NOT NULL DEFAULT 16777215,
+  content TEXT NOT NULL,
+  user_id INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  deleted INTEGER NOT NULL DEFAULT 0
+)
+SQL);
+    $pdo->exec(
+        'CREATE INDEX IF NOT EXISTS idx_danmaku_target
+         ON danmaku(bangumi_id, episode, position_ms, id)'
+    );
+    $pdo->exec(
+        'CREATE INDEX IF NOT EXISTS idx_danmaku_user ON danmaku(user_id, created_at)'
+    );
 
     $pdo->exec(<<<SQL
 CREATE TABLE IF NOT EXISTS rate_limits (

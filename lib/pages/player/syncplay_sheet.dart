@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 
 import 'package:kazumi/bean/dialog/adaptive_bottom_sheet.dart';
+import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/dialog/material_bottom_sheet.dart';
 import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/bean/widget/split_list_row.dart';
@@ -319,6 +321,8 @@ class _SyncPlayHomeSheet extends StatelessWidget {
             ],
           ),
         ),
+        const SizedBox(height: 12),
+        SyncPlayChatSection(playerController: playerController),
         const SizedBox(height: 12),
         Text(
           '分享房间号，好友即可加入',
@@ -810,6 +814,151 @@ class _CopyButtonState extends State<_CopyButton> {
       tooltip: _copied ? '已复制' : '复制',
       color: Theme.of(context).colorScheme.onSurface,
       icon: Icon(_copied ? Icons.check_rounded : Icons.copy_rounded),
+    );
+  }
+}
+
+/// 一起看房间内聊天：显示最近消息并可发送。
+class SyncPlayChatSection extends StatefulWidget {
+  const SyncPlayChatSection({super.key, required this.playerController});
+
+  final PlayerController playerController;
+
+  @override
+  State<SyncPlayChatSection> createState() => _SyncPlayChatSectionState();
+}
+
+class _SyncPlayChatSectionState extends State<SyncPlayChatSection> {
+  static const int _maxMessages = 200;
+
+  final List<SyncPlayChatMessage> _messages = <SyncPlayChatMessage>[];
+  final ScrollController _scrollController = ScrollController();
+  final TextEditingController _inputController = TextEditingController();
+  StreamSubscription<SyncPlayChatMessage>? _subscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscription = widget.playerController.syncplay.chatStream.listen((msg) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(msg);
+        if (_messages.length > _maxMessages) {
+          _messages.removeRange(0, _messages.length - _maxMessages);
+        }
+      });
+      _scrollToBottom();
+    });
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    _scrollController.dispose();
+    _inputController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    });
+  }
+
+  Future<void> _send() async {
+    final text = _inputController.text.trim();
+    if (text.isEmpty) return;
+    if (text.length > 200) {
+      KazumiDialog.showToast(message: '消息过长（最多 200 字）');
+      return;
+    }
+    _inputController.clear();
+    await widget.playerController.sendSyncPlayChatMessage(text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final theme = Theme.of(context).textTheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          height: 168,
+          decoration: BoxDecoration(
+            color: colors.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: _messages.isEmpty
+              ? Center(
+                  child: Text(
+                    '还没有消息，打个招呼吧',
+                    style: theme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  itemCount: _messages.length,
+                  itemBuilder: (context, index) {
+                    final msg = _messages[index];
+                    final mine = !msg.fromRemote;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: RichText(
+                        text: TextSpan(
+                          style: theme.bodyMedium?.copyWith(
+                            color: colors.onSurface,
+                          ),
+                          children: [
+                            TextSpan(
+                              text: '${msg.username}：',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: mine
+                                    ? colors.primary
+                                    : colors.onSurfaceVariant,
+                              ),
+                            ),
+                            TextSpan(text: msg.message),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _inputController,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => _send(),
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: '说点什么…',
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton.filledTonal(
+              tooltip: '发送',
+              onPressed: _send,
+              icon: const Icon(Icons.send_rounded, size: 20),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

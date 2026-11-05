@@ -34,6 +34,8 @@ class PlayerController implements Disposable {
     danmaku = PlayerDanmakuController(
       isLocalPlayback: () => isLocalPlayback,
       downloadController: downloadController,
+      currentBangumiId: () => bangumiId,
+      currentEpisodeNumber: () => currentDanmakuEpisodeNumber,
     );
   }
 

@@ -424,6 +424,59 @@ class AccountApi {
       ],
     );
   }
+
+  /// 拉取某一集的全部弹幕（公开，无需登录）。
+  Future<AccountDanmakuPage> listDanmaku({
+    required int bangumiId,
+    required int episode,
+    int offset = 0,
+    int limit = 3000,
+  }) async {
+    final body = await _request(
+      'GET',
+      '/v1/danmaku?bangumiId=$bangumiId&episode=$episode'
+          '&offset=$offset&limit=$limit',
+    );
+    final items = body['items'];
+    return AccountDanmakuPage(
+      total: (body['total'] as num?)?.toInt() ?? 0,
+      items: [
+        if (items is List)
+          for (final item in items)
+            if (item is Map<String, dynamic>) AccountDanmaku.fromJson(item),
+      ],
+    );
+  }
+
+  /// 发送一条弹幕；必须已登录。
+  Future<AccountDanmaku> postDanmaku({
+    required String token,
+    required int bangumiId,
+    required int episode,
+    required int positionMs,
+    required String content,
+    int mode = 1,
+    int color = 0xFFFFFF,
+  }) async {
+    final body = await _request(
+      'POST',
+      '/v1/danmaku',
+      token: token,
+      data: {
+        'bangumiId': bangumiId,
+        'episode': episode,
+        'positionMs': positionMs,
+        'mode': mode,
+        'color': color,
+        'content': content,
+      },
+    );
+    final item = body['danmaku'];
+    if (item is! Map<String, dynamic>) {
+      throw const AccountException('弹幕发送失败');
+    }
+    return AccountDanmaku.fromJson(item);
+  }
 }
 
 class AccountCommentPage {
@@ -502,4 +555,43 @@ class AccountUserProfile {
       comments: comments,
     );
   }
+}
+
+/// 一条自建弹幕。
+class AccountDanmaku {
+  const AccountDanmaku({
+    required this.id,
+    required this.positionMs,
+    required this.mode,
+    required this.color,
+    required this.content,
+    required this.userId,
+  });
+
+  final int id;
+  final int positionMs;
+
+  /// 1 滚动 / 4 底部 / 5 顶部。
+  final int mode;
+  final int color;
+  final String content;
+  final int userId;
+
+  factory AccountDanmaku.fromJson(Map<String, dynamic> json) {
+    return AccountDanmaku(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      positionMs: (json['positionMs'] as num?)?.toInt() ?? 0,
+      mode: (json['mode'] as num?)?.toInt() ?? 1,
+      color: (json['color'] as num?)?.toInt() ?? 0xFFFFFF,
+      content: (json['content'] ?? '').toString(),
+      userId: (json['userId'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class AccountDanmakuPage {
+  const AccountDanmakuPage({required this.total, required this.items});
+
+  final int total;
+  final List<AccountDanmaku> items;
 }

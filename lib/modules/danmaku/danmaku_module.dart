@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:kazumi/services/account/account_api.dart';
 import 'package:kazumi/utils/danmaku.dart';
 
 class DanmakuEntry {
@@ -45,5 +46,18 @@ class DanmakuEntry {
       'm': message,
       'p': '$time,$type,$colorValue,$source',
     };
+  }
+}
+
+/// 自建弹幕 → 播放器内部条目。
+extension AccountDanmakuEntry on AccountDanmaku {
+  DanmakuEntry toDanmakuEntry() {
+    return DanmakuEntry(
+      message: content,
+      time: positionMs / 1000,
+      type: mode,
+      color: Color(0xFF000000 | (color & 0xFFFFFF)),
+      source: 'liangciyuan',
+    );
   }
 }

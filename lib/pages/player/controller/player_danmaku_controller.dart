@@ -1,9 +1,13 @@
 // ignore_for_file: library_private_types_in_public_api
 
 import 'package:canvas_danmaku/canvas_danmaku.dart' as canvas;
+import 'package:flutter/material.dart';
 import 'package:kazumi/modules/danmaku/danmaku_module.dart';
 import 'package:kazumi/pages/download/download_controller.dart';
 import 'package:kazumi/request/apis/danmaku_api.dart';
+import 'package:kazumi/bean/dialog/dialog_helper.dart';
+import 'package:kazumi/services/account/account_api.dart';
+import 'package:kazumi/services/account/account_service.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:mobx/mobx.dart';
@@ -87,10 +91,16 @@ abstract class _PlayerDanmakuController with Store {
   _PlayerDanmakuController({
     required this.isLocalPlayback,
     required this.downloadController,
+    required this.currentBangumiId,
+    required this.currentEpisodeNumber,
   });
 
   final bool Function() isLocalPlayback;
   final DownloadController downloadController;
+
+  /// 发送弹幕时用来定位 (番剧, 集数) 的上下文。
+  final int Function() currentBangumiId;
+  final int Function() currentEpisodeNumber;
 
   late canvas.DanmakuController canvasController;
 
@@ -211,21 +221,23 @@ abstract class _PlayerDanmakuController with Store {
         KazumiLogger()
             .i('PlayerController: no cached danmaku, attempting online fetch');
         try {
-          nextBangumiID =
-              await DanmakuApi.getDanDanBangumiIDByBgmBangumiID(bangumiId);
-          if (nextBangumiID != 0) {
-            var res = await DanmakuApi.getDanDanmaku(nextBangumiID, episode);
-            if (res.isNotEmpty) {
-              KazumiLogger()
-                  .i('PlayerController: fetched ${res.length} danmakus online');
-              _saveDanmakuToCache(downloadController, bangumiId, pluginName,
-                  episode, res, nextBangumiID);
-            }
-            return DanmakuLoadResult.success(
-              danmakus: res,
-              bangumiID: nextBangumiID,
-            );
+          // 本地缓存缺失时改从自建服务拉取，不再解析第三方 ID。
+          nextBangumiID = bangumiId;
+          final page = await AccountApi.instance.listDanmaku(
+            bangumiId: bangumiId,
+            episode: episode,
+          );
+          final res = [for (final item in page.items) item.toDanmakuEntry()];
+          if (res.isNotEmpty) {
+            KazumiLogger()
+                .i('PlayerController: fetched ${res.length} danmakus online');
+            _saveDanmakuToCache(downloadController, bangumiId, pluginName,
+                episode, res, nextBangumiID);
           }
+          return DanmakuLoadResult.success(
+            danmakus: res,
+            bangumiID: nextBangumiID,
+          );
         } catch (e) {
           KazumiLogger().w(
               'PlayerController: failed to fetch danmaku online (may be offline)',
@@ -238,10 +250,6 @@ abstract class _PlayerDanmakuController with Store {
           .w('PlayerController: failed to load cached danmaku', error: e);
       return DanmakuLoadResult.failed(bangumiID: nextBangumiID);
     }
-    return DanmakuLoadResult.success(
-      danmakus: const [],
-      bangumiID: nextBangumiID,
-    );
   }
 
   void _saveDanmakuToCache(
@@ -270,28 +278,23 @@ abstract class _PlayerDanmakuController with Store {
   Future<DanmakuLoadResult> _fetchDanDanmakuByBgmBangumiID(
       int bgmBangumiID, int episode) async {
     KazumiLogger().i(
-        'PlayerController: attempting to get danmaku [BgmBangumiID] $bgmBangumiID');
-    var nextBangumiID = bangumiID;
+        'PlayerController: loading danmaku from account service '
+        '[Bangumi $bgmBangumiID ep$episode]');
     try {
-      nextBangumiID =
-          await DanmakuApi.getDanDanBangumiIDByBgmBangumiID(bgmBangumiID);
-      if (nextBangumiID == 0) {
-        return DanmakuLoadResult.success(
-          danmakus: const [],
-          bangumiID: nextBangumiID,
-        );
-      }
-      var res = await DanmakuApi.getDanDanmaku(nextBangumiID, episode);
+      final page = await AccountApi.instance.listDanmaku(
+        bangumiId: bgmBangumiID,
+        episode: episode,
+      );
       return DanmakuLoadResult.success(
-        danmakus: res,
-        bangumiID: nextBangumiID,
+        danmakus: [for (final item in page.items) item.toDanmakuEntry()],
+        bangumiID: bgmBangumiID,
       );
     } catch (e) {
       KazumiLogger().w(
-          'PlayerController: failed to get danmaku [BgmBangumiID] $bgmBangumiID',
+          'PlayerController: failed to load account danmaku $bgmBangumiID/$episode',
           error: e);
+      return DanmakuLoadResult.failed(bangumiID: bgmBangumiID);
     }
-    return DanmakuLoadResult.failed(bangumiID: nextBangumiID);
   }
 
   @action
@@ -309,6 +312,54 @@ abstract class _PlayerDanmakuController with Store {
     } finally {
       danmakuLoading = false;
     }
+  }
+
+  /// 把弹幕发到凉次元自有弹幕库；失败时提示但保留本地回显。
+  Future<bool> sendDanmaku({
+    required String content,
+    required Duration position,
+  }) async {
+    final account = AccountService()..ensureLoaded();
+    if (!account.loggedIn) {
+      KazumiDialog.showToast(message: '发送弹幕需要先登录凉次元账号');
+      return false;
+    }
+    final bangumiId = currentBangumiId();
+    final episode = currentEpisodeNumber();
+    if (bangumiId <= 0) {
+      KazumiDialog.showToast(message: '当前剧集无法发送弹幕');
+      return false;
+    }
+    try {
+      await AccountApi.instance.postDanmaku(
+        token: account.token,
+        bangumiId: bangumiId,
+        episode: episode,
+        positionMs: position.inMilliseconds,
+        content: content,
+      );
+      // 合并进本地时间轴，进度条/重播时无需再拉一次。
+      final entry = DanmakuEntry(
+        message: content,
+        time: position.inMilliseconds / 1000,
+        type: 1,
+        color: const Color(0xFFFFFFFF),
+        source: 'liangciyuan',
+      );
+      (danDanmakus[entry.time.toInt()] ??= <DanmakuEntry>[]).add(entry);
+      return true;
+    } on AccountException catch (e) {
+      if (e.statusCode == 401) {
+        await account.logout();
+        KazumiDialog.showToast(message: '登录状态已过期，请重新登录');
+      } else {
+        KazumiDialog.showToast(message: e.message);
+      }
+    } catch (e) {
+      KazumiLogger().w('Danmaku: send failed', error: e);
+      KazumiDialog.showToast(message: '弹幕发送失败，请稍后重试');
+    }
+    return false;
   }
 
   void addDanmakus(List<DanmakuEntry> danmakus) {

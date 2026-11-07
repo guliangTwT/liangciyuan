@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
+import 'package:kazumi/bean/dialog/comment_composer_sheet.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/widget/bangumi_avatar.dart';
 import 'package:kazumi/services/account/account_api.dart';
@@ -121,16 +122,10 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
       context.pushNamed('/settings/account');
       return;
     }
-    final draft = await showModalBottomSheet<_Draft>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.viewInsetsOf(context).bottom,
-        ),
-        child: const _Composer(),
-      ),
+    final draft = await showCommentComposerSheet(
+      context,
+      title: '发表吐槽',
+      hintText: '说说这部番……',
     );
     if (draft == null || !mounted) return;
     try {
@@ -418,93 +413,6 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
       child: Text(
         label,
         style: TextStyle(fontSize: 11, color: foreground),
-      ),
-    );
-  }
-}
-
-class _Draft {
-  const _Draft({required this.content, required this.spoiler});
-
-  final String content;
-  final bool spoiler;
-}
-
-class _Composer extends StatefulWidget {
-  const _Composer();
-
-  @override
-  State<_Composer> createState() => _ComposerState();
-}
-
-class _ComposerState extends State<_Composer> {
-  final _controller = TextEditingController();
-  bool _spoiler = false;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final content = _controller.text.trim();
-    if (content.isEmpty) {
-      KazumiDialog.showToast(message: '先写点什么再发布吧');
-      return;
-    }
-    Navigator.of(context).pop(_Draft(content: content, spoiler: _spoiler));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            '发表吐槽',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _controller,
-            autofocus: true,
-            minLines: 3,
-            maxLines: 8,
-            maxLength: 500,
-            decoration: const InputDecoration(
-              hintText: '说说这部番……',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            value: _spoiler,
-            onChanged: (value) => setState(() => _spoiler = value),
-            title: const Text('含剧透（默认折叠内容）'),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('取消'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton(
-                  onPressed: _submit,
-                  child: const Text('发布'),
-                ),
-              ),
-            ],
-          ),
-        ],
       ),
     );
   }

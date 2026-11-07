@@ -177,6 +177,29 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
     textController.clear();
   }
 
+  /// 紧凑布局下从底栏按钮打开弹幕输入框（与 B 站一样随时可发）。
+  Future<void> _openDanmakuComposer() async {
+    final room = playerController.syncplay.syncplayRoom;
+    final roomConnected = room.isNotEmpty;
+    final draft = await showModalBottomSheet<_DanmakuDraft>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => _DanmakuComposer(
+        roomConnected: roomConnected,
+        initialToRoom: _sendToRoom,
+      ),
+    );
+    if (draft == null || !mounted) return;
+    if (roomConnected) {
+      setState(() {
+        _sendToRoomOverrideRoom = room;
+        _sendToRoomOverride = draft.toRoom;
+      });
+    }
+    await _submitDanmakuText(draft.text);
+  }
+
   // A SyncPlay room is left alone: a local pause there is either broadcast to
   // everyone or undone by the next server state message.
   void _onDanmakuEditFocusChanged() {
@@ -221,8 +244,6 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
         final bool roomConnected =
             playerController.syncplay.syncplayRoom.isNotEmpty;
         final bool sendToRoom = _sendToRoom;
-        // 房间弹幕独立于普通弹幕开关，未加载到普通弹幕时也能聊天。
-        final bool canSend = playerController.danmaku.danmakuOn || sendToRoom;
         return PlayerPanelHoldFocusRegion(
           acquirePlayerPanelHold: widget.acquirePlayerPanelHold,
           child: Container(
@@ -239,13 +260,12 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
               controller: textController,
               textAlignVertical: TextAlignVertical.center,
               decoration: InputDecoration(
-                enabled: canSend,
+                enabled: true,
                 filled: true,
                 fillColor: Colors.white38,
                 floatingLabelBehavior: FloatingLabelBehavior.never,
-                hintText: canSend
-                    ? (sendToRoom ? '发个房间弹幕，同房间可见' : '发个友善的弹幕见证当下')
-                    : '已关闭弹幕',
+                hintText:
+                    sendToRoom ? '发个房间弹幕，同房间可见' : '发个友善的弹幕见证当下',
                 hintStyle: TextStyle(
                   fontSize: isDesktop() ? 15 : 13,
                   color: Colors.white60,
@@ -299,12 +319,10 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
                         unawaited(_submitDanmakuText(textController.text));
                       },
                       style: TextButton.styleFrom(
-                        foregroundColor: canSend
-                            ? Theme.of(context).colorScheme.onPrimaryContainer
-                            : Colors.white60,
-                        backgroundColor: canSend
-                            ? Theme.of(context).colorScheme.primaryContainer
-                            : Theme.of(context).disabledColor,
+                        foregroundColor:
+                            Theme.of(context).colorScheme.onPrimaryContainer,
+                        backgroundColor:
+                            Theme.of(context).colorScheme.primaryContainer,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(
                             isDesktop() ? 8 : 20,
@@ -733,6 +751,13 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
   Widget get _danmakuSettingsMenuItem =>
       KazumiMenuItem(onPressed: _showDanmakuSettings, label: '弹幕设置');
 
+  Widget get _compactDanmakuButton => IconButton(
+    color: Colors.white,
+    tooltip: '发弹幕',
+    onPressed: _openDanmakuComposer,
+    icon: const Icon(Icons.edit_note_rounded),
+  );
+
   Widget get _wideControls => Row(
     children: [
       if (isDesktop()) Expanded(child: _desktopDanmakuControls),
@@ -745,12 +770,8 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
           onPressed: widget.handleDanmaku,
           tooltip: playerController.danmaku.danmakuOn ? '关闭弹幕' : '打开弹幕',
         ),
-        if (playerController.danmaku.danmakuOn ||
-            playerController.syncplay.syncplayRoom.isNotEmpty) ...[
-          _danmakuSettingsButton,
-          Expanded(child: _danmakuEditBarrier(_danmakuTextField)),
-        ] else
-          const Spacer(),
+        _danmakuSettingsButton,
+        Expanded(child: _danmakuEditBarrier(_danmakuTextField)),
       ],
       _menuButton(
         child: const Text('超分辨率', style: TextStyle(color: Colors.white)),
@@ -836,7 +857,7 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
             ),
           ),
         ),
-        controls: compact ? const SizedBox.shrink() : _wideControls,
+        controls: compact ? _compactDanmakuButton : _wideControls,
         fullscreen: _buildFullscreenButton(compact),
       ),
     ),
@@ -1078,6 +1099,124 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
               },
             ),
             const Spacer(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DanmakuDraft {
+  const _DanmakuDraft({required this.text, required this.toRoom});
+
+  final String text;
+  final bool toRoom;
+}
+
+class _DanmakuComposer extends StatefulWidget {
+  const _DanmakuComposer({
+    required this.roomConnected,
+    required this.initialToRoom,
+  });
+
+  final bool roomConnected;
+  final bool initialToRoom;
+
+  @override
+  State<_DanmakuComposer> createState() => _DanmakuComposerState();
+}
+
+class _DanmakuComposerState extends State<_DanmakuComposer> {
+  final TextEditingController _controller = TextEditingController();
+  late bool _toRoom = widget.initialToRoom;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _send() {
+    final text = _controller.text.trim();
+    if (text.isEmpty) {
+      KazumiDialog.showToast(message: '弹幕内容为空');
+      return;
+    }
+    if (text.length > 100) {
+      KazumiDialog.showToast(message: '弹幕内容过长');
+      return;
+    }
+    Navigator.of(context).pop(_DanmakuDraft(text: text, toRoom: _toRoom));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              '发送弹幕',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              minLines: 1,
+              maxLines: 3,
+              maxLength: 100,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => _send(),
+              decoration: InputDecoration(
+                hintText: _toRoom ? '说点什么…' : '发个友善的弹幕见证当下',
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            if (widget.roomConnected) ...[
+              const SizedBox(height: 4),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(
+                    value: true,
+                    icon: Icon(Icons.groups_rounded, size: 18),
+                    label: Text('房间弹幕'),
+                  ),
+                  ButtonSegment(
+                    value: false,
+                    icon: Icon(Icons.subtitles_outlined, size: 18),
+                    label: Text('普通弹幕'),
+                  ),
+                ],
+                selected: {_toRoom},
+                onSelectionChanged: (values) =>
+                    setState(() => _toRoom = values.first),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('取消'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: _send,
+                    child: const Text('发送'),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),

@@ -21,6 +21,7 @@ class EpisodeCommentsView extends StatelessWidget {
     required this.onToggleSort,
     required this.onSelectEpisode,
     required this.onRefresh,
+    required this.onCompose,
     this.total,
     this.onLoadMore,
     this.loadingMore = false,
@@ -35,6 +36,9 @@ class EpisodeCommentsView extends StatelessWidget {
   final VoidCallback onToggleSort;
   final VoidCallback onSelectEpisode;
   final VoidCallback onRefresh;
+
+  /// 打开本集讨论的发布入口。
+  final VoidCallback onCompose;
 
   /// 服务端总数；为空时回退到当前列表长度。
   final int? total;
@@ -72,6 +76,10 @@ class EpisodeCommentsView extends StatelessWidget {
                   onSelectEpisode: onSelectEpisode,
                 ),
               ),
+            ),
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(gutter, 12, gutter, 0),
+              sliver: SliverToBoxAdapter(child: _buildComposeEntry(context)),
             ),
             SliverPadding(
               padding: EdgeInsets.fromLTRB(gutter + 4, 16, gutter, 12),
@@ -186,6 +194,32 @@ class EpisodeCommentsView extends StatelessWidget {
           ],
         );
       }),
+    );
+  }
+
+  Widget _buildComposeEntry(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return TextButton(
+      onPressed: onCompose,
+      style: TextButton.styleFrom(
+        minimumSize: const Size(48, 48),
+        padding: const EdgeInsets.all(16),
+        backgroundColor: colors.surfaceContainerLow,
+        foregroundColor: colors.onSurfaceVariant,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.edit_rounded, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text('写点讨论……'),
+          ),
+          const Icon(Icons.chevron_right_rounded, size: 20),
+        ],
+      ),
     );
   }
 

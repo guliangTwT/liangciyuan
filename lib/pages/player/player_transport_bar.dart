@@ -42,6 +42,7 @@ class PlayerTransportBar extends StatelessWidget {
           playPause,
           Expanded(child: progressBuilder(sideLabels: false)),
           timeLabel,
+          controls,
           fullscreen,
         ])
       : Column(

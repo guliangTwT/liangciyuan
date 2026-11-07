@@ -6,6 +6,8 @@ import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 
 import 'package:kazumi/bean/card/account_comment_card.dart';
+import 'package:kazumi/bean/dialog/comment_composer_sheet.dart';
+import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/dialog/material_bottom_sheet.dart';
 import 'package:kazumi/bean/widget/connected_tabs.dart';
 import 'package:kazumi/bean/widget/error_widget.dart';
@@ -83,6 +85,42 @@ class _CharacterPageState extends State<CharacterPage> {
         _commentsError = true;
         _loadingComments = false;
       });
+    }
+  }
+
+  Future<void> _composeComment() async {
+    final account = AccountService()..ensureLoaded();
+    if (!account.loggedIn) {
+      KazumiDialog.showToast(message: '发表评论需要先登录凉次元账号');
+      context.pushNamed('/settings/account');
+      return;
+    }
+    final draft = await showCommentComposerSheet(
+      context,
+      title: '发表评论',
+      hintText: '聊聊这个角色……',
+    );
+    if (draft == null || !mounted) return;
+    try {
+      await AccountApi.instance.createComment(
+        token: account.token,
+        targetType: 'character',
+        targetId: widget.characterID,
+        content: draft.content,
+        spoiler: draft.spoiler,
+      );
+      if (!mounted) return;
+      KazumiDialog.showToast(message: '评论已发布');
+      await _loadComments();
+    } catch (e) {
+      if (!mounted) return;
+      if (e is AccountException && e.statusCode == 401) {
+        await AccountService().logout();
+      }
+      if (!mounted) return;
+      KazumiDialog.showToast(
+        message: e is AccountException ? e.message : '发布失败，请稍后重试',
+      );
     }
   }
 
@@ -167,10 +205,38 @@ class _CharacterPageState extends State<CharacterPage> {
       ),
       slivers: [
         SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          sliver: SliverToBoxAdapter(child: _composeEntry()),
+        ),
+        SliverPadding(
           padding: materialBottomSheetContentPadding,
           sliver: _commentsSliver,
         ),
       ],
+    );
+  }
+
+  Widget _composeEntry() {
+    final colors = Theme.of(context).colorScheme;
+    return TextButton(
+      onPressed: _composeComment,
+      style: TextButton.styleFrom(
+        minimumSize: const Size(48, 48),
+        padding: const EdgeInsets.all(16),
+        backgroundColor: colors.surfaceContainerLow,
+        foregroundColor: colors.onSurfaceVariant,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.edit_rounded, size: 18),
+          const SizedBox(width: 10),
+          const Expanded(child: Text('写点评论……')),
+          const Icon(Icons.chevron_right_rounded, size: 20),
+        ],
+      ),
     );
   }
 

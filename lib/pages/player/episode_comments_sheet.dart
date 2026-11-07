@@ -2,12 +2,16 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
+import 'package:flutter_modular/flutter_modular.dart';
+import 'package:kazumi/bean/dialog/comment_composer_sheet.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/modules/bangumi/episode_item.dart';
 import 'package:kazumi/pages/player/episode_comments_picker.dart';
 import 'package:kazumi/pages/player/episode_comments_view.dart';
 import 'package:kazumi/pages/video/video_controller.dart';
 import 'package:kazumi/request/apis/bangumi_api.dart';
+import 'package:kazumi/services/account/account_api.dart';
+import 'package:kazumi/services/account/account_service.dart';
 
 class EpisodeCommentsSheet extends StatefulWidget {
   const EpisodeCommentsSheet({
@@ -135,6 +139,42 @@ class _EpisodeCommentsSheetState extends State<EpisodeCommentsSheet>
     }, errorMessage: '分集列表加载失败，请稍后重试');
   }
 
+  Future<void> _compose() async {
+    final account = AccountService()..ensureLoaded();
+    if (!account.loggedIn) {
+      KazumiDialog.showToast(message: '发表讨论需要先登录凉次元账号');
+      context.pushNamed('/settings/account');
+      return;
+    }
+    final draft = await showCommentComposerSheet(
+      context,
+      title: '发表讨论',
+      hintText: '聊聊这一集……',
+    );
+    if (draft == null || !mounted) return;
+    try {
+      await AccountApi.instance.createEpisodeComment(
+        token: account.token,
+        bangumiId: _controller.bangumiItem.id,
+        episode: _selectedEpisode,
+        content: draft.content,
+        spoiler: draft.spoiler,
+      );
+      if (!mounted) return;
+      KazumiDialog.showToast(message: '讨论已发布');
+      await _loadComments();
+    } catch (e) {
+      if (!mounted) return;
+      if (e is AccountException && e.statusCode == 401) {
+        await AccountService().logout();
+      }
+      if (!mounted) return;
+      KazumiDialog.showToast(
+        message: e is AccountException ? e.message : '发布失败，请稍后重试',
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Observer(builder: (context) {
@@ -152,6 +192,7 @@ class _EpisodeCommentsSheetState extends State<EpisodeCommentsSheet>
         onToggleSort: _controller.toggleSortOrder,
         onSelectEpisode: _showEpisodeSelection,
         onRefresh: _loadComments,
+        onCompose: _compose,
         total: matchesEpisode ? _controller.commentsTotal : null,
         loadingMore: _controller.episodeCommentsLoading,
         onLoadMore: () => unawaited(

@@ -556,6 +556,7 @@ function comment_view(array $row, int $viewerId): array
         'user' => [
             'id' => (int) $row['user_id'],
             'nickname' => (string) $row['nickname'],
+            'title' => (string) ($row['title'] ?? ''),
             // avatar_url 读 $user['id']，而 JOIN 行的 id 是评论 id：
             // 必须显式用 user_id 构造，否则头像指向错误的文件。
             'avatarUrl' => avatar_url([
@@ -594,7 +595,7 @@ function handle_comments_list(Request $request): void
     }
 
     $stmt = db()->prepare(
-        'SELECT c.*, u.nickname, u.avatar
+        'SELECT c.*, u.nickname, u.avatar, u.title
          FROM comments c JOIN users u ON u.id = c.user_id
          WHERE c.target_type = ? AND c.target_id = ? AND c.deleted = 0
          ORDER BY c.created_at DESC, c.id DESC
@@ -641,7 +642,7 @@ function handle_comments_create(Request $request): void
     $id = (int) $pdo->lastInsertId();
 
     $stmt = $pdo->prepare(
-        'SELECT c.*, u.nickname, u.avatar
+        'SELECT c.*, u.nickname, u.avatar, u.title
          FROM comments c JOIN users u ON u.id = c.user_id
          WHERE c.id = ?'
     );
@@ -697,7 +698,7 @@ function handle_user_profile(Request $request): void
 
     // 该用户最近发布的吐槽（公开主页展示，倒序取前 20 条）。
     $stmt = $pdo->prepare(
-        'SELECT c.*, u.nickname, u.avatar
+        'SELECT c.*, u.nickname, u.avatar, u.title
          FROM comments c JOIN users u ON u.id = c.user_id
          WHERE c.user_id = ? AND c.deleted = 0
          ORDER BY c.created_at DESC, c.id DESC
@@ -719,6 +720,7 @@ function handle_user_profile(Request $request): void
         'user' => [
             'id' => (int) $user['id'],
             'nickname' => (string) $user['nickname'],
+            'title' => (string) ($user['title'] ?? ''),
             'createdAt' => (int) $user['created_at'],
         ],
         'avatarUrl' => avatar_url($user),
@@ -755,9 +757,12 @@ function handle_danmaku_list(Request $request): void
     $limit = $limit <= 0 ? 3000 : min($limit, 5000);
 
     $pdo = db();
+    // JOIN users 一并取昵称与称号，弹幕上就能直接显示「作者」标记，
+    // 客户端无需为每条弹幕再发一次用户查询。
     $stmt = $pdo->prepare(
-        'SELECT d.id, d.position_ms, d.mode, d.color, d.content, d.user_id
-         FROM danmaku d
+        'SELECT d.id, d.position_ms, d.mode, d.color, d.content, d.user_id,
+                u.nickname, u.title
+         FROM danmaku d JOIN users u ON u.id = d.user_id
          WHERE d.bangumi_id = ? AND d.episode = ? AND d.deleted = 0
          ORDER BY d.position_ms ASC, d.id ASC
          LIMIT ? OFFSET ?'
@@ -785,6 +790,8 @@ function handle_danmaku_list(Request $request): void
                 'color' => (int) $row['color'],
                 'content' => (string) $row['content'],
                 'userId' => (int) $row['user_id'],
+                'nickname' => (string) ($row['nickname'] ?? ''),
+                'title' => (string) ($row['title'] ?? ''),
             ],
             $stmt->fetchAll()
         ),
@@ -852,6 +859,8 @@ function handle_danmaku_create(Request $request): void
             'color' => $color,
             'content' => $content,
             'userId' => (int) $user['id'],
+            'nickname' => (string) ($user['nickname'] ?? ''),
+            'title' => (string) ($user['title'] ?? ''),
         ],
     ]);
 }

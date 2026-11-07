@@ -57,6 +57,7 @@ class MySpaceView extends StatelessWidget {
                       nickname: profile!.isOwn && profile!.nickname.isEmpty
                           ? '凉次元用户'
                           : profile!.nickname,
+                      title: profile!.title,
                       joinedAt: profile!.joinedAt,
                       subtitle: profile!.subtitle,
                       onAvatarTap: onProfileTap,

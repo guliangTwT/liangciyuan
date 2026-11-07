@@ -122,6 +122,7 @@ class _MyPageState extends State<MyPage> {
               profile: ProfileHeaderData(
                 avatarUrl: account.avatarUrl,
                 nickname: loggedIn ? account.nickname : '',
+                title: loggedIn ? account.title : '',
                 joinedAt: loggedIn && account.profile!.createdAt > 0
                     ? account.profile!.createdAt
                     : null,

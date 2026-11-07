@@ -13,9 +13,8 @@ import 'package:kazumi/pages/settings/sync/sync_settings_widgets.dart';
 import 'package:kazumi/services/account/account_api.dart';
 import 'package:kazumi/services/account/account_service.dart';
 import 'package:kazumi/services/storage/storage.dart';
-import 'package:kazumi/services/sync/webdav.dart';
 import 'package:kazumi/services/sync/webdav_auto_sync.dart';
-import 'package:kazumi/services/sync/danmaku_shield_sync_service.dart';
+import 'package:kazumi/services/sync/account_sync_service.dart';
 import 'package:kazumi/bean/settings/settings_dropdown_tile.dart';
 
 class AccountPage extends StatefulWidget {
@@ -201,12 +200,7 @@ class _AccountPageState extends State<AccountPage> {
       });
       return;
     }
-    final enableHistory = GStorage.getSetting(SettingsKeys.webDavEnableHistory);
-    final enableCollect = GStorage.getSetting(SettingsKeys.webDavEnableCollect);
-    final enableShield = GStorage.getSetting(
-      SettingsKeys.webDavEnableDanmakuShield,
-    );
-    if (!enableHistory && !enableCollect && !enableShield) {
+    if (!AccountSyncService.hasContentEnabled) {
       setState(() {
         _failed = true;
         _message = '请先在上方开启至少一项同步内容';
@@ -218,63 +212,15 @@ class _AccountPageState extends State<AccountPage> {
       _failed = false;
       _message = '正在同步…';
     });
-    // 各部分独立失败：一项出错不应让其余数据静默不同步，
-    // 也不能吞掉错误后显示「同步完成」。
-    final failures = <String>[];
-    final sync = WebDav();
-    try {
-      if (!sync.initialized) await sync.init();
-    } on AccountException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _failed = true;
-        _message = e.message;
-      });
-      return;
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _failed = true;
-        _message = '连接同步服务失败：${WebDav.describeError(e)}';
-      });
-      return;
-    }
-
-    if (enableHistory) {
-      try {
-        await sync.syncHistory();
-      } catch (e) {
-        failures.add('观看记录：${WebDav.describeError(e)}');
-      }
-    }
-    if (enableCollect) {
-      try {
-        await sync.syncCollectibles();
-        inject<CollectController>().loadCollectibles();
-      } catch (e) {
-        failures.add('收藏：${WebDav.describeError(e)}');
-      }
-    }
-    if (enableShield) {
-      try {
-        await inject<DanmakuShieldSyncService>().sync();
-      } catch (e) {
-        failures.add('弹幕屏蔽词：${WebDav.describeError(e)}');
-      }
-    }
-
+    // 追番页与账号页共用同一实现，避免两处行为不一致。
+    final result = await AccountSyncService().syncAll(
+      reloadCollectibles: () => inject<CollectController>().loadCollectibles(),
+    );
     if (!mounted) return;
     setState(() {
       _busy = false;
-      if (failures.isEmpty) {
-        _failed = false;
-        _message = '同步完成';
-      } else {
-        _failed = true;
-        _message = '同步未全部完成\n${failures.join('\n')}';
-      }
+      _failed = result.hasFailure;
+      _message = result.message;
     });
   }
 

@@ -11,15 +11,23 @@ class DanmakuEntry {
   int type;
   // 弹幕颜色
   Color color;
-  // 弹幕来源 ([BiliBili], [Gamer])
+  // 弹幕来源
   String source;
+
+  /// 发送者昵称（自建弹幕才有）；空字符串表示未知。
+  String nickname;
+
+  /// 发送者称号（如「凉次元作者」）；空字符串表示没有称号。
+  String title;
 
   DanmakuEntry(
       {required this.message,
       required this.time,
       required this.type,
       required this.color,
-      required this.source});
+      required this.source,
+      this.nickname = '',
+      this.title = ''});
 
   factory DanmakuEntry.fromJson(Map<String, dynamic> json) {
     String messageValue = json['m'];
@@ -47,6 +55,21 @@ class DanmakuEntry {
       'p': '$time,$type,$colorValue,$source',
     };
   }
+
+  /// 实际绘制到画布上的文本：有称号/昵称时加前缀。
+  ///
+  /// 例：「[凉次元作者] 顾凉：说得对」。没有任何身份信息时原样返回，
+  /// 避免给普通弹幕也加上多余前缀。
+  String get displayText {
+    final name = nickname.trim();
+    final badge = title.trim();
+    if (badge.isEmpty && name.isEmpty) return message;
+    final prefix = [
+      if (badge.isNotEmpty) '[$badge]',
+      if (name.isNotEmpty) '$name：',
+    ].join(' ');
+    return '$prefix$message';
+  }
 }
 
 /// 自建弹幕 → 播放器内部条目。
@@ -58,6 +81,8 @@ extension AccountDanmakuEntry on AccountDanmaku {
       type: mode,
       color: Color(0xFF000000 | (color & 0xFFFFFF)),
       source: 'liangciyuan',
+      nickname: nickname,
+      title: title,
     );
   }
 }

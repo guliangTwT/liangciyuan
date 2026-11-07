@@ -75,6 +75,7 @@ function public_profile(array $user): array
         'email' => (string) $user['email'],
         'nickname' => (string) ($user['nickname'] ?? ''),
         'avatar' => $avatar,
+        'title' => (string) ($user['title'] ?? ''),
         'emailVerified' => (bool) ($user['email_verified'] ?? false),
         'createdAt' => (int) ($user['created_at'] ?? 0),
     ];

@@ -2,28 +2,25 @@ import 'package:flutter/material.dart';
 
 import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
-import 'package:kazumi/modules/collect/collect_sync_plan.dart';
+import 'package:kazumi/services/sync/account_sync_service.dart';
 
 enum CollectSyncDestination { accountSettings }
 
+/// 追番页「同步」按钮覆盖的内容。
+///
+/// 说明：早期这里只有「云端收藏」一步，用户想同步观看记录还得去设置页。
+/// 现在三项内容都在这里完成，与账号页的「立即同步全部数据」一致。
 enum CollectSyncStep {
-  cloud('云端收藏', '合并本地与账号云端收藏', Icons.cloud_sync_rounded);
+  shield('弹幕屏蔽词', '同步关键词与正则规则', Icons.shield_rounded),
+  history('观看记录', '同步看到第几集与播放进度', Icons.history_rounded),
+  collect('云端收藏', '合并本地与账号云端收藏', Icons.cloud_sync_rounded);
 
   const CollectSyncStep(this._title, this._description, this._icon);
 
   final String _title;
   final String _description;
   final IconData _icon;
-
-  CollectSyncDestination get _settings => CollectSyncDestination.accountSettings;
 }
-
-typedef CollectSyncOperation =
-    Future<bool> Function(
-      CollectSyncStep step, {
-      required ValueChanged<String> onError,
-      required void Function(String message, int current, int total) onProgress,
-    });
 
 enum _StepStatus { waiting, running, succeeded, failed, skipped }
 
@@ -38,15 +35,29 @@ class _StepState {
   double? progress;
 }
 
+/// 显示同步计划，并逐步执行。
 class CollectSyncDialog extends StatefulWidget {
   const CollectSyncDialog({
     super.key,
-    required this.plan,
+    required this.steps,
+    required this.canSync,
     required this.onSync,
+    this.blockedReason,
+    this.reloadCollectibles,
   });
 
-  final CollectSyncPlan plan;
-  final CollectSyncOperation onSync;
+  /// 本次要同步的步骤（由调用方按设置决定）。
+  final List<CollectSyncStep> steps;
+  final bool canSync;
+
+  /// 未满足条件时的说明（例如「未登录」）。
+  final String? blockedReason;
+
+  /// 执行同步；返回本次结果。
+  final Future<FullSyncResult> Function()? onSync;
+
+  /// 收藏同步完成后刷新列表。
+  final void Function()? reloadCollectibles;
 
   @override
   State<CollectSyncDialog> createState() => _CollectSyncDialogState();
@@ -55,83 +66,88 @@ class CollectSyncDialog extends StatefulWidget {
 class _CollectSyncDialogState extends State<CollectSyncDialog> {
   late List<_StepState> _steps = _createSteps();
   _SyncPhase _phase = _SyncPhase.ready;
+  FullSyncResult? _result;
 
   bool get _running => _phase == _SyncPhase.running;
   bool get _finished => _phase == _SyncPhase.finished;
 
   List<_StepState> _createSteps() => [
-    if (widget.plan.shouldSyncCollectibles)
-      _StepState(CollectSyncStep.cloud),
+    for (final step in widget.steps) _StepState(step),
   ];
 
   // Removed routes can stay mounted until their exit animation ends.
   bool get _active => mounted && (ModalRoute.of(context)?.isActive ?? false);
   bool get _hasFailure =>
-      _steps.any((step) => step.status == _StepStatus.failed);
-  bool get _hasSuccess =>
-      _steps.any((step) => step.status == _StepStatus.succeeded);
+      _steps.any((step) => step.status == _StepStatus.failed) ||
+      (_result?.hasFailure ?? false);
+  bool get _hasSuccess => _steps.any((step) => step.status == _StepStatus.succeeded);
 
   Future<void> _start() async {
-    if (_running || !widget.plan.canSync) return;
+    if (_running || !widget.canSync) return;
     setState(() {
       _steps = _createSteps();
+      _result = null;
       _phase = _SyncPhase.running;
     });
-    for (final state in _steps) {
-      if (!_active) return;
-      setState(() {
+    // 先把所有步骤标成进行中，真正的工作由 AccountSyncService 顺序执行。
+    setState(() {
+      for (final state in _steps) {
         state.status = _StepStatus.running;
-        state.message = '正在连接…';
-      });
-      bool succeeded = false;
-      String? failure;
-      try {
-        succeeded = await widget.onSync(
-          state.step,
-          onError: (message) => failure = message,
-          onProgress: (message, current, total) {
-            if (!_active || state.status != _StepStatus.running) return;
-            setState(() {
-              state.message = total > 0
-                  ? '$message · $current / $total'
-                  : message;
-              state.progress = total > 0
-                  ? (current / total).clamp(0.0, 1.0).toDouble()
-                  : null;
-            });
-          },
-        );
-      } catch (_) {
-        failure ??= '连接中断，请检查网络或设置';
       }
-      if (!_active) return;
-      setState(() {
-        state.status = succeeded ? _StepStatus.succeeded : _StepStatus.failed;
-        state.message = succeeded ? null : failure ?? '请检查网络或同步设置';
-        state.progress = null;
-      });
+    });
+    // 让出一帧，保证进度状态在开始网络请求前先渲染出来。
+    await Future<void>.delayed(const Duration(milliseconds: 16));
+    if (!_active) return;
+
+    FullSyncResult result;
+    try {
+      result = await (widget.onSync?.call() ??
+          Future.value(const FullSyncResult(succeeded: [], failures: [])));
+    } catch (e) {
+      result = FullSyncResult(
+        succeeded: const [],
+        failures: ['连接中断，请检查网络或设置：$e'],
+      );
     }
     if (!_active) return;
-    setState(() => _phase = _SyncPhase.finished);
+    widget.reloadCollectibles?.call();
+
+    // 按实际结果回填每一步的状态。
+    setState(() {
+      for (final state in _steps) {
+        final name = state.step._title;
+        final succeeded = result.succeeded.contains(name);
+        state.status = succeeded
+            ? _StepStatus.succeeded
+            : _StepStatus.failed;
+        if (!succeeded) {
+          state.message = result.failures
+              .where((failure) => failure.startsWith('$name：'))
+              .map((failure) => failure.substring(name.length + 1))
+              .firstOrNull;
+        } else {
+          state.message = null;
+        }
+      }
+      _result = result;
+      _phase = _SyncPhase.finished;
+    });
   }
 
   String get _title {
-    if (!widget.plan.canSync) return '开启收藏同步';
-    if (_running) return '正在同步收藏';
-    if (!_finished) return '同步收藏';
-    if (!_hasFailure) return '收藏已同步';
-    return _hasSuccess ? '部分同步完成' : '同步未完成';
+    if (!widget.canSync) return '开启云同步';
+    if (_running) return '正在同步';
+    if (!_finished) return '同步到账号';
+    if (!_hasFailure) return '同步已完成';
+    if (_hasSuccess) return '部分同步完成';
+    return '同步未完成';
   }
 
   String? get _description {
-    if (!widget.plan.canSync) return '选择同步服务';
-    if (_running) {
-      final current = _steps.indexWhere((s) => s.status == _StepStatus.running);
-      return '第 ${current + 1} / ${_steps.length} 步 · 请保持应用开启';
-    }
-    if (!_finished) return '同步全部收藏分类';
-    if (_hasFailure && _hasSuccess) return '已完成的更改已保留';
-    return null;
+    if (!widget.canSync) return widget.blockedReason ?? '登录账号并开启同步后可用';
+    if (_running) return '请保持应用开启';
+    if (!_finished) return '收藏、观看记录与弹幕屏蔽词';
+    return _result?.message;
   }
 
   @override
@@ -162,7 +178,7 @@ class _CollectSyncDialogState extends State<CollectSyncDialog> {
                     key: const ValueKey('syncing'),
                     size: 64,
                     color: colors.primary,
-                    semanticsLabel: '正在同步收藏',
+                    semanticsLabel: '正在同步',
                   )
                 : StateIconBadge(
                     key: ValueKey((_finished, failed)),
@@ -203,19 +219,18 @@ class _CollectSyncDialogState extends State<CollectSyncDialog> {
                   description,
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: colors.onSurfaceVariant,
+                    color: failed ? colors.error : colors.onSurfaceVariant,
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
               ],
-              if (!widget.plan.canSync) ...[
-                _setupRow(CollectSyncDestination.accountSettings),
-              ] else ...[
+              if (!widget.canSync)
+                _setupRow(CollectSyncDestination.accountSettings)
+              else
                 for (var i = 0; i < _steps.length; i++) ...[
                   if (i > 0) const SizedBox(height: 4),
                   _stepRow(_steps[i], i),
                 ],
-              ],
             ],
           ),
         ),
@@ -231,10 +246,10 @@ class _CollectSyncDialogState extends State<CollectSyncDialog> {
                     ),
                     onPressed: () => Navigator.of(context).pop(),
                     child: Text(
-                      widget.plan.canSync && !_finished ? '取消' : '关闭',
+                      widget.canSync && !_finished ? '取消' : '关闭',
                     ),
                   ),
-                if (widget.plan.canSync)
+                if (widget.canSync)
                   StateActionButton(
                     onPressed: _finished && !failed
                         ? () => Navigator.of(context).pop()
@@ -260,16 +275,13 @@ class _CollectSyncDialogState extends State<CollectSyncDialog> {
     final (title, description, icon) = switch (destination) {
       CollectSyncDestination.accountSettings => (
         '凉次元账号',
-        '登录账号，开启收藏云同步',
+        '登录账号，开启云同步',
         Icons.cloud_sync_rounded,
       ),
     };
     return Material(
       color: colors.surfaceContainerLow,
-      borderRadius: _rowRadius(
-        destination.index,
-        CollectSyncDestination.values.length,
-      ),
+      borderRadius: BorderRadius.circular(20),
       clipBehavior: Clip.antiAlias,
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -287,6 +299,7 @@ class _CollectSyncDialogState extends State<CollectSyncDialog> {
     final colors = theme.colorScheme;
     final active = state.status == _StepStatus.running;
     final failed = state.status == _StepStatus.failed;
+    final skipped = state.status == _StepStatus.skipped;
     final detail = state.status == _StepStatus.waiting
         ? (_running ? null : state.step._description)
         : state.message;
@@ -296,22 +309,21 @@ class _CollectSyncDialogState extends State<CollectSyncDialog> {
         ? colors.onSecondaryContainer
         : colors.onSurface;
     final statusLabel = switch (state.status) {
-      _StepStatus.waiting => _running ? '等待中' : '第 ${index + 1} 步',
+      _StepStatus.waiting => _running ? '等待中' : null,
       _StepStatus.running => '同步中',
       _StepStatus.succeeded => '已完成',
       _StepStatus.failed => '未完成',
-      _StepStatus.skipped => '已跳过',
+      _StepStatus.skipped => '未完成',
     };
     final icon = switch (state.status) {
       _StepStatus.succeeded => Icons.check_circle_rounded,
-      _StepStatus.failed => Icons.error_outline_rounded,
-      _StepStatus.skipped => Icons.remove_circle_outline_rounded,
+      _StepStatus.failed || _StepStatus.skipped => Icons.error_outline_rounded,
       _ => state.step._icon,
     };
     return Semantics(
       container: true,
       child: Material(
-        color: failed
+        color: failed || skipped
             ? colors.errorContainer
             : active
             ? colors.secondaryContainer
@@ -324,7 +336,11 @@ class _CollectSyncDialogState extends State<CollectSyncDialog> {
             children: [
               Padding(
                 padding: const EdgeInsets.only(top: 2),
-                child: Icon(icon, size: 24, color: foreground),
+                child: Icon(
+                  icon,
+                  size: 24,
+                  color: failed || skipped ? colors.onErrorContainer : foreground,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -339,17 +355,22 @@ class _CollectSyncDialogState extends State<CollectSyncDialog> {
                         Text(
                           state.step._title,
                           style: theme.textTheme.titleSmall?.copyWith(
-                            color: foreground,
+                            color: failed || skipped
+                                ? colors.onErrorContainer
+                                : foreground,
                           ),
                         ),
-                        Text(
-                          statusLabel,
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            color: active || failed
-                                ? foreground
-                                : colors.onSurfaceVariant,
+                        if (statusLabel != null)
+                          Text(
+                            statusLabel,
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: active || failed || skipped
+                                  ? (failed || skipped
+                                      ? colors.onErrorContainer
+                                      : foreground)
+                                  : colors.onSurfaceVariant,
+                            ),
                           ),
-                        ),
                       ],
                     ),
                     if (detail != null) ...[
@@ -357,37 +378,26 @@ class _CollectSyncDialogState extends State<CollectSyncDialog> {
                       Text(
                         detail,
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: active || failed
-                              ? foreground
+                          color: active || failed || skipped
+                              ? (failed || skipped
+                                  ? colors.onErrorContainer
+                                  : foreground)
                               : colors.onSurfaceVariant,
                         ),
                       ),
                     ],
-                    if (failed && _finished) ...[
+                    if ((failed || skipped) && _finished) ...[
                       const SizedBox(height: 4),
                       TextButton.icon(
                         style: TextButton.styleFrom(
                           foregroundColor: colors.onErrorContainer,
                           minimumSize: const Size(48, 48),
                         ),
-                        onPressed: () =>
-                            Navigator.of(context).pop(state.step._settings),
+                        onPressed: () => Navigator.of(context).pop(
+                          CollectSyncDestination.accountSettings,
+                        ),
                         icon: const Icon(Icons.settings_rounded, size: 18),
                         label: const Text('检查设置'),
-                      ),
-                    ],
-                    if (active && state.progress != null) ...[
-                      const SizedBox(height: 12),
-                      LinearProgressIndicator(
-                        value: state.progress,
-                        color: colors.primary,
-                        backgroundColor: colors.onSecondaryContainer.withValues(
-                          alpha: 0.12,
-                        ),
-                        minHeight: 4,
-                        borderRadius: BorderRadius.circular(4),
-                        trackGap: 4,
-                        semanticsLabel: state.step._title,
                       ),
                     ],
                   ],

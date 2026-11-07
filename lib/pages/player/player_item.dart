@@ -1149,6 +1149,8 @@ class _PlayerItemState extends State<PlayerItem>
       final idx = entry.key;
       final danmaku = entry.value;
       final color = _danmakuColor ? danmaku.color : Colors.white;
+      // 称号前缀在循环外算好，避免每次发射都重复拼接字符串。
+      final displayText = danmaku.displayText;
       final delay = DanmakuTimeline.staggerDelayMilliseconds(
         index: idx,
         total: danmakuCount,
@@ -1168,7 +1170,7 @@ class _PlayerItemState extends State<PlayerItem>
         playerController.danmaku.withCanvas(
           (controller) => controller.addDanmaku(
             DanmakuContentItem(
-              danmaku.message,
+              displayText,
               color: color,
               type: _danmakuItemType(danmaku),
             ),

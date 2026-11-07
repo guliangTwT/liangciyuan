@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:kazumi/bean/card/account_comment_card.dart';
 import 'package:kazumi/bean/settings/settings_detail_scaffold.dart';
+import 'package:kazumi/bean/widget/author_title_badge.dart';
 import 'package:kazumi/bean/widget/bangumi_avatar.dart';
 import 'package:kazumi/bean/widget/error_widget.dart';
 import 'package:kazumi/modules/my/watch_stats.dart';
@@ -17,6 +18,7 @@ class ProfileHeaderView extends StatelessWidget {
     required this.nickname,
     required this.joinedAt,
     required this.subtitle,
+    this.title = '',
     this.onAvatarTap,
   });
 
@@ -24,6 +26,9 @@ class ProfileHeaderView extends StatelessWidget {
   final String nickname;
   final int? joinedAt;
   final String subtitle;
+
+  /// 服务端授予的称号；空字符串表示没有。
+  final String title;
   final VoidCallback? onAvatarTap;
   @override
   Widget build(BuildContext context) {
@@ -91,6 +96,10 @@ class ProfileHeaderView extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (title.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      AuthorTitleBadge(title: title, compact: false),
+                    ],
                     if (subtitle.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
@@ -273,6 +282,7 @@ class _AccountProfilePageState extends State<AccountProfilePage> {
                 ProfileHeaderView(
                   avatarUrl: profile?.avatarUrl ?? '',
                   nickname: profile?.nickname ?? '',
+                  title: profile?.title ?? '',
                   joinedAt: profile?.joinedAt,
                   subtitle: '${profile?.commentCount ?? 0} 条吐槽',
                 ),
@@ -307,6 +317,7 @@ class ProfileHeaderData {
     required this.joinedAt,
     required this.subtitle,
     required this.isOwn,
+    this.title = '',
   });
 
   final String avatarUrl;
@@ -316,4 +327,7 @@ class ProfileHeaderData {
   final int? joinedAt;
   final String subtitle;
   final bool isOwn;
+
+  /// 服务端授予的称号；空字符串表示没有。
+  final String title;
 }

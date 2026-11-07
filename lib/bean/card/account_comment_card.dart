@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:kazumi/bean/widget/author_title_badge.dart';
 import 'package:kazumi/bean/widget/bangumi_avatar.dart';
 import 'package:kazumi/modules/comments/comment_item.dart';
 import 'package:kazumi/services/account/account_api.dart';
@@ -96,6 +97,8 @@ class _AccountCommentCardState extends State<AccountCommentCard> {
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
+                            if (comment.title.isNotEmpty)
+                              AuthorTitleBadge(title: comment.title),
                             if (comment.mine)
                               Container(
                                 padding: const EdgeInsets.symmetric(
@@ -192,6 +195,7 @@ class AccountCommentItem extends EpisodeCommentItem {
     : commentId = comment.id,
       _spoiler = comment.spoiler,
       _mine = comment.mine,
+      _title = comment.title,
       super(
         comment: EpisodeComment(
           user: User(
@@ -218,6 +222,7 @@ class AccountCommentItem extends EpisodeCommentItem {
   /// 单集讨论视图无法从 EpisodeComment 取回的额外标记。
   final bool _spoiler;
   final bool _mine;
+  final String _title;
 }
 
 extension AccountCommentEpisodeComment on EpisodeCommentItem {
@@ -233,6 +238,7 @@ extension AccountCommentEpisodeComment on EpisodeCommentItem {
       nickname: item.comment.user.nickname,
       avatarUrl: item.comment.user.avatar.large,
       mine: item is AccountCommentItem && item._mine,
+      title: item is AccountCommentItem ? item._title : '',
     );
   }
 }

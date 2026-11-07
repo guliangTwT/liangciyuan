@@ -20,6 +20,7 @@ class AccountProfile {
     required this.avatarUrl,
     required this.emailVerified,
     this.createdAt = 0,
+    this.title = '',
   });
 
   final int id;
@@ -31,6 +32,9 @@ class AccountProfile {
   /// 注册时间（秒级 Unix 时间戳）；0 表示未知。
   final int createdAt;
 
+  /// 服务端授予的称号（如「凉次元作者」）；空字符串表示没有。
+  final String title;
+
   factory AccountProfile.fromJson(Map<String, dynamic> json, String avatarUrl) {
     return AccountProfile(
       id: (json['id'] as num?)?.toInt() ?? 0,
@@ -39,6 +43,7 @@ class AccountProfile {
       avatarUrl: avatarUrl,
       emailVerified: json['emailVerified'] == true,
       createdAt: (json['createdAt'] as num?)?.toInt() ?? 0,
+      title: (json['title'] ?? '').toString(),
     );
   }
 }
@@ -519,6 +524,7 @@ class AccountComment {
     required this.nickname,
     required this.avatarUrl,
     required this.mine,
+    this.title = '',
   });
 
   final int id;
@@ -529,6 +535,9 @@ class AccountComment {
   final String nickname;
   final String avatarUrl;
   final bool mine;
+
+  /// 服务端授予的称号（如「凉次元作者」）；空字符串表示没有。
+  final String title;
 
   factory AccountComment.fromJson(Map<String, dynamic> json) {
     final user = json['user'];
@@ -542,6 +551,7 @@ class AccountComment {
       nickname: (map['nickname'] ?? '').toString(),
       avatarUrl: (map['avatarUrl'] ?? '').toString(),
       mine: json['mine'] == true,
+      title: (map['title'] ?? '').toString(),
     );
   }
 }
@@ -554,6 +564,7 @@ class AccountUserProfile {
     required this.joinedAt,
     required this.commentCount,
     required this.comments,
+    this.title = '',
   });
 
   final int id;
@@ -562,6 +573,9 @@ class AccountUserProfile {
   final int joinedAt;
   final int commentCount;
   final List<AccountComment> comments;
+
+  /// 服务端授予的称号；空字符串表示没有。
+  final String title;
 
   factory AccountUserProfile.fromJson(
     Map<String, dynamic> json,
@@ -576,6 +590,7 @@ class AccountUserProfile {
       joinedAt: (json['createdAt'] as num?)?.toInt() ?? 0,
       commentCount: commentCount,
       comments: comments,
+      title: (json['title'] ?? '').toString(),
     );
   }
 }
@@ -589,6 +604,8 @@ class AccountDanmaku {
     required this.color,
     required this.content,
     required this.userId,
+    this.nickname = '',
+    this.title = '',
   });
 
   final int id;
@@ -599,6 +616,10 @@ class AccountDanmaku {
   final int color;
   final String content;
   final int userId;
+  final String nickname;
+
+  /// 服务端授予的称号；空字符串表示没有。
+  final String title;
 
   factory AccountDanmaku.fromJson(Map<String, dynamic> json) {
     return AccountDanmaku(
@@ -608,6 +629,8 @@ class AccountDanmaku {
       color: (json['color'] as num?)?.toInt() ?? 0xFFFFFF,
       content: (json['content'] ?? '').toString(),
       userId: (json['userId'] as num?)?.toInt() ?? 0,
+      nickname: (json['nickname'] ?? '').toString(),
+      title: (json['title'] ?? '').toString(),
     );
   }
 }

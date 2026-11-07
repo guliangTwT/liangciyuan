@@ -23,6 +23,9 @@ class AccountService extends ChangeNotifier {
   String get email => _profile?.email ?? '';
   String get avatarUrl => _profile?.avatarUrl ?? '';
 
+  /// 服务端授予的称号；空字符串表示没有。
+  String get title => _profile?.title ?? '';
+
   void ensureLoaded() {
     if (_loaded) return;
     _loaded = true;

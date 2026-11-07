@@ -124,7 +124,22 @@ CREATE TABLE IF NOT EXISTS rate_limits (
 )
 SQL);
 
+    // 称号：仅由服务端授予（例如作者），客户端不可自行设置。
+    // SQLite 的 ADD COLUMN 不支持 IF NOT EXISTS，先查表结构再补。
+    ensure_column($pdo, 'users', 'title', "TEXT NOT NULL DEFAULT ''");
+
     return $pdo;
+}
+
+function ensure_column(PDO $pdo, string $table, string $column, string $definition): void
+{
+    $stmt = $pdo->query('PRAGMA table_info(' . $table . ')');
+    foreach ($stmt->fetchAll() as $row) {
+        if (strcasecmp((string) $row['name'], $column) === 0) {
+            return;
+        }
+    }
+    $pdo->exec('ALTER TABLE ' . $table . ' ADD COLUMN ' . $column . ' ' . $definition);
 }
 
 function rate_limit(string $key, int $limit, int $windowSeconds): void

@@ -10,12 +10,13 @@ import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/modules/collect/collect_layout.dart';
-import 'package:kazumi/modules/collect/collect_sync_plan.dart';
 import 'package:kazumi/modules/collect/collect_type.dart';
 import 'package:kazumi/pages/collect/collect_controller.dart';
 import 'package:kazumi/pages/collect/collect_library_view.dart';
 import 'package:kazumi/pages/collect/collect_sync_dialog.dart';
+import 'package:kazumi/services/account/account_service.dart';
 import 'package:kazumi/services/storage/storage.dart';
+import 'package:kazumi/services/sync/account_sync_service.dart';
 
 class CollectPage extends StatefulWidget {
   const CollectPage({super.key, required this.controller});
@@ -32,15 +33,24 @@ class _CollectPageState extends State<CollectPage> with KazumiDialogOwner {
   final Set<int> _pendingIds = {};
   late CollectLayout _layout;
 
-  Future<bool> _syncStep(
-    CollectSyncStep step, {
-    required ValueChanged<String> onError,
-    required void Function(String message, int current, int total) onProgress,
-  }) => switch (step) {
-    CollectSyncStep.cloud => collectController.syncCollectibles(
-      onError: onError,
-    ),
-  };
+  /// 当前设置下要同步的步骤。顺序与账号页一致：屏蔽词 → 观看记录 → 收藏。
+  List<CollectSyncStep> get _enabledSteps => [
+    if (GStorage.getSetting(SettingsKeys.webDavEnableDanmakuShield))
+      CollectSyncStep.shield,
+    if (GStorage.getSetting(SettingsKeys.webDavEnableHistory))
+      CollectSyncStep.history,
+    if (GStorage.getSetting(SettingsKeys.webDavEnableCollect))
+      CollectSyncStep.collect,
+  ];
+
+  String? get _blockedReason {
+    final account = AccountService()..ensureLoaded();
+    if (!account.loggedIn) return '请先登录凉次元账号';
+    if (!GStorage.getSetting(SettingsKeys.accountSyncEnable)) {
+      return '请先开启账号云同步';
+    }
+    return '请在账号设置里开启要同步的内容';
+  }
 
   @override
   void initState() {
@@ -71,15 +81,21 @@ class _CollectPageState extends State<CollectPage> with KazumiDialogOwner {
 
   Future<void> _sync() async {
     if (_syncDialogOpen || _pendingIds.isNotEmpty) return;
-    final plan = CollectSyncPlan(
-      cloudEnabled: GStorage.getSetting(SettingsKeys.accountSyncEnable),
-      collectiblesEnabled: GStorage.getSetting(
-        SettingsKeys.webDavEnableCollect,
-      ),
-    );
+    final steps = _enabledSteps;
+    final canSync = AccountSyncService.canSync && steps.isNotEmpty;
     await dialogs.run((task) async {
       final destination = await task.show<CollectSyncDestination>(
-        builder: (_) => CollectSyncDialog(plan: plan, onSync: _syncStep),
+        builder: (_) => CollectSyncDialog(
+          steps: steps,
+          canSync: canSync,
+          blockedReason: _blockedReason,
+          onSync: canSync
+              ? () => AccountSyncService().syncAll(
+                    reloadCollectibles: collectController.loadCollectibles,
+                  )
+              : null,
+          reloadCollectibles: collectController.loadCollectibles,
+        ),
       );
       task.withContext(
         (context) => context.pushNamed(switch (destination) {
@@ -112,7 +128,7 @@ class _CollectPageState extends State<CollectPage> with KazumiDialogOwner {
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: Tooltip(
-              message: '同步收藏',
+              message: '同步收藏、观看记录与弹幕屏蔽词',
               child: StateActionButton.tonal(
                 text: '同步',
                 onPressed: _syncDialogOpen || _pendingIds.isNotEmpty

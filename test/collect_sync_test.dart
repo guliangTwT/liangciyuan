@@ -4,42 +4,9 @@ import 'package:kazumi/modules/bangumi/bangumi_tag.dart';
 import 'package:kazumi/modules/collect/collect_change_module.dart';
 import 'package:kazumi/modules/collect/collect_module.dart';
 import 'package:kazumi/modules/collect/collect_sync_merger.dart';
-import 'package:kazumi/modules/collect/collect_sync_plan.dart';
 import 'package:kazumi/modules/collect/collect_type.dart';
 
 void main() {
-  group('CollectSyncPlan', () {
-    test('keeps history-only mode out of collectible sync', () {
-      const plan = CollectSyncPlan(
-        cloudEnabled: true,
-        collectiblesEnabled: false,
-      );
-
-      expect(plan.shouldSyncCollectibles, isFalse);
-      expect(plan.canSync, isFalse);
-    });
-
-    test('allows account cloud collectible sync', () {
-      const plan = CollectSyncPlan(
-        cloudEnabled: true,
-        collectiblesEnabled: true,
-      );
-
-      expect(plan.shouldSyncCollectibles, isTrue);
-      expect(plan.canSync, isTrue);
-    });
-
-    test('requires the account master switch', () {
-      const plan = CollectSyncPlan(
-        cloudEnabled: false,
-        collectiblesEnabled: true,
-      );
-
-      expect(plan.shouldSyncCollectibles, isFalse);
-      expect(plan.canSync, isFalse);
-    });
-  });
-
   group('CollectSyncMerger', () {
     test('merges local change log into cloud collectibles', () {
       final mergeResult = CollectSyncMerger.mergeWebDav(

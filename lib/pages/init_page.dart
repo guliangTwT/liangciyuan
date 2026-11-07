@@ -192,7 +192,12 @@ class _InitPageState extends State<InitPage> {
     bool cloudEnableCollect = await GStorage.getSetting(
       SettingsKeys.webDavEnableCollect,
     );
-    if (cloudSyncEnable) {
+    // 三项内容开关全关时没有任何可同步内容：不要为此再建连、不要再发
+    // 一轮远端请求（启动期白等 1~2 秒）。
+    final bool anyContentEnabled = cloudEnableHistory ||
+        cloudEnableCollect ||
+        GStorage.getSetting(SettingsKeys.webDavEnableDanmakuShield);
+    if (cloudSyncEnable && anyContentEnabled) {
       var webDav = WebDav();
       KazumiLogger().i('CloudSync: Starting cloud sync initialization');
       try {
@@ -230,6 +235,9 @@ class _InitPageState extends State<InitPage> {
         );
       }
       // 初始化成功与否都安排定时同步：网络恢复后仍可自动重试。
+      WebDavAutoSync().reschedule();
+    } else if (cloudSyncEnable) {
+      // 内容全关：只需保证定时器按最新设置排程（reschedule 会自行跳过）。
       WebDavAutoSync().reschedule();
     }
   }

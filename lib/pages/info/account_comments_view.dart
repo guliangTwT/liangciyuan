@@ -5,6 +5,7 @@ import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/widget/bangumi_avatar.dart';
 import 'package:kazumi/services/account/account_api.dart';
 import 'package:kazumi/services/account/account_service.dart';
+import 'package:kazumi/utils/comment_pagination.dart';
 import 'package:kazumi/utils/date_time.dart';
 
 /// 条目「吐槽」页：读写在凉次元自有账号服务，不再依赖 Bangumi。
@@ -35,6 +36,11 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
   bool _failed = false;
   DateTime? _lastLoadMoreAt;
 
+  /// 下一页的偏移量。不能用 `_items.length`：列表已按 id 去重，
+  /// 一旦服务端返回的页里有重复条目，长度就不再增长，偏移会卡死，
+  /// 用户点「加载更多」也永远看不到后面的内容。
+  int _offset = 0;
+
   String get _token => AccountService().token;
 
   @override
@@ -57,7 +63,7 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
 
   /// 滚动通知是高频的；失败后 3 秒冷却，避免连续失败的重试风暴。
   void _maybeLoadMore() {
-    if (_loading || !_loaded || _items.length >= _total) return;
+    if (_loading || !_loaded || _offset >= _total) return;
     final last = _lastLoadMoreAt;
     final now = DateTime.now();
     if (last != null && now.difference(last) < const Duration(seconds: 3)) {
@@ -69,24 +75,35 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
 
   Future<void> _load({required bool reset}) async {
     if (_loading) return;
-    if (!reset && _items.length >= _total && _loaded) return;
+    if (!reset && _loaded && _offset >= _total) return;
     setState(() {
       _loading = true;
       if (reset) _failed = false;
     });
+    final requestOffset = reset ? 0 : _offset;
     try {
       final page = await _api.listComments(
         targetType: widget.targetType,
         targetId: widget.bangumiId,
-        offset: reset ? 0 : _items.length,
+        offset: requestOffset,
         limit: _pageSize,
         token: _token.isEmpty ? null : _token,
       );
       if (!mounted) return;
       setState(() {
-        if (reset) _items.clear();
+        if (reset) {
+          _items.clear();
+          _offset = 0;
+        }
         final known = _items.map((item) => item.id).toSet();
         _items.addAll(page.items.where((item) => !known.contains(item.id)));
+        // 偏移按服务端返回的条数推进，与服务端分页保持一致；
+        // 空页时把偏移推到总数，避免无限重试同一条空页。
+        _offset = CommentPagination.nextOffset(
+          currentOffset: requestOffset,
+          receivedItems: page.items.length,
+          total: page.total,
+        );
         _total = page.total;
         _loaded = true;
         _failed = false;
@@ -107,7 +124,7 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
   }
 
   Future<void> _loadMore() async {
-    if (_loading || !_loaded || _items.length >= _total) return;
+    if (_loading || !_loaded || _offset >= _total) return;
     await _load(reset: false);
   }
 
@@ -252,6 +269,7 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
             Expanded(
               child: Text(
                 loggedIn ? '下面我简单喵两句' : '登录后即可发表吐槽',
+                overflow: TextOverflow.ellipsis,
               ),
             ),
             const Icon(Icons.chevron_right_rounded, size: 20),
@@ -296,7 +314,8 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
         ),
       );
     }
-    final hasMore = _items.length < _total;
+    // 以服务端分页进度判断是否还有更多；列表长度可能因去重而小于偏移。
+    final hasMore = CommentPagination.hasMore(offset: _offset, total: _total);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: Center(

@@ -26,6 +26,7 @@ import 'package:kazumi/utils/episode_url.dart';
 import 'package:kazumi/utils/http_headers.dart';
 import 'package:kazumi/utils/media.dart';
 import 'package:kazumi/utils/async_session.dart';
+import 'package:kazumi/utils/comment_pagination.dart';
 import 'package:kazumi/services/platform/display_mode_service.dart';
 import 'package:kazumi/pages/video/video_fullscreen_controller.dart';
 
@@ -788,6 +789,10 @@ abstract class _VideoPageController with Store implements Disposable {
   @observable
   bool episodeCommentsLoading = false;
 
+  /// 已从服务端取到第几条。不能用列表长度：列表按 id 去重，
+  /// 服务端返回重复条目时长度不再增长，偏移会卡死、永远取不到后面的页。
+  int _episodeCommentsOffset = 0;
+
   Future<bool> queryBangumiEpisodeCommentsByID(int id, int episode) async {
     final session = _commentSessions.begin();
     final latestEpisodeInfo = await _loadEpisodeInfo(id, episode, session);
@@ -842,14 +847,19 @@ abstract class _VideoPageController with Store implements Disposable {
   Future<bool> loadMoreEpisodeComments(int id, int episode) async {
     if (commentsEpisode != episode) return false;
     if (episodeCommentsLoading) return false;
-    final loaded = episodeCommentsList.length;
-    if (loaded >= commentsTotal) return false;
+    if (!CommentPagination.hasMore(
+      offset: _episodeCommentsOffset,
+      total: commentsTotal,
+    )) {
+      return false;
+    }
     episodeCommentsLoading = true;
+    final requestOffset = _episodeCommentsOffset;
     try {
       final page = await AccountApi.instance.listEpisodeComments(
         bangumiId: id,
         episode: episode,
-        offset: loaded,
+        offset: requestOffset,
         token: _episodeCommentsToken(),
       );
       if (commentsEpisode != episode) return false;
@@ -863,12 +873,19 @@ abstract class _VideoPageController with Store implements Disposable {
           if (!seen.contains(comment.id))
             AccountCommentItem.fromAccountComment(comment),
       ];
+      // 偏移按服务端返回的条数推进；空页时推到总数，避免卡在同一页。
+      _episodeCommentsOffset = CommentPagination.nextOffset(
+        currentOffset: requestOffset,
+        receivedItems: page.items.length,
+        total: page.total,
+      );
+      commentsTotal = page.total;
       if (additions.isEmpty) {
-        commentsTotal = episodeCommentsList.length;
+        // 这一页全是已存在的条目：偏移已推进，下一次会取后面的内容，
+        // 不能把总数改小，否则「加载更多」会永久消失。
         return false;
       }
       episodeCommentsList.addAll(additions);
-      commentsTotal = page.total;
       if (!isCommentsAscending) {
         episodeCommentsList.sort(
           (a, b) => b.comment.createdAt.compareTo(a.comment.createdAt),
@@ -911,6 +928,8 @@ abstract class _VideoPageController with Store implements Disposable {
     episodeInfo = info;
     episodeCommentsList = ObservableList.of(comments);
     commentsTotal = total > 0 ? total : comments.length;
+    // 首屏这一页已消费，后续分页从它的末尾继续。
+    _episodeCommentsOffset = comments.length;
   }
 
   @action

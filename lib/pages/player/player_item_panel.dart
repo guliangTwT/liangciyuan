@@ -164,8 +164,10 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
     } else {
       // 直接发到凉次元自有弹幕库：不再依赖第三方弹幕源，也不需要先「找弹幕」。
       final position = playerController.playback.currentPosition;
-      playerController.danmaku.canvasController.addDanmaku(
-        DanmakuContentItem(text, selfSend: true),
+      final displayOff = !playerController.danmaku.danmakuOn;
+      playerController.danmaku.withCanvas(
+        (controller) =>
+            controller.addDanmaku(DanmakuContentItem(text, selfSend: true)),
       );
       unawaited(
         playerController.danmaku.sendDanmaku(
@@ -173,6 +175,11 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
           position: position,
         ),
       );
+      // 弹幕显示关着时画布不会绘制，明确告知已发出但没有显示，
+      // 不要擅自替用户打开开关。
+      if (displayOff) {
+        KazumiDialog.showToast(message: '弹幕已发送（弹幕显示已关闭）');
+      }
     }
     textController.clear();
   }

@@ -434,26 +434,41 @@ class AccountApi {
   }
 
   /// 拉取某一集的全部弹幕（公开，无需登录）。
+  ///
+  /// 服务端单页上限 5000 条；热门剧集可能更多，超过时自动翻页取完，
+  /// 否则后半集的弹幕会被静默丢弃（表现为后半段一条弹幕都没有）。
   Future<AccountDanmakuPage> listDanmaku({
     required int bangumiId,
     required int episode,
     int offset = 0,
     int limit = 3000,
   }) async {
-    final body = await _request(
-      'GET',
-      '/v1/danmaku?bangumiId=$bangumiId&episode=$episode'
-          '&offset=$offset&limit=$limit',
-    );
-    final items = body['items'];
-    return AccountDanmakuPage(
-      total: (body['total'] as num?)?.toInt() ?? 0,
-      items: [
-        if (items is List)
-          for (final item in items)
-            if (item is Map<String, dynamic>) AccountDanmaku.fromJson(item),
-      ],
-    );
+    final items = <AccountDanmaku>[];
+    var total = 0;
+    var nextOffset = offset;
+    // 防御性上限：极端情况也不会无限请求。
+    for (var page = 0; page < 10; page++) {
+      final body = await _request(
+        'GET',
+        '/v1/danmaku?bangumiId=$bangumiId&episode=$episode'
+            '&offset=$nextOffset&limit=$limit',
+      );
+      total = (body['total'] as num?)?.toInt() ?? 0;
+      final pageItems = body['items'];
+      var received = 0;
+      if (pageItems is List) {
+        for (final item in pageItems) {
+          if (item is Map<String, dynamic>) {
+            items.add(AccountDanmaku.fromJson(item));
+            received++;
+          }
+        }
+      }
+      if (received == 0) break;
+      nextOffset += received;
+      if (nextOffset >= total) break;
+    }
+    return AccountDanmakuPage(total: total, items: items);
   }
 
   /// 发送一条弹幕；必须已登录。

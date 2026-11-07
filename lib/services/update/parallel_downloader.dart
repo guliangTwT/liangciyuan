@@ -49,10 +49,7 @@ class ParallelDownloader {
 
     final probe = await _probeCandidates(candidates, cancelToken);
     if (cancelToken.isCancelled) throw cancelToken.cancelError!;
-    if (probe == null) {
-      throw Exception('所有下载源都无法连接');
-    }
-    if (probe.orderedUrls.isEmpty) {
+    if (probe == null || probe.orderedUrls.isEmpty) {
       throw Exception('所有下载源都无法连接');
     }
 
@@ -171,21 +168,24 @@ class ParallelDownloader {
     for (final token in tokens) {
       if (!token.isCancelled) token.cancel();
     }
-    if (responses.isEmpty) return null;
+    // 取消是异步生效的：已悬空的探测回调仍可能往 responses 里追加。
+    // 先取快照再排序，避免并发修改列表。
+    final settled = List<_ProbeCandidate>.from(responses);
+    if (settled.isEmpty) return null;
 
     // 支持 Range 的源排在前面（按响应速度），不支持 Range 的作兜底。
-    responses.sort((a, b) {
+    settled.sort((a, b) {
       final byRange = (b.total > 0 ? 1 : 0).compareTo(a.total > 0 ? 1 : 0);
       if (byRange != 0) return byRange;
       return a.elapsed.compareTo(b.elapsed);
     });
     // 最快源决定是否分块；它不支持 Range 时整份文件走单连接。
-    final fastest = responses.first;
+    final fastest = settled.first;
     return _ProbeResult(
       total: fastest.total,
       orderedUrls: [
         fastest.url,
-        for (final candidate in responses)
+        for (final candidate in settled)
           if (candidate.url != fastest.url) candidate.url,
       ],
     );

@@ -233,7 +233,9 @@ class _CharacterPageState extends State<CharacterPage> {
         children: [
           const Icon(Icons.edit_rounded, size: 18),
           const SizedBox(width: 10),
-          const Expanded(child: Text('写点评论……')),
+          const Expanded(
+            child: Text('写点评论……', overflow: TextOverflow.ellipsis),
+          ),
           const Icon(Icons.chevron_right_rounded, size: 20),
         ],
       ),

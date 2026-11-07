@@ -590,6 +590,13 @@ class SettingsKeys {
     false,
     group: SettingGroup.sync,
   );
+
+  /// 内容开关是否已完成一次性迁移（旧版本只有总开关）。
+  static const syncContentTogglesInitialized = SettingKey<bool>(
+    'syncContentTogglesInitialized',
+    false,
+    group: SettingGroup.sync,
+  );
   static const playerControllerLayerDisappearTime = SettingKey<int>(
     'playerControllerLayerDisappearTime',
     4000,
@@ -714,6 +721,7 @@ class SettingsKeys {
     accountNickname,
     accountAvatarUrl,
     accountSyncEnable,
+    syncContentTogglesInitialized,
     playerControllerLayerDisappearTime,
     defaultVolume,
     playerMuted,

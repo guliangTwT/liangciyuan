@@ -64,7 +64,26 @@ class _DanmakuSettingsSheetState extends State<_DanmakuSettingsSheet> {
   late bool _roomDanmakuEnabled;
   late bool _roomDanmakuOnly;
 
-  DanmakuOption get _option => widget.danmaku.canvasController.option;
+  /// 画布可能尚未创建（例如面板刚打开），此时用已保存的设置构造选项，
+/// 避免访问 late 的 canvasController 抛 LateInitializationError。
+  DanmakuOption get _option {
+    if (widget.danmaku.hasCanvas) {
+      return widget.danmaku.canvasController.option;
+    }
+    return DanmakuOption(
+      fontSize: GStorage.getSetting(SettingsKeys.danmakuFontSize),
+      fontWeight: GStorage.getSetting(SettingsKeys.danmakuFontWeight),
+      area: GStorage.getSetting(SettingsKeys.danmakuArea),
+      duration: GStorage.getSetting(SettingsKeys.danmakuDuration),
+      opacity: GStorage.getSetting(SettingsKeys.danmakuOpacity),
+      lineHeight: GStorage.getSetting(SettingsKeys.danmakuLineHeight),
+      strokeWidth: GStorage.getSetting(SettingsKeys.danmakuBorderSize),
+      massiveMode: GStorage.getSetting(SettingsKeys.danmakuMassive),
+      hideTop: !GStorage.getSetting(SettingsKeys.danmakuTop),
+      hideScroll: !GStorage.getSetting(SettingsKeys.danmakuScroll),
+      hideBottom: !GStorage.getSetting(SettingsKeys.danmakuBottom),
+    );
+  }
 
   @override
   void initState() {
@@ -79,7 +98,11 @@ class _DanmakuSettingsSheetState extends State<_DanmakuSettingsSheet> {
   }
 
   void _applyOption(DanmakuOption option) {
-    setState(() => widget.danmaku.canvasController.updateOption(option));
+    setState(() {
+      if (widget.danmaku.hasCanvas) {
+        widget.danmaku.canvasController.updateOption(option);
+      }
+    });
   }
 
   @override

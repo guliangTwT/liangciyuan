@@ -214,8 +214,9 @@ class EpisodeCommentsView extends StatelessWidget {
         children: [
           const Icon(Icons.edit_rounded, size: 18),
           const SizedBox(width: 10),
-          Expanded(
-            child: Text('写点讨论……'),
+          // 大字号下允许省略，避免窄屏溢出。
+          const Expanded(
+            child: Text('写点讨论……', overflow: TextOverflow.ellipsis),
           ),
           const Icon(Icons.chevron_right_rounded, size: 20),
         ],

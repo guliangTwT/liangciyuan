@@ -105,10 +105,20 @@ abstract class _PlayerDanmakuController with Store {
   late canvas.DanmakuController canvasController;
   bool _canvasAttached = false;
 
+  /// 画布是否已创建。所有对外调用都应先判断，避免在画布就绪前访问
+  /// [canvasController]（那是 late 字段，会抛 LateInitializationError）。
+  bool get hasCanvas => _canvasAttached;
+
   /// 由播放器画布创建回调调用，房间弹幕在画布就绪前到达时会被丢弃。
   void attachCanvasController(canvas.DanmakuController controller) {
     canvasController = controller;
     _canvasAttached = true;
+  }
+
+  /// 画布就绪时执行；未就绪静默跳过。
+  void withCanvas(void Function(canvas.DanmakuController controller) action) {
+    if (!_canvasAttached) return;
+    action(canvasController);
   }
 
   bool get roomDanmakuEnabled =>
@@ -119,7 +129,9 @@ abstract class _PlayerDanmakuController with Store {
 
   /// 一起看房间消息以弹幕形式展示，房间内所有人都能看到。
   ///
-  /// [local] 为本人刚发送的消息，即使关闭了房间弹幕显示也会回显。
+  /// [local] 为本人刚发送的消息：即使关掉了弹幕显示或「房间弹幕」，
+  /// 也要回显一次，否则用户点了发送却毫无反馈。他人的消息则严格
+  /// 遵守这两个开关。
   void showRoomDanmaku({
     required String username,
     required String message,
@@ -128,7 +140,7 @@ abstract class _PlayerDanmakuController with Store {
     if (!_canvasAttached) {
       return;
     }
-    if (!local && !roomDanmakuEnabled) {
+    if (!local && (!danmakuOn || !roomDanmakuEnabled)) {
       return;
     }
     final text = message.trim();
@@ -213,7 +225,7 @@ abstract class _PlayerDanmakuController with Store {
 
   void clearAndInvalidateScheduledDanmakus() {
     _scheduledDanmakuGeneration++;
-    canvasController.clear();
+    withCanvas((controller) => controller.clear());
   }
 
   // Apply fetched data only after VideoPageController validates the session.
@@ -384,23 +396,37 @@ abstract class _PlayerDanmakuController with Store {
       KazumiDialog.showToast(message: '当前剧集无法发送弹幕');
       return false;
     }
+    // 弹幕库存的是「源时间轴」时间，显示时按 playback - offset 取值。
+    // 因此用户此刻画面位置 position 对应的源时间是 position - offset；
+    // 写入云端与本地回显都必须用它，否则设置了时间校准后自己刚发的
+    // 弹幕会错位（看起来慢半拍或提前）。
+    final offsetMs = (timelineOffsetSeconds * 1000).round();
+    final sourceMs =
+        (position.inMilliseconds - offsetMs).clamp(0, 1 << 62);
     try {
       await AccountApi.instance.postDanmaku(
         token: account.token,
         bangumiId: bangumiId,
         episode: episode,
-        positionMs: position.inMilliseconds,
+        positionMs: sourceMs,
         content: content,
       );
       // 合并进本地时间轴，进度条/重播时无需再拉一次。
       final entry = DanmakuEntry(
         message: content,
-        time: position.inMilliseconds / 1000,
+        time: sourceMs / 1000,
         type: 1,
         color: const Color(0xFFFFFFFF),
         source: 'liangciyuan',
       );
-      (danDanmakus[entry.time.toInt()] ??= <DanmakuEntry>[]).add(entry);
+      final bucket = danDanmakus[entry.time.toInt()] ??= <DanmakuEntry>[];
+      // 同一秒内重复发送同样内容时不要叠加两份（重播时会看到两条）。
+      if (!bucket.any(
+        (existing) =>
+            existing.source == entry.source && existing.message == entry.message,
+      )) {
+        bucket.add(entry);
+      }
       return true;
     } on AccountException catch (e) {
       if (e.statusCode == 401) {
@@ -435,7 +461,16 @@ abstract class _PlayerDanmakuController with Store {
     final followSpeed = GStorage.getSetting(SettingsKeys.danmakuFollowSpeed);
 
     final duration = followSpeed ? (baseDuration / playerSpeed) : baseDuration;
-    canvasController
-        .updateOption(canvasController.option.copyWith(duration: duration));
+    withCanvas(
+      (controller) =>
+          controller.updateOption(controller.option.copyWith(duration: duration)),
+    );
   }
+
+  /// 暂停/继续画布；画布未就绪时静默跳过。
+  void pauseCanvas() => withCanvas((controller) => controller.pause());
+
+  void resumeCanvas() => withCanvas((controller) => controller.resume());
+
+  void clearCanvas() => withCanvas((controller) => controller.clear());
 }

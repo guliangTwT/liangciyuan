@@ -169,7 +169,7 @@ class _PlayerItemState extends State<PlayerItem>
     }
     try {
       if (playerController.playback.playerPlaying) {
-        playerController.danmaku.canvasController.resume();
+        playerController.danmaku.resumeCanvas();
       }
     } catch (_) {}
   }
@@ -571,7 +571,7 @@ class _PlayerItemState extends State<PlayerItem>
   }
 
   void handleDanmaku() {
-    playerController.danmaku.canvasController.clear();
+    playerController.danmaku.clearCanvas();
     if (playerController.danmaku.danmakuOn) {
       playerController.danmaku.setDanmakuEnabled(false);
       GStorage.putSetting(SettingsKeys.danmakuEnabledByDefault, false);
@@ -667,7 +667,7 @@ class _PlayerItemState extends State<PlayerItem>
   void _handleFullscreenChange() async {
     playerController.panel.lockPanel = false;
     _releasePlayerPanelHolds();
-    playerController.danmaku.canvasController.clear();
+    playerController.danmaku.clearCanvas();
     _scheduleAndroidPIPSourceRectSync();
 
     await _syncHistoryWithWebDav();
@@ -1127,15 +1127,24 @@ class _PlayerItemState extends State<PlayerItem>
       return;
     }
     // 只看房间弹幕：房间内聊天仍由消息回调即时绘制，这里跳过普通弹幕。
-    if (playerController.danmaku.roomDanmakuOnly &&
-        playerController.syncplay.syncplayRoom.isNotEmpty) {
+    // roomDanmakuOnly 读的是设置库，放在循环外只读一次。
+    final bool roomDanmakuOnly = playerController.danmaku.roomDanmakuOnly;
+    final bool inRoomOnly =
+        roomDanmakuOnly && playerController.syncplay.syncplayRoom.isNotEmpty;
+    if (inRoomOnly) {
       return;
     }
 
     final danmakus = playerController.danmaku.danmakusForPlaybackPosition(
       playerController.playback.currentPosition,
     );
+    if (danmakus.isEmpty) {
+      return;
+    }
     final danmakuCount = danmakus.length;
+    // 本轮调度的代次在循环内不会变化，读一次即可。
+    final scheduledDanmakuGeneration =
+        playerController.danmaku.scheduledDanmakuGeneration;
     for (final entry in danmakus.asMap().entries) {
       final idx = entry.key;
       final danmaku = entry.value;
@@ -1144,28 +1153,35 @@ class _PlayerItemState extends State<PlayerItem>
         index: idx,
         total: danmakuCount,
       );
-      final scheduledDanmakuGeneration =
-          playerController.danmaku.scheduledDanmakuGeneration;
-      Future.delayed(Duration(milliseconds: delay), () {
+      void emit() {
         if (!mounted ||
             !playerController.playback.playerPlaying ||
             playerController.playback.playerBuffering ||
             !playerController.danmaku.danmakuOn ||
-            (playerController.danmaku.roomDanmakuOnly &&
+            (roomDanmakuOnly &&
                 playerController.syncplay.syncplayRoom.isNotEmpty) ||
             playerController.danmaku.scheduledDanmakuGeneration !=
                 scheduledDanmakuGeneration ||
             myController.isDanmakuBlocked(danmaku.message)) {
           return;
         }
-        playerController.danmaku.canvasController.addDanmaku(
-          DanmakuContentItem(
-            danmaku.message,
-            color: color,
-            type: _danmakuItemType(danmaku),
+        playerController.danmaku.withCanvas(
+          (controller) => controller.addDanmaku(
+            DanmakuContentItem(
+              danmaku.message,
+              color: color,
+              type: _danmakuItemType(danmaku),
+            ),
           ),
         );
-      });
+      }
+
+      // delay 为 0 时同步绘制，避免为每秒每个弹幕都创建一个定时器。
+      if (delay <= 0) {
+        emit();
+      } else {
+        Future.delayed(Duration(milliseconds: delay), emit);
+      }
     }
   }
 
@@ -1244,7 +1260,7 @@ class _PlayerItemState extends State<PlayerItem>
 
   @override
   void onWindowRestore() {
-    playerController.danmaku.canvasController.clear();
+    playerController.danmaku.clearCanvas();
   }
 
   @override

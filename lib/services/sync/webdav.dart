@@ -198,16 +198,33 @@ class WebDav {
   /// 总开关开着但三项内容开关全关时，等于「开了同步却什么都没同步」。
   ///
   /// 旧版本没有内容开关，升级后这类账号会一直不同步任何数据（表现为
-  /// 收藏能同步、集数永远对不上）。启动时统一按「全开」补齐一次。
+  /// 收藏能同步、集数永远对不上）。迁移只做一次：用户之后手动全关是
+  /// 明确选择，不能每次启动又替他打开。
+  ///
+  /// 总开关关着时不动标记——用户首次打开总开关时仍应补齐，否则他会在
+  /// 「总开关开、三项全关」的状态下永远同步不到任何内容。
   static Future<bool> normalizeContentToggles() async {
+    if (GStorage.getSetting(SettingsKeys.syncContentTogglesInitialized)) {
+      return false;
+    }
     if (!GStorage.getSetting(SettingsKeys.accountSyncEnable)) return false;
     final anyEnabled = GStorage.getSetting(SettingsKeys.webDavEnableHistory) ||
         GStorage.getSetting(SettingsKeys.webDavEnableCollect) ||
         GStorage.getSetting(SettingsKeys.webDavEnableDanmakuShield);
-    if (anyEnabled) return false;
+    if (anyEnabled) {
+      await GStorage.putSetting(
+        SettingsKeys.syncContentTogglesInitialized,
+        true,
+      );
+      return false;
+    }
     await GStorage.putSetting(SettingsKeys.webDavEnableHistory, true);
     await GStorage.putSetting(SettingsKeys.webDavEnableCollect, true);
     await GStorage.putSetting(SettingsKeys.webDavEnableDanmakuShield, true);
+    await GStorage.putSetting(
+      SettingsKeys.syncContentTogglesInitialized,
+      true,
+    );
     return true;
   }
 

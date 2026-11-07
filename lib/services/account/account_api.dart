@@ -129,6 +129,14 @@ class AccountApi {
     }
   }
 
+  /// 网络层失败（无 HTTP 状态码）判定：同步层据此决定是否重试。
+  static bool isNetworkFailure(AccountException error) {
+    if (error.statusCode != null) return false;
+    return error.message == '连接服务器超时，请检查网络' ||
+        error.message == '无法连接账号服务器' ||
+        error.message == '网络异常，请稍后重试';
+  }
+
   AccountAuthResult _authResult(Map<String, dynamic> body) {
     final token = (body['token'] ?? '').toString();
     final user = body['user'];

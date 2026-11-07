@@ -46,6 +46,14 @@ abstract class _PlayerSyncPlayController with Store {
   /// being established.
   @observable
   SyncplayClient? syncplayController;
+
+  /// 远端与本地的位置偏差超过该值才跳转；太小会与缓冲抖动互相拉扯。
+  static const int _seekThresholdMs = 2000;
+
+  /// 自己触发的状态回传：偏差在此范围内直接忽略，避免本地跳转被回传
+  /// 位置（含服务器往返延迟）反复纠正，形成来回跳动。
+  static const int _ownEchoIgnoreDriftMs = 3000;
+
   final AsyncSessionOwner _connectionSessions = AsyncSessionOwner();
   @observable
   String syncplayRoom = '';
@@ -224,40 +232,51 @@ abstract class _PlayerSyncPlayController with Store {
           return;
         }
         syncplayClientRtt = (message['clientRtt'].toDouble() * 1000).toInt();
+        final double calculatedPosition =
+            message['calculatedPositon'].toDouble();
+        final int driftMs =
+            (playerPosition().inMilliseconds - (calculatedPosition * 1000).toInt())
+                .abs();
+        // 服务端会把状态回传给发起者。发起者本地已经跳到位，若再按回传的
+        // 位置（服务器算出的值通常还带着往返延迟）跳一次，用户会看到
+        // 「拖一下进度条又被打回去」的抖动。只有偏离较大时才纠正。
+        final bool ownEcho = message['setBy'] == username;
         KazumiLogger().i(
-          'SyncPlay: position changed by ${message['setBy']}: [${DateTime.now().millisecondsSinceEpoch / 1000.0}] calculatedPosition ${message['calculatedPositon']} position: ${message['position']} doSeek: ${message['doSeek']} paused: ${message['paused']} clientRtt: ${message['clientRtt']} serverRtt: ${message['serverRtt']} fd: ${message['fd']}',
+          'SyncPlay: position changed by ${message['setBy']}: calculatedPosition $calculatedPosition position: ${message['position']} doSeek: ${message['doSeek']} paused: ${message['paused']} drift: ${driftMs}ms ownEcho: $ownEcho',
         );
+        // 自己发起的暂停/播放回调不重复提示，但状态仍需保持一致。
         if (message['paused'] != !playing()) {
           if (message['paused']) {
             if (message['position'] != 0) {
-              KazumiDialog.showToast(
-                message: 'SyncPlay: ${message['setBy'] ?? 'unknown'} 暂停了播放',
-                duration: const Duration(seconds: 3),
-              );
+              if (!ownEcho) {
+                KazumiDialog.showToast(
+                  message: 'SyncPlay: ${message['setBy'] ?? 'unknown'} 暂停了播放',
+                  duration: const Duration(seconds: 3),
+                );
+              }
               pause(enableSync: false);
             }
           } else {
             if (message['position'] != 0) {
-              KazumiDialog.showToast(
-                message: 'SyncPlay: ${message['setBy'] ?? 'unknown'} 开始了播放',
-                duration: const Duration(seconds: 3),
-              );
+              if (!ownEcho) {
+                KazumiDialog.showToast(
+                  message: 'SyncPlay: ${message['setBy'] ?? 'unknown'} 开始了播放',
+                  duration: const Duration(seconds: 3),
+                );
+              }
               play(enableSync: false);
             }
           }
         }
-        if ((((playerPosition().inMilliseconds -
-                            (message['calculatedPositon'].toDouble() * 1000)
-                                .toInt())
-                        .abs() >
-                    1000) ||
-                message['doSeek']) &&
+        // 自己的操作已经在本机生效，回传位置还带着往返延迟，
+        // 再跳一次会出现「拖完进度条又被打回去」的抖动。
+        if (ownEcho && driftMs <= _ownEchoIgnoreDriftMs) {
+          return;
+        }
+        if ((driftMs > _seekThresholdMs || message['doSeek']) &&
             duration().inMilliseconds > 0) {
           seek(
-            Duration(
-              milliseconds: (message['calculatedPositon'].toDouble() * 1000)
-                  .toInt(),
-            ),
+            Duration(milliseconds: (calculatedPosition * 1000).toInt()),
             enableSync: false,
           );
         }

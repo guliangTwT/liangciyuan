@@ -11,6 +11,7 @@ import 'package:kazumi/modules/collect/collect_module.dart';
 import 'package:kazumi/modules/collect/collect_change_module.dart';
 import 'package:kazumi/services/sync/history_sync_service.dart';
 import 'package:kazumi/services/account/account_service.dart';
+import 'package:kazumi/services/account/account_api.dart';
 import 'package:kazumi/services/sync/account_remote_client.dart';
 import 'package:kazumi/services/sync/webdav_remote_file_commit.dart';
 import 'package:kazumi/utils/async_serial_queue.dart';
@@ -30,6 +31,11 @@ class WebDav {
   late webdav.Client client;
 
   bool initialized = false;
+
+  /// 当前 [client] 是用哪个令牌初始化出来的。
+  /// 退出登录再换账号后令牌会变，必须据此重新建客户端，
+  /// 否则会一直用旧令牌同步，直到重启应用都返回 401。
+  String _clientToken = '';
   static const Duration _staleRunDirectoryAge = Duration(hours: 24);
 
   final AsyncSingleFlight<void> _historySyncSingleFlight =
@@ -52,9 +58,11 @@ class WebDav {
     webDavLocalTempDirectory = Directory('${directory.path}/cloudSyncTemp');
     final account = AccountService()..ensureLoaded();
     if (!account.loggedIn) {
+      _clientToken = '';
       throw Exception('请先登录凉次元账号');
     }
     client = AccountRemoteClient(token: account.token);
+    _clientToken = account.token;
     try {
       await _ping();
       await _ensureRemoteDirectory(_syncRootPath);
@@ -67,18 +75,50 @@ class WebDav {
     }
   }
 
+  /// 令牌变化或尚未初始化时重建客户端；已就绪时几乎零开销。
+  Future<void> _ensureReady() async {
+    final account = AccountService()..ensureLoaded();
+    // 已初始化、且令牌没有变化时直接复用现有客户端；
+    // 未登录或令牌已变化则重新初始化（未登录会由 _init 抛出提示）。
+    if (initialized && account.token == _clientToken) {
+      return;
+    }
+    initialized = false;
+    await _init();
+  }
+
   Future<T> _runWebDavExclusive<T>(Future<T> Function() action) {
     return _webDavOperationQueue.run(action);
   }
 
   /// 两次远端请求之间的最小间隔，避免云盘因突发请求返回 503/429。
+  /// 自建账号服务不需要这种保护：每个请求都是 200ms 级 RTT 的直连，
+  /// 人为等待只会把「同步」拖成十几秒。
   static const Duration _minRemoteRequestInterval = Duration(milliseconds: 150);
+  static const Duration _accountRequestInterval = Duration.zero;
   static const int _maxRemoteAttempts = 4;
+
+  /// 多个远端小文件的并发下载数；云盘对突发请求敏感，保持串行。
+  int get _downloadConcurrency =>
+      client is AccountRemoteClient ? 4 : 1;
 
   DateTime _nextRemoteRequestAt = DateTime.fromMillisecondsSinceEpoch(0);
 
+  Duration get _remoteRequestInterval => client is AccountRemoteClient
+      ? _accountRequestInterval
+      : _minRemoteRequestInterval;
+
   /// 408/429/5xx 与连接类错误都值得重试；4xx 业务错误立即失败。
   static bool _isTransientRemoteError(Object error) {
+    if (error is AccountException) {
+      final code = error.statusCode;
+      if (code != null) {
+        return code == 408 || code == 429 || code >= 500;
+      }
+      // 无状态码的账号错误只有网络层失败值得重试；
+      // 「请先登录」之类的本地错误重试只是白等。
+      return AccountApi.isNetworkFailure(error);
+    }
     if (error is DioException) {
       switch (error.type) {
         case DioExceptionType.connectionTimeout:
@@ -99,11 +139,12 @@ class WebDav {
   }
 
   Future<void> _paceRemoteRequest() async {
+    final interval = _remoteRequestInterval;
     final now = DateTime.now();
     if (_nextRemoteRequestAt.isAfter(now)) {
       await Future<void>.delayed(_nextRemoteRequestAt.difference(now));
     }
-    _nextRemoteRequestAt = DateTime.now().add(_minRemoteRequestInterval);
+    _nextRemoteRequestAt = DateTime.now().add(interval);
   }
 
   /// 远端调用统一走这里：限速 + 瞬时错误指数退避重试。
@@ -215,7 +256,7 @@ class WebDav {
     // Queue every request: an edit during an upload needs another pass.
     return _runWebDavExclusive(() async {
       if (!isDanmakuShieldSyncEnabled) return;
-      if (!initialized) await _init();
+      await _ensureReady();
       await _ensureLocalTempDirectory();
       await _ensureRemoteDirectory(_danmakuShieldPath);
       final runDirectory = await webDavLocalTempDirectory.createTemp(
@@ -289,7 +330,7 @@ class WebDav {
       try {
         await _runWebDavExclusive(() async {
           // 启动流程是 unawaited 的，播放页可能先于 init() 触发同步。
-          if (!initialized) await _init();
+          await _ensureReady();
           await _syncHistory();
         });
       } catch (e) {
@@ -313,7 +354,7 @@ class WebDav {
   }
 
   Future<void> _syncCollectibles() async {
-    if (!initialized) await _init();
+    await _ensureReady();
     List<CollectedBangumi> remoteCollectibles = [];
     List<CollectedBangumiChange> remoteChanges = [];
 
@@ -627,27 +668,35 @@ class WebDav {
     final eventFiles = <_DownloadedHistoryEventFile>[];
     var currentDeviceLogOversized = false;
     final changeEntries = await _readDir(_historyChangesPath);
-    var index = 0;
-    for (final entry in changeEntries) {
-      final name = entry.name ?? '';
-      if (!name.endsWith('.jsonl') || entry.size == 0) {
-        continue;
-      }
-      final localFile = File(
-        '${runDirectory.path}${Platform.pathSeparator}'
-        'remote-events-${index++}.jsonl',
-      );
-      await _downloadFile('$_historyChangesPath/$name', localFile.path);
-      if (name == '$deviceId.jsonl' &&
-          await localFile.length() >
-              HistorySyncService.checkpointLogThresholdBytes) {
-        currentDeviceLogOversized = true;
-      }
-      eventFiles.add(
-        _DownloadedHistoryEventFile(remoteName: name, localFile: localFile),
-      );
+    // 每个设备一个日志文件；设备多时串行下载会把 RTT 直接累加成十几秒。
+    final changeNames = <String>[
+      for (final entry in changeEntries)
+        if ((entry.name ?? '').endsWith('.jsonl') && (entry.size ?? 0) > 0)
+          entry.name!,
+    ];
+    final downloaded = await mapBounded(
+      List<int>.generate(changeNames.length, (index) => index),
+      (index) async {
+        final name = changeNames[index];
+        final localFile = File(
+          '${runDirectory.path}${Platform.pathSeparator}'
+          'remote-events-$index.jsonl',
+        );
+        await _downloadFile('$_historyChangesPath/$name', localFile.path);
+        return _DownloadedHistoryEventFile(
+          remoteName: name,
+          localFile: localFile,
+          oversized: name == '$deviceId.jsonl' &&
+              await localFile.length() >
+                  HistorySyncService.checkpointLogThresholdBytes,
+        );
+      },
+      concurrency: _downloadConcurrency,
+    );
+    for (final item in downloaded) {
+      eventFiles.add(item);
+      if (item.oversized) currentDeviceLogOversized = true;
     }
-
     return _HistorySyncDownloads(
       snapshotFile: snapshotFile,
       eventFiles: eventFiles,
@@ -683,6 +732,13 @@ class WebDav {
     required String destinationPath,
     required String temporaryPath,
   }) async {
+    // 账号云端是单次 PUT 原子替换：直接写目标即可，省掉
+    // 「删临时文件 → 上传 → MOVE → 再删临时文件」的额外往返，
+    // 同步 6 个文件时能少掉十几秒。
+    if (client is AccountRemoteClient) {
+      await _uploadFile(sourceFilePath, destinationPath);
+      return;
+    }
     await _remoteFileCommitter.replaceFile(
       sourceFilePath: sourceFilePath,
       temporaryPath: temporaryPath,
@@ -862,10 +918,12 @@ class _DownloadedHistoryEventFile {
   const _DownloadedHistoryEventFile({
     required this.remoteName,
     required this.localFile,
+    this.oversized = false,
   });
 
   final String remoteName;
   final File localFile;
+  final bool oversized;
 }
 
 class _HistorySnapshotReadResult {

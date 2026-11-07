@@ -58,6 +58,8 @@ class DownloadHttpClient {
     String url,
     String savePath, {
     Map<String, dynamic> headers = const {},
+    Duration? connectTimeout,
+    Duration? receiveTimeout,
     CancelToken? cancelToken,
     ProgressCallback? onReceiveProgress,
   }) async {
@@ -65,7 +67,11 @@ class DownloadHttpClient {
       await DioFactory.downloadDio.download(
         url,
         savePath,
-        options: Options(headers: headers),
+        options: Options(
+          headers: headers,
+          connectTimeout: connectTimeout,
+          receiveTimeout: receiveTimeout,
+        ),
         cancelToken: cancelToken,
         onReceiveProgress: onReceiveProgress,
       );

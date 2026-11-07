@@ -201,40 +201,81 @@ class _AccountPageState extends State<AccountPage> {
       });
       return;
     }
+    final enableHistory = GStorage.getSetting(SettingsKeys.webDavEnableHistory);
+    final enableCollect = GStorage.getSetting(SettingsKeys.webDavEnableCollect);
+    final enableShield = GStorage.getSetting(
+      SettingsKeys.webDavEnableDanmakuShield,
+    );
+    if (!enableHistory && !enableCollect && !enableShield) {
+      setState(() {
+        _failed = true;
+        _message = '请先在上方开启至少一项同步内容';
+      });
+      return;
+    }
     setState(() {
       _busy = true;
       _failed = false;
       _message = '正在同步…';
     });
+    // 各部分独立失败：一项出错不应让其余数据静默不同步，
+    // 也不能吞掉错误后显示「同步完成」。
+    final failures = <String>[];
+    final sync = WebDav();
     try {
-      final sync = WebDav();
       if (!sync.initialized) await sync.init();
-      if (GStorage.getSetting(SettingsKeys.webDavEnableHistory)) {
+    } on AccountException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _failed = true;
+        _message = e.message;
+      });
+      return;
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _failed = true;
+        _message = '连接同步服务失败：${WebDav.describeError(e)}';
+      });
+      return;
+    }
+
+    if (enableHistory) {
+      try {
         await sync.syncHistory();
+      } catch (e) {
+        failures.add('观看记录：${WebDav.describeError(e)}');
       }
-      if (GStorage.getSetting(SettingsKeys.webDavEnableCollect)) {
+    }
+    if (enableCollect) {
+      try {
         await sync.syncCollectibles();
         inject<CollectController>().loadCollectibles();
+      } catch (e) {
+        failures.add('收藏：${WebDav.describeError(e)}');
       }
-      await inject<DanmakuShieldSyncService>().syncIfEnabled();
-      if (mounted) setState(() => _message = '同步完成');
-    } on AccountException catch (e) {
-      if (mounted) {
-        setState(() {
-          _failed = true;
-          _message = e.message;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _failed = true;
-          _message = '同步失败：$e';
-        });
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
     }
+    if (enableShield) {
+      try {
+        await inject<DanmakuShieldSyncService>().sync();
+      } catch (e) {
+        failures.add('弹幕屏蔽词：${WebDav.describeError(e)}');
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      if (failures.isEmpty) {
+        _failed = false;
+        _message = '同步完成';
+      } else {
+        _failed = true;
+        _message = '同步未全部完成\n${failures.join('\n')}';
+      }
+    });
   }
 
   Future<void> _editNickname() async {
@@ -431,7 +472,30 @@ class _AccountPageState extends State<AccountPage> {
                 final next = value ??
                     !GStorage.getSetting(SettingsKeys.accountSyncEnable);
                 await GStorage.putSetting(SettingsKeys.accountSyncEnable, next);
+                // 总开关单独打开时下面三项都是关的，等于「开了但什么都没同步」。
+                // 首次打开一并开启三项内容，用户可按需再关掉。
+                if (next &&
+                    !GStorage.getSetting(SettingsKeys.webDavEnableHistory) &&
+                    !GStorage.getSetting(SettingsKeys.webDavEnableCollect) &&
+                    !GStorage.getSetting(
+                      SettingsKeys.webDavEnableDanmakuShield,
+                    )) {
+                  await GStorage.putSetting(
+                    SettingsKeys.webDavEnableHistory,
+                    true,
+                  );
+                  await GStorage.putSetting(
+                    SettingsKeys.webDavEnableCollect,
+                    true,
+                  );
+                  await GStorage.putSetting(
+                    SettingsKeys.webDavEnableDanmakuShield,
+                    true,
+                  );
+                }
                 if (mounted) setState(() {});
+                // 开关变化后重新安排定时同步，否则要等下次启动才生效。
+                WebDavAutoSync().reschedule();
                 if (next) await _syncNow();
               },
             ),

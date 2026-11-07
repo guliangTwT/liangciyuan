@@ -29,5 +29,12 @@ void main() {
       expect(updateDownloadCandidates(url), [url]);
       expect(unwrapGithubMirror(url), isNull);
     });
+
+    test('ranks measured-fast mirrors first', () {
+      // 顺序直接影响并发探测的先后；把实测最快的放在最前面，
+      // 否则第一轮总是先试最慢的源。
+      expect(githubMirrorPrefixes.first, 'https://gh-proxy.org/');
+      expect(githubMirrorPrefixes, contains('https://gh-proxy.com/'));
+    });
   });
 }

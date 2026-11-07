@@ -11,6 +11,8 @@ import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/update/update_download_mirrors.dart';
 import 'package:kazumi/services/update/update_download_source.dart';
 import 'package:kazumi/services/update/update_downloader.dart';
+import 'package:kazumi/services/update/apk_install_bridge.dart';
+import 'package:kazumi/services/update/silent_installer.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
@@ -310,6 +312,19 @@ class AutoUpdater {
         assets: updateInfo.assets,
       );
 
+      // Android：下载前就确认「安装未知应用」权限。
+      // 否则下完 35MB 才发现没权限，还得再跳一次设置。
+      if (Platform.isAndroid &&
+          selectedType == InstallationType.androidApk &&
+          !await ApkInstallBridge.canRequestPackageInstalls()) {
+        KazumiDialog.showToast(
+          message: '开启「安装未知应用」后，更新才能自动完成安装',
+          duration: const Duration(seconds: 5),
+        );
+        await ApkInstallBridge.requestInstallPermission();
+        // 不阻塞下载：用户去设置授权的同时后台已在下载。
+      }
+
       _downloadUpdate(downloadInfo, expectedHash);
     } catch (e) {
       KazumiDialog.showToast(message: '下载失败: ${e.toString()}');
@@ -396,6 +411,22 @@ class AutoUpdater {
   final ValueNotifier<double> _downloadProgress = ValueNotifier(0.0);
   final _downloadDialogs = KazumiDialogController();
 
+  /// 「立即安装」之后会发生什么，按平台如实说明。
+  ///
+  /// Windows 走 Inno Setup 的静默开关，只有 UAC 需要确认；
+  /// Android 的系统限制决定了必须由用户在系统安装器点一次「安装」，
+  /// 这里不掩饰这一点，避免用户以为「说好的静默呢」。
+  String _installHintFor(UpdateInfo updateInfo) {
+    final type = updateInfo.recommendedInstallationType;
+    if (Platform.isWindows && type == InstallationType.windowsSetup) {
+      return '将静默安装并自动退出，只需在系统提示里允许一次';
+    }
+    if (Platform.isAndroid) {
+      return '应用会退出，随后在系统安装界面点一次「安装」即可';
+    }
+    return '安装过程中应用将会退出';
+  }
+
   void _showDownloadCompleteDialog(String filePath, UpdateInfo updateInfo) {
     KazumiDialog.show(
       builder: (context) {
@@ -418,7 +449,7 @@ class AutoUpdater {
               ),
               const SizedBox(height: 12),
               Text(
-                '安装过程中应用将会退出',
+                _installHintFor(updateInfo),
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.error,
                   fontSize: 12,
@@ -488,8 +519,17 @@ class AutoUpdater {
     String expectedHash,
     CancelToken cancelToken,
   ) async {
-    final tempDir = await getTemporaryDirectory();
-    final filePath = '${tempDir.path}/${_getFileNameFromUrl(url, version)}';
+    // 放在应用支持目录而不是系统临时目录：临时目录会被系统/OEM 清理策略
+    // 随时删掉，用户「稍后安装」或安装时点错取消后就得重新下 35MB。
+    // 这个目录保持到下一次成功安装，downloadUpdateFile 会复用校验过的文件。
+    final baseDir = await getApplicationSupportDirectory();
+    final updateDir = Directory('${baseDir.path}/updates');
+    if (!await updateDir.exists()) {
+      await updateDir.create(recursive: true);
+    }
+    final filePath = '${updateDir.path}/${_getFileNameFromUrl(url, version)}';
+    // 清理旧版本安装包，避免长期累积占用空间。
+    await _pruneOldUpdateFiles(updateDir, keepFileName: filePath.split('/').last);
     // 测速、择优、分块并行下载与校验都由 downloadUpdateFile 内部处理。
     return downloadUpdateFile(
       url: url,
@@ -502,16 +542,48 @@ class AutoUpdater {
     );
   }
 
+  /// 只保留当前版本的安装包，其余删除。
+  Future<void> _pruneOldUpdateFiles(
+    Directory dir, {
+    required String keepFileName,
+  }) async {
+    try {
+      await for (final entity in dir.list()) {
+        if (entity is! File) continue;
+        if (entity.path.split(Platform.pathSeparator).last == keepFileName) {
+          continue;
+        }
+        await entity.delete();
+      }
+    } catch (e) {
+      KazumiLogger().w('Update: failed to prune old update files', error: e);
+    }
+  }
+
   void _installUpdate(
     String filePath,
     InstallationType installationType,
   ) async {
     try {
-      KazumiDialog.showToast(message: '准备安装更新，应用即将退出...');
-
-      await Future.delayed(const Duration(seconds: 2));
-
       if (Platform.isWindows) {
+        if (installationType == InstallationType.windowsSetup) {
+          // 静默覆盖安装：Inno Setup 支持 /SILENT，用户只需通过一次 UAC。
+          KazumiDialog.showToast(
+            message: '正在静默安装更新，请在系统提示中允许…',
+          );
+          await Future.delayed(const Duration(milliseconds: 600));
+          final launched = SilentInstaller.launchSilent(filePath);
+          if (launched) {
+            // 让安装器接管：先退出，避免文件占用导致覆盖失败。
+            await Future.delayed(const Duration(milliseconds: 800));
+            exit(0);
+          }
+          // 静默拉起失败（例如被安全软件拦截）时退回可视化安装。
+          KazumiLogger().w(
+            'Update: silent install unavailable, falling back to wizard',
+          );
+          KazumiDialog.showToast(message: '无法静默安装，正在打开安装向导…');
+        }
         if (installationType == InstallationType.windowsSetup ||
             installationType == InstallationType.windowsMsix) {
           // 安装器清单要求管理员权限；CreateProcess 对此类可执行文件返回
@@ -534,10 +606,26 @@ class AutoUpdater {
           exit(0);
         }
       } else if (Platform.isAndroid) {
-        final result = await OpenFilex.open(filePath);
-        if (result.type != ResultType.done) {
-          KazumiDialog.showToast(message: '无法打开安装文件: ${result.message}');
+        // 先确认「安装未知应用」权限；未开启时引导用户去设置，
+        // 否则系统安装器会直接拒绝，看起来像「点了没反应」。
+        if (!await ApkInstallBridge.canRequestPackageInstalls()) {
+          KazumiDialog.showToast(
+            message: '请先允许「安装未知应用」，然后再点一次安装',
+            duration: const Duration(seconds: 5),
+          );
+          await ApkInstallBridge.requestInstallPermission();
           return;
+        }
+        final handedOff = await ApkInstallBridge.installApk(filePath);
+        if (!handedOff) {
+          // 系统通道不可用时退回 open_filex（会弹「用哪个应用打开」）。
+          final result = await OpenFilex.open(filePath);
+          if (result.type != ResultType.done) {
+            KazumiDialog.showToast(
+              message: '无法打开安装文件: ${result.message}',
+            );
+            return;
+          }
         }
       }
     } catch (e) {

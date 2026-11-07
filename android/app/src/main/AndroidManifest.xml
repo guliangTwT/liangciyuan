@@ -79,6 +79,10 @@
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </receiver>
+        <!-- 应用内更新的安装结果回调（PackageInstaller 会话结束后触发）。 -->
+        <receiver
+            android:name=".InstallResultReceiver"
+            android:exported="false" />
     </application>
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />

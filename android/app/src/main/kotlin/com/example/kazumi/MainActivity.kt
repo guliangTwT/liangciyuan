@@ -38,6 +38,8 @@ class MainActivity: AudioServiceActivity() {
     private var pipChannel: MethodChannel? = null
     private var downloadDirectoryChannel: MethodChannel? = null
     private var downloadDirectoryHandler: DownloadDirectoryHandler? = null
+    private var installChannel: MethodChannel? = null
+    private var installHandler: ApkInstallHandler? = null
 
     private var pipIsPlaying = false
     private var pipDanmakuEnabled = false
@@ -80,6 +82,10 @@ class MainActivity: AudioServiceActivity() {
         downloadDirectoryChannel = null
         downloadDirectoryHandler?.dispose()
         downloadDirectoryHandler = null
+        installChannel?.setMethodCallHandler(null)
+        installChannel = null
+        InstallResultBridge.handler = null
+        installHandler = null
         unregisterPipActionReceiverIfNeeded()
         // audio_service stays bound for the whole activity lifetime, so its
         // own stopSelf() never destroys a service started for playback.
@@ -112,6 +118,16 @@ class MainActivity: AudioServiceActivity() {
             flutterEngine.dartExecutor.binaryMessenger, DownloadDirectoryHandler.CHANNEL
         )
         downloadDirectoryChannel?.setMethodCallHandler(downloadDirectoryHandler)
+        // 应用内更新安装：PackageInstaller 通道（见 ApkInstallHandler）。
+        val apkInstallHandler = ApkInstallHandler(this)
+        installHandler = apkInstallHandler
+        InstallResultBridge.handler = apkInstallHandler
+        installChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger, ApkInstallHandler.CHANNEL
+        )
+        installChannel?.setMethodCallHandler { call, result ->
+            apkInstallHandler.handle(call, result)
+        }
         intentChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         intentChannel?.setMethodCallHandler { call, result ->
             if (call.method == "openWithMime") {

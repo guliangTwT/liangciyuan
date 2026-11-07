@@ -44,6 +44,9 @@ PrivilegesRequiredOverridesAllowed=dialog commandline
 OutputDir={#MyAppBuildDir}
 OutputBaseFilename=liangciyuan-{#AppVersion}-windows-x64-setup
 ChangesAssociations=yes
+; 应用内更新用 /SILENT /CLOSEAPPLICATIONS /NORESTART 调用本安装包
+; （见 lib/services/update/auto_updater.dart），实现无感升级。
+; Inno Setup 原生支持静默安装，无需在此额外声明。
 
 [Languages]
 ; 中文语言文件随仓库分发（runner 预装的 Inno Setup 不含官方翻译）。

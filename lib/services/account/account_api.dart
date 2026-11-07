@@ -505,6 +505,69 @@ class AccountApi {
     }
     return AccountDanmaku.fromJson(item);
   }
+
+  /// 读取某条目的评分汇总（公开）。
+  Future<AccountRating> getRating(int bangumiId, {String? token}) async {
+    final body = await _request(
+      'GET',
+      '/v1/ratings?bangumiId=$bangumiId',
+      token: token,
+    );
+    return AccountRating.fromJson(body);
+  }
+
+  /// 批量读取评分（列表页用），一次最多 200 个条目。
+  Future<Map<int, AccountRating>> getRatings(
+    List<int> bangumiIds, {
+    String? token,
+  }) async {
+    if (bangumiIds.isEmpty) return const {};
+    final unique = <int>{...bangumiIds.where((id) => id > 0)}.take(200);
+    if (unique.isEmpty) return const {};
+    final body = await _request(
+      'GET',
+      '/v1/ratings?bangumiIds=${unique.join(',')}',
+      token: token,
+    );
+    final items = body['items'];
+    if (items is! Map) return const {};
+    final result = <int, AccountRating>{};
+    for (final entry in items.entries) {
+      final id = int.tryParse(entry.key.toString());
+      final value = entry.value;
+      if (id == null || value is! Map) continue;
+      result[id] = AccountRating.fromJson(Map<String, dynamic>.from(value));
+    }
+    return result;
+  }
+
+  /// 提交/修改自己的评分（1~10）。
+  Future<AccountRating> putRating({
+    required String token,
+    required int bangumiId,
+    required int score,
+  }) async {
+    final body = await _request(
+      'PUT',
+      '/v1/ratings',
+      token: token,
+      data: {'bangumiId': bangumiId, 'score': score},
+    );
+    return AccountRating.fromJson(body);
+  }
+
+  /// 撤销自己的评分。
+  Future<AccountRating> deleteRating({
+    required String token,
+    required int bangumiId,
+  }) async {
+    final body = await _request(
+      'DELETE',
+      '/v1/ratings?bangumiId=$bangumiId',
+      token: token,
+    );
+    return AccountRating.fromJson(body);
+  }
 }
 
 class AccountCommentPage {
@@ -640,4 +703,40 @@ class AccountDanmakuPage {
 
   final int total;
   final List<AccountDanmaku> items;
+}
+
+/// 凉次元自建评分的汇总。评分只来自本站用户，不参考第三方。
+class AccountRating {
+  const AccountRating({
+    required this.bangumiId,
+    required this.count,
+    required this.score,
+    required this.myScore,
+  });
+
+  final int bangumiId;
+
+  /// 参与评分的人数。
+  final int count;
+
+  /// 平均分（1~10，保留一位小数）；[count] 为 0 时是 null，表示暂无评分。
+  final double? score;
+
+  /// 自己打的分；0 表示未评分。
+  final int myScore;
+
+  bool get hasScore => count > 0 && score != null;
+  bool get rated => myScore > 0;
+
+  factory AccountRating.fromJson(Map<String, dynamic> json) {
+    return AccountRating(
+      bangumiId: (json['bangumiId'] as num?)?.toInt() ?? 0,
+      count: (json['count'] as num?)?.toInt() ?? 0,
+      score: (json['score'] as num?)?.toDouble(),
+      myScore: (json['myScore'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  /// 卡片上显示的分数文本：没有评分时明确写「暂无评分」。
+  String get displayScore => hasScore ? score!.toStringAsFixed(1) : '暂无评分';
 }

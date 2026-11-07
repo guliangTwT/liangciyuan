@@ -124,6 +124,25 @@ CREATE TABLE IF NOT EXISTS rate_limits (
 )
 SQL);
 
+    // 自建评分：每人每个条目一票（1~10 分，可改分）。
+    // 客户端只显示这里的统计，不再参考 Bangumi 的评分。
+    $pdo->exec(<<<SQL
+CREATE TABLE IF NOT EXISTS ratings (
+  bangumi_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  score INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (bangumi_id, user_id)
+)
+SQL);
+    $pdo->exec(
+        'CREATE INDEX IF NOT EXISTS idx_ratings_bangumi ON ratings(bangumi_id)'
+    );
+    $pdo->exec(
+        'CREATE INDEX IF NOT EXISTS idx_ratings_user ON ratings(user_id, updated_at)'
+    );
+
     // 称号：仅由服务端授予（例如作者），客户端不可自行设置。
     // SQLite 的 ADD COLUMN 不支持 IF NOT EXISTS，先查表结构再补。
     ensure_column($pdo, 'users', 'title', "TEXT NOT NULL DEFAULT ''");

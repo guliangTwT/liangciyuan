@@ -37,5 +37,8 @@ $router->add('GET', '/v1/users/{id}', 'handle_user_profile');
 $router->add('GET', '/v1/danmaku', 'handle_danmaku_list');
 $router->add('POST', '/v1/danmaku', 'handle_danmaku_create');
 $router->add('DELETE', '/v1/danmaku/{id}', 'handle_danmaku_delete');
+$router->add('GET', '/v1/ratings', 'handle_ratings_get');
+$router->add('PUT', '/v1/ratings', 'handle_ratings_put');
+$router->add('DELETE', '/v1/ratings', 'handle_ratings_delete');
 
 $router->dispatch(Request::fromGlobals());

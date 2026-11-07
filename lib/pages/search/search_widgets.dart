@@ -68,7 +68,7 @@ class _SearchSortMenu extends StatelessWidget {
   }
 }
 
-class _SearchResultGrid extends StatelessWidget {
+class _SearchResultGrid extends StatefulWidget {
   const _SearchResultGrid({
     required this.items,
     required this.width,
@@ -80,7 +80,39 @@ class _SearchResultGrid extends StatelessWidget {
   final bool showRating;
 
   @override
+  State<_SearchResultGrid> createState() => _SearchResultGridState();
+}
+
+class _SearchResultGridState extends State<_SearchResultGrid> {
+  @override
+  void initState() {
+    super.initState();
+    _prefetchRatings();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SearchResultGrid oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.items != widget.items) _prefetchRatings();
+  }
+
+  /// 结果页一次性批量取评分（评分只来自凉次元自己的服务）。
+  void _prefetchRatings() {
+    if (!widget.showRating || widget.items.isEmpty) return;
+    unawaited(
+      RatingCache().prefetch(widget.items.map((item) => item.id)).then((
+        updated,
+      ) {
+        if (updated && mounted) setState(() {});
+      }),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final items = widget.items;
+    final width = widget.width;
+    final showRating = widget.showRating;
     final textTheme = Theme.of(context).textTheme;
     final titleStyle = textTheme.titleSmall!
         .copyWith(fontWeight: FontWeight.w600, height: 1.4);
@@ -180,11 +212,15 @@ class _SearchResultCard extends StatelessWidget {
                 )),
             const SizedBox(height: metadataSpacing),
             Row(children: [
-              if (showRating && item.ratingScore > 0) ...[
-                Icon(Icons.star_rounded,
-                    size: ratingIconSize, color: theme.colorScheme.primary),
+              if (showRating) ...[
+                Icon(
+                    Icons.star_rounded,
+                    size: ratingIconSize,
+                    color: RatingCache().shouldShowStars(item.id)
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurfaceVariant),
                 const SizedBox(width: 3),
-                Text(item.ratingScore.toStringAsFixed(1),
+                Text(RatingCache().displayScoreFor(item.id),
                     style: theme.textTheme.labelMedium),
                 const SizedBox(width: 10),
               ],

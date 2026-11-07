@@ -155,6 +155,39 @@ mixin _$InfoController on _InfoController, Store {
     });
   }
 
+  late final _$ratingAtom =
+      Atom(name: '_InfoController.rating', context: context);
+
+  @override
+  AccountRating? get rating {
+    _$ratingAtom.reportRead();
+    return super.rating;
+  }
+
+  @override
+  set rating(AccountRating? value) {
+    _$ratingAtom.reportWrite(value, super.rating, () {
+      super.rating = value;
+    });
+  }
+
+  late final _$loadRatingAsyncAction =
+      AsyncAction('_InfoController.loadRating', context: context);
+
+  @override
+  Future<void> loadRating(int bangumiId) {
+    return _$loadRatingAsyncAction.run(() => super.loadRating(bangumiId));
+  }
+
+  late final _$submitRatingAsyncAction =
+      AsyncAction('_InfoController.submitRating', context: context);
+
+  @override
+  Future<bool> submitRating(int bangumiId, int score) {
+    return _$submitRatingAsyncAction
+        .run(() => super.submitRating(bangumiId, score));
+  }
+
   late final _$queryBangumiRelationsByIDAsyncAction = AsyncAction(
       '_InfoController.queryBangumiRelationsByID',
       context: context);

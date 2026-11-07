@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 
@@ -17,8 +18,11 @@ import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/pages/info/info_actions_menu.dart';
 import 'package:kazumi/pages/info/info_controller.dart';
 import 'package:kazumi/pages/info/info_tabview.dart';
+import 'package:kazumi/pages/info/rating_dialog.dart';
 import 'package:kazumi/pages/info/source_sheet.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
+import 'package:kazumi/services/account/account_api.dart';
+import 'package:kazumi/services/account/account_service.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/platform/desktop_window_config.dart';
 import 'package:kazumi/services/storage/storage.dart';
@@ -69,10 +73,9 @@ class _InfoPageState extends State<InfoPage>
       infoController.isLoading || _showBangumiInfoSkeleton;
 
   bool _needsBangumiInfoRefresh(BangumiItem bangumiItem) {
-    final votesCount = bangumiItem.votesCount;
-    final missingVoteDistribution =
-        votesCount.isEmpty || bangumiItem.votes <= 0 || votesCount.length < 10;
-    return bangumiItem.summary == '' || missingVoteDistribution;
+    // 只关心条目元数据（简介）是否缺失；评分已改为本站数据，
+    // 不再依赖 Bangumi 的评分分布。
+    return bangumiItem.summary == '';
   }
 
   Future<void> loadCharacters() async {
@@ -160,6 +163,8 @@ class _InfoPageState extends State<InfoPage>
     infoTabController = TabController(length: _infoTabs.length, vsync: this);
     showRating = GStorage.getSetting(SettingsKeys.showRating);
     infoTabController.addListener(onInfoTabChanged);
+    // 评分与条目信息并行拉取，不阻塞首屏。
+    unawaited(infoController.loadRating(infoController.bangumiItem.id));
   }
 
   void onInfoTabChanged() {
@@ -216,6 +221,40 @@ class _InfoPageState extends State<InfoPage>
           _showBangumiInfoSkeleton = false;
         });
       }
+    }
+  }
+
+  /// 打开评分面板。未登录时先引导登录。
+  Future<void> _rate() async {
+    final account = AccountService()..ensureLoaded();
+    if (!account.loggedIn) {
+      KazumiDialog.showToast(message: '打分需要先登录凉次元账号');
+      context.pushNamed('/settings/account');
+      return;
+    }
+    final current = infoController.rating?.myScore ?? 0;
+    final selected = await showDialog<int>(
+      builder: (context) => RatingDialog(
+        title: infoController.bangumiItem.nameCn.isNotEmpty
+            ? infoController.bangumiItem.nameCn
+            : infoController.bangumiItem.name,
+        initialScore: current,
+      ),
+      context: context,
+    );
+    if (!mounted || selected == null) return;
+    try {
+      final ok = await infoController.submitRating(
+        infoController.bangumiItem.id,
+        selected,
+      );
+      if (!mounted) return;
+      KazumiDialog.showToast(message: ok ? '已提交评分' : '请先登录凉次元账号');
+    } catch (e) {
+      if (!mounted) return;
+      KazumiDialog.showToast(
+        message: e is AccountException ? e.message : '评分失败，请稍后重试',
+      );
     }
   }
 
@@ -347,6 +386,8 @@ class _InfoPageState extends State<InfoPage>
                                     bangumiItem: infoController.bangumiItem,
                                     isLoading: showBangumiInfoSkeleton,
                                     showRating: showRating,
+                                    rating: infoController.rating,
+                                    onRate: _rate,
                                   ),
                                 ),
                               ),
@@ -504,3 +545,4 @@ class _InfoHeaderBackground extends StatelessWidget {
     );
   }
 }
+

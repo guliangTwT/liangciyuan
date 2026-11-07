@@ -5,6 +5,7 @@ import 'package:kazumi/repositories/collect_repository.dart';
 import 'package:kazumi/modules/collect/collect_type.dart';
 import 'package:kazumi/services/network/bangumi_acceleration.dart';
 import 'package:kazumi/services/logging/logger.dart';
+import 'package:kazumi/services/account/rating_cache.dart';
 import 'package:mobx/mobx.dart';
 
 part 'timeline_controller.g.dart';
@@ -103,7 +104,10 @@ abstract class _TimelineController with Store {
     _sort = sort;
     final Comparator<BangumiItem> compare = switch (sort) {
       TimelineSort.popularity => (a, b) => b.votes.compareTo(a.votes),
-      TimelineSort.rating => (a, b) => b.ratingScore.compareTo(a.ratingScore),
+      // 按凉次元自己的评分排序；暂无评分的排最后。
+      TimelineSort.rating => (a, b) =>
+          (RatingCache().ratingOf(b.id)?.score ?? -1)
+              .compareTo(RatingCache().ratingOf(a.id)?.score ?? -1),
       TimelineSort.defaultOrder => (a, b) => a.id.compareTo(b.id),
     };
     final resBangumiCalendar = bangumiCalendar.toList();

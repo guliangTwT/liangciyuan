@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
+import 'package:kazumi/services/account/rating_cache.dart';
 
 class BangumiTimelineCard extends StatelessWidget {
   const BangumiTimelineCard({
@@ -204,13 +205,15 @@ class BangumiTimelineCard extends StatelessWidget {
       fontSize: _labelFontSize,
       height: _labelLineHeight,
     );
-    if (bangumiItem.ratingScore <= 0) {
+    // 只用凉次元自己的评分；没有评分时明确显示「暂无评分」。
+    final rating = RatingCache().ratingOf(bangumiItem.id);
+    if (rating == null || !rating.hasScore) {
       return Text('暂无评分',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: labelStyle?.copyWith(color: colors.onSurfaceVariant));
     }
-    final score = bangumiItem.ratingScore.toStringAsFixed(1);
+    final score = rating.score!.toStringAsFixed(1);
     return Semantics(
       label: '评分 $score',
       excludeSemantics: true,

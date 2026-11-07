@@ -417,6 +417,15 @@ abstract class _VideoPageController with Store implements Disposable {
     _loading = false;
   }
 
+  /// 电脑端等待用户选集：退出加载态，但也不显示错误。
+  ///
+  /// 否则用户关掉选集面板后页面会一直停在「视频资源解析中」。
+  @action
+  void waitForEpisodeSelection() {
+    _loading = false;
+    _errorMessage = null;
+  }
+
   @action
   void _failLoading(String message) {
     _loading = false;

@@ -1,5 +1,6 @@
 import 'package:kazumi/modules/collect/collect_module.dart';
 import 'package:kazumi/modules/collect/collect_type.dart';
+import 'package:kazumi/services/account/rating_cache.dart';
 
 enum CollectSort {
   recentlyChanged('最近变更'),
@@ -44,7 +45,9 @@ class CollectLibraryQuery {
               titleOf(b).toLowerCase(),
             ),
         CollectSort.rating =>
-          b.bangumiItem.ratingScore.compareTo(a.bangumiItem.ratingScore),
+          // 按凉次元自己的评分排序；没有评分的排最后。
+          (RatingCache().ratingOf(b.bangumiItem.id)?.score ?? -1)
+              .compareTo(RatingCache().ratingOf(a.bangumiItem.id)?.score ?? -1),
         CollectSort.airDate => _airDate(b).compareTo(_airDate(a)),
       };
       if (comparison != 0) return comparison;

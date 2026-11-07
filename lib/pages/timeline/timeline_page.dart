@@ -14,6 +14,7 @@ import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/pages/timeline/timeline_controller.dart';
+import 'package:kazumi/services/account/rating_cache.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/utils/anime_season.dart';
 
@@ -40,6 +41,31 @@ class _TimelinePageState extends State<TimelinePage> {
     if (_controller.bangumiCalendar.isEmpty) {
       _controller.loadSeason(_controller.selectedDate);
     }
+    // 日历是异步加载的，首帧通常还没有数据；预取会由 build 中的
+    // [_scheduleRatingPrefetch] 在数据真正到位后触发。
+  }
+
+  int _prefetchSignature = 0;
+
+  /// 在日历数据变化后安排一次评分预取（不能直接在 build 里 setState）。
+  void _scheduleRatingPrefetch(List<List<BangumiItem>> calendar) {
+    if (!_showRating) return;
+    final ids = <int>[
+      for (final day in calendar)
+        for (final item in day) item.id,
+    ];
+    if (ids.isEmpty) return;
+    // 用 id 的数量与首个 id 做轻量签名，避免每帧重复安排。
+    final signature = Object.hash(ids.length, ids.first, ids.last);
+    if (signature == _prefetchSignature) return;
+    _prefetchSignature = signature;
+    RatingCache().prefetch(ids).then((updated) {
+      // 预取可能在 build 期间完成，必须等这一帧结束再 setState。
+      if (!updated || !mounted) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    });
   }
 
   String _seasonLabel(DateTime date) {
@@ -174,6 +200,8 @@ class _TimelinePageState extends State<TimelinePage> {
             final failed = _controller.isTimeOut;
             final watchingIds = _controller.loadWatchingBangumiIds();
             final calendar = _controller.filterCalendar(watchingIds);
+            // 日历到位后再拉评分（异步加载，首帧通常为空）。
+            _scheduleRatingPrefetch(calendar);
             final today = DateTime.now();
             final currentSeason = isSameSeason(_controller.selectedDate, today);
             final seasonHeader = narrowPortrait

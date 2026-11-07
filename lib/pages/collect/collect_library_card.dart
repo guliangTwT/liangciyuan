@@ -62,7 +62,10 @@ class _CollectPosterCard extends StatelessWidget {
     final title = CollectLibraryQuery.titleOf(entry);
     final year = DateTime.tryParse(item.airDate)?.year;
     final type = CollectType.fromValue(entry.type);
-    final hasRating = showRating && item.ratingScore > 0;
+    // 只用凉次元自己的评分；没有评分时不算「有评分」。
+    final rating = RatingCache().ratingOf(item.id);
+    final hasRating = showRating && (rating?.hasScore ?? false);
+    final ratingText = hasRating ? rating!.score!.toStringAsFixed(1) : '暂无评分';
     final showDetails = showStatus || showRating;
 
     Widget detailLine(String value, {bool status = false}) => SizedBox(
@@ -103,8 +106,7 @@ class _CollectPosterCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (showRating)
-                    detailLine(
-                        hasRating ? item.ratingScore.toStringAsFixed(1) : ''),
+                    detailLine(hasRating ? ratingText : '暂无评分'),
                   if (showStatus) ...[
                     if (showRating) const SizedBox(height: 2),
                     detailLine(type.label, status: true),
@@ -112,7 +114,7 @@ class _CollectPosterCard extends StatelessWidget {
                 ],
               )
             : detailLine([
-                if (hasRating) '${item.ratingScore.toStringAsFixed(1)} 分',
+                if (showRating) hasRating ? '$ratingText 分' : '暂无评分',
                 if (showStatus) type.label,
               ].join(' · ')),
       );
@@ -188,7 +190,7 @@ class _CollectPosterCard extends StatelessWidget {
             title,
             type.label,
             if (year != null) '$year 年',
-            if (hasRating) '${item.ratingScore.toStringAsFixed(1)} 分',
+            if (hasRating) '$ratingText 分',
           ].join('，'),
           child: InkWell(
             onTap: onOpen,
@@ -234,8 +236,10 @@ class _CollectListTile extends StatelessWidget {
     final airDate = DateTime.tryParse(item.airDate);
     final metadata = [
       if (airDate != null) '${airDate.year} 年',
-      if (showRating && item.ratingScore > 0)
-        '${item.ratingScore.toStringAsFixed(1)} 分',
+      if (showRating)
+        (RatingCache().ratingOf(item.id)?.hasScore ?? false)
+            ? '${RatingCache().ratingOf(item.id)!.score!.toStringAsFixed(1)} 分'
+            : '暂无评分',
     ];
 
     return Material(

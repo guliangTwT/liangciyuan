@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
@@ -8,6 +10,7 @@ import 'package:kazumi/modules/collect/collect_layout.dart';
 import 'package:kazumi/modules/collect/collect_module.dart';
 import 'package:kazumi/modules/collect/collect_type.dart';
 import 'package:kazumi/pages/collect/collect_library_query.dart';
+import 'package:kazumi/services/account/rating_cache.dart';
 
 part 'collect_library_card.dart';
 part 'collect_library_controls.dart';
@@ -84,6 +87,20 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
   void didUpdateWidget(covariant CollectLibraryView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.layout != widget.layout) _resetResults();
+    _prefetchRatings();
+  }
+
+  /// 只请求显示需要的评分（批量、去重、带缓存）。
+  void _prefetchRatings() {
+    if (!widget.showRating || widget.entries.isEmpty) return;
+    unawaited(
+      RatingCache().prefetch(
+        widget.entries.map((entry) => entry.bangumiItem.id),
+      ).then((updated) {
+        // 只有缓存真的更新过才重建，避免每次 didUpdateWidget 都白刷一遍。
+        if (updated && mounted) setState(() {});
+      }),
+    );
   }
 
   @override

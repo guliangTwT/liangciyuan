@@ -568,14 +568,15 @@ class AutoUpdater {
       if (Platform.isWindows) {
         if (installationType == InstallationType.windowsSetup) {
           // 静默覆盖安装：Inno Setup 支持 /SILENT，用户只需通过一次 UAC。
+          // 提前一帧把提示渲染出来，否则 UAC 弹窗会先于 toast 出现。
           KazumiDialog.showToast(
             message: '正在静默安装更新，请在系统提示中允许…',
           );
-          await Future.delayed(const Duration(milliseconds: 600));
+          await Future<void>.delayed(const Duration(milliseconds: 120));
           final launched = SilentInstaller.launchSilent(filePath);
           if (launched) {
-            // 让安装器接管：先退出，避免文件占用导致覆盖失败。
-            await Future.delayed(const Duration(milliseconds: 800));
+            // UAC 由系统接管；等提示渲染完再退出，避免文件被占用导致覆盖失败。
+            await Future<void>.delayed(const Duration(milliseconds: 400));
             exit(0);
           }
           // 静默拉起失败（例如被安全软件拦截）时退回可视化安装。
@@ -598,7 +599,8 @@ class AutoUpdater {
         } else {
           await Process.start('explorer.exe', [filePath], runInShell: true);
         }
-        await Future.delayed(const Duration(seconds: 1));
+        // 只留极短缓冲让 UAC/资源管理器接管，不再干等 1 秒。
+        await Future<void>.delayed(const Duration(milliseconds: 250));
         exit(0);
       } else if (Platform.isMacOS) {
         if (filePath.endsWith('.dmg')) {

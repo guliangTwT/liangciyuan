@@ -19,6 +19,7 @@ import 'package:kazumi/pages/history/history_controller.dart';
 import 'package:kazumi/pages/player/episode_comments_sheet.dart';
 import 'package:kazumi/pages/player/player_controller.dart';
 import 'package:kazumi/pages/player/player_item.dart';
+import 'package:kazumi/pages/video/desktop_episode_picker.dart';
 import 'package:kazumi/pages/video/episode_selection_panel.dart';
 import 'package:kazumi/pages/video/player_content_tabs.dart';
 import 'package:kazumi/pages/video/video_controller.dart';
@@ -120,6 +121,35 @@ class _VideoPageState extends State<VideoPage>
     }
   }
 
+  /// 电脑端进入播放页时先让用户选集，而不是立刻从第 1 集开播。
+  ///
+  /// 手机端保持原有行为（直接开播，选集在下方 Tab 里）。返回 true 表示
+  /// 用户选定了某一集，随后由调用方带着该集号调用 [changeEpisode]。
+  Future<VideoEpisodeSelection?> _pickEpisodeOnDesktop() async {
+    if (!isDesktop() || videoPageController.roadList.isEmpty) return null;
+    final roads = videoPageController.roadList;
+    final hasHistory = historyController.lastWatching(
+          videoPageController.bangumiItem,
+          videoPageController.currentPlugin.name,
+        ) !=
+        null;
+    // 有观看记录时沿用记录里的集数作为预选，但不自动开播。
+    final initialEpisode = videoPageController.selectedEpisode.episode;
+    final initialRoad = videoPageController.selectedEpisode.road;
+    final picked = await showAdaptiveBottomSheet<VideoEpisodeSelection>(
+      context: context,
+      maxHeightFactor: 0.86,
+      builder: (context) => DesktopEpisodePickerSheet(
+        title: videoPageController.title,
+        roads: roads,
+        initialEpisode: initialEpisode,
+        initialRoad: initialRoad,
+        resumeLabel: hasHistory ? '继续观看第 $initialEpisode 集' : null,
+      ),
+    );
+    return picked;
+  }
+
   void _initOfflineMode() {
     final identity = videoPageController.currentHistoryIdentity;
     videoPageController.historyOffset = identity == null
@@ -178,10 +208,42 @@ class _VideoPageState extends State<VideoPage>
       if (!mounted) {
         return;
       }
-      changeEpisode(videoPageController.selectedEpisode.episode,
-          currentRoad: videoPageController.selectedEpisode.road,
-          offset: videoPageController.historyOffset);
+      unawaited(_startDesktopOrPlay());
     });
+  }
+
+  /// 电脑端先选集再播；手机端直接开播。
+  Future<void> _startDesktopOrPlay() async {
+    if (isDesktop()) {
+      final picked = await _pickEpisodeOnDesktop();
+      if (!mounted) return;
+      if (picked == null) {
+        // 用户在选集面板点了取消：这一页还没有开播，留在空白播放器上没有
+        // 意义，直接退回详情页（可以在那里重新选源或选集）。
+        videoPageController.waitForEpisodeSelection();
+        _onBackPressed();
+        return;
+      }
+      // 只有用户选的正是「上次看到的那一集」时才续播进度；
+      // 选了别的集就必须从头开始，否则会跳到莫名其妙的位置。
+      final bool sameAsHistory = picked.episode ==
+              videoPageController.selectedEpisode.episode &&
+          picked.road == videoPageController.selectedEpisode.road;
+      final offset = sameAsHistory ? videoPageController.historyOffset : 0;
+      videoPageController.resetEpisodeState(
+        episode: picked.episode,
+        road: picked.road,
+      );
+      await changeEpisode(
+        picked.episode,
+        currentRoad: picked.road,
+        offset: offset,
+      );
+      return;
+    }
+    await changeEpisode(videoPageController.selectedEpisode.episode,
+        currentRoad: videoPageController.selectedEpisode.road,
+        offset: videoPageController.historyOffset);
   }
 
   @override

@@ -4,6 +4,9 @@ import 'package:kazumi/modules/bangumi/bangumi_relation.dart';
 import 'package:kazumi/pages/collect/collect_controller.dart';
 import 'package:kazumi/modules/search/plugin_search_module.dart';
 import 'package:kazumi/request/apis/bangumi_api.dart';
+import 'package:kazumi/services/account/account_api.dart';
+import 'package:kazumi/services/account/account_service.dart';
+import 'package:kazumi/services/account/rating_cache.dart';
 import 'package:mobx/mobx.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/modules/characters/character_item.dart';
@@ -45,6 +48,56 @@ abstract class _InfoController with Store {
 
   @observable
   bool relationsHasLoaded = false;
+
+  /// 凉次元自建评分汇总；null 表示尚未加载完成。
+  @observable
+  AccountRating? rating;
+
+  /// 读取本站评分（公开接口，带令牌时能拿到自己的分数）。
+  @action
+  Future<void> loadRating(int bangumiId) async {
+    if (bangumiId <= 0) return;
+    try {
+      final account = AccountService()..ensureLoaded();
+      final value = await AccountApi.instance.getRating(
+        bangumiId,
+        token: account.loggedIn ? account.token : null,
+      );
+      rating = value;
+    } catch (e) {
+      // 评分失败不影响页面其余内容；保持 null（卡片显示「暂无评分」）。
+      KazumiLogger().w('InfoController: load rating failed', error: e);
+      rating ??= AccountRating(
+        bangumiId: bangumiId,
+        count: 0,
+        score: null,
+        myScore: 0,
+      );
+    }
+  }
+
+  /// 提交评分并刷新汇总。
+  @action
+  Future<bool> submitRating(int bangumiId, int score) async {
+    final account = AccountService()..ensureLoaded();
+    if (!account.loggedIn) return false;
+    try {
+      rating = await AccountApi.instance.putRating(
+        token: account.token,
+        bangumiId: bangumiId,
+        score: score,
+      );
+      // 同步写入列表缓存，返回列表时立刻能看到新评分。
+      final updated = rating;
+      if (updated != null) RatingCache().put(updated);
+      return true;
+    } on AccountException catch (e) {
+      if (e.statusCode == 401) {
+        await account.logout();
+      }
+      rethrow;
+    }
+  }
 
   int _relationRequestGeneration = 0;
 

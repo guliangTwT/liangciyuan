@@ -348,6 +348,17 @@ mixin _$VideoPageController on _VideoPageController, Store {
   }
 
   @override
+  void waitForEpisodeSelection() {
+    final _$actionInfo = _$_VideoPageControllerActionController.startAction(
+        name: '_VideoPageController.waitForEpisodeSelection');
+    try {
+      return super.waitForEpisodeSelection();
+    } finally {
+      _$_VideoPageControllerActionController.endAction(_$actionInfo);
+    }
+  }
+
+  @override
   String toString() {
     return '''
 episodeCommentsList: ${episodeCommentsList},

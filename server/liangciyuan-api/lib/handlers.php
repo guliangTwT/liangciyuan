@@ -882,3 +882,128 @@ function handle_danmaku_delete(Request $request): void
     $pdo->prepare('UPDATE danmaku SET deleted = 1 WHERE id = ?')->execute([$id]);
     Response::ok();
 }
+
+// ---------------------------------------------------------------------------
+// 自建评分：只统计自己在凉次元上的评分，不参考第三方。
+// ---------------------------------------------------------------------------
+
+function rating_bangumi_id(array $source): int
+{
+    $id = (int) ($source['bangumiId'] ?? 0);
+    if ($id <= 0 || $id > 1000000000000) {
+        throw new HttpException(400, 'bangumiId 不正确');
+    }
+    return $id;
+}
+
+/** 读取当前用户对某条目的评分；未登录或未评分时 myScore 为 0。 */
+function rating_summary(int $bangumiId, int $viewerId): array
+{
+    $stmt = db()->prepare(
+        'SELECT COUNT(*) AS c, AVG(score) AS avg
+         FROM ratings WHERE bangumi_id = ?'
+    );
+    $stmt->execute([$bangumiId]);
+    $row = $stmt->fetch() ?: ['c' => 0, 'avg' => null];
+    $count = (int) $row['c'];
+
+    $myScore = 0;
+    if ($viewerId > 0) {
+        $mine = db()->prepare(
+            'SELECT score FROM ratings WHERE bangumi_id = ? AND user_id = ?'
+        );
+        $mine->execute([$bangumiId, $viewerId]);
+        $found = $mine->fetch();
+        if ($found) {
+            $myScore = (int) $found['score'];
+        }
+    }
+
+    // 没有评分时明确返回 count=0、score=null，由客户端显示「暂无评分」。
+    return [
+        'bangumiId' => $bangumiId,
+        'count' => $count,
+        'score' => $count > 0
+            ? round((float) $row['avg'], 1)
+            : null,
+        'myScore' => $myScore,
+    ];
+}
+
+function handle_ratings_get(Request $request): void
+{
+    // 列表页一次要显示几十个条目：支持 bangumiIds 批量查询，
+    // 避免每条一次请求（那样会慢到没法用）。
+    $rawIds = trim((string) ($request->query['bangumiIds'] ?? ''));
+    if ($rawIds !== '') {
+        $ids = [];
+        foreach (explode(',', $rawIds) as $piece) {
+            $id = (int) trim($piece);
+            if ($id > 0 && $id <= 1000000000000) {
+                $ids[$id] = true;
+            }
+            // 单次最多 200 个，防止构造超长请求。
+            if (count($ids) >= 200) {
+                break;
+            }
+        }
+        if (!$ids) {
+            throw new HttpException(400, 'bangumiIds 不正确');
+        }
+        $viewerId = 0;
+        if ($request->bearerToken() !== '') {
+            try {
+                $viewerId = (int) current_user($request)['id'];
+            } catch (HttpException) {
+                $viewerId = 0;
+            }
+        }
+        $items = [];
+        foreach (array_keys($ids) as $id) {
+            $items[(string) $id] = rating_summary((int) $id, $viewerId);
+        }
+        Response::ok(['items' => $items]);
+        return;
+    }
+
+    $bangumiId = rating_bangumi_id($request->query);
+    $viewerId = 0;
+    if ($request->bearerToken() !== '') {
+        try {
+            $viewerId = (int) current_user($request)['id'];
+        } catch (HttpException) {
+            $viewerId = 0;
+        }
+    }
+    Response::ok(rating_summary($bangumiId, $viewerId));
+}
+
+function handle_ratings_put(Request $request): void
+{
+    $user = current_user($request);
+    $body = $request->json();
+    $bangumiId = rating_bangumi_id($body);
+    $score = (int) ($body['score'] ?? 0);
+    if ($score < 1 || $score > 10) {
+        throw new HttpException(400, '评分需在 1~10 之间');
+    }
+    $now = now();
+    db()->prepare(
+        'INSERT INTO ratings(bangumi_id, user_id, score, created_at, updated_at)
+         VALUES(?, ?, ?, ?, ?)
+         ON CONFLICT(bangumi_id, user_id) DO UPDATE SET
+           score = excluded.score,
+           updated_at = excluded.updated_at'
+    )->execute([$bangumiId, (int) $user['id'], $score, $now, $now]);
+
+    Response::ok(rating_summary($bangumiId, (int) $user['id']));
+}
+
+function handle_ratings_delete(Request $request): void
+{
+    $user = current_user($request);
+    $bangumiId = rating_bangumi_id($request->query);
+    db()->prepare('DELETE FROM ratings WHERE bangumi_id = ? AND user_id = ?')
+        ->execute([$bangumiId, (int) $user['id']]);
+    Response::ok(rating_summary($bangumiId, (int) $user['id']));
+}

@@ -420,11 +420,15 @@ class HistorySyncService {
   }
 
   Future<void> appendSafely(Future<void> Function() append) async {
-    final webDavEnable = GStorage.getSetting(SettingsKeys.webDavEnable);
+    // 账号云同步的总开关是 accountSyncEnable；webDavEnable 是迁移前的旧键，
+    // 现在没有任何界面会写它，读它会让每次观看进度都被静默丢弃。
+    final accountSyncEnable = GStorage.getSetting(
+      SettingsKeys.accountSyncEnable,
+    );
     final historySyncEnable = GStorage.getSetting(
       SettingsKeys.webDavEnableHistory,
     );
-    if (webDavEnable != true || historySyncEnable != true) {
+    if (accountSyncEnable != true || historySyncEnable != true) {
       return;
     }
     try {

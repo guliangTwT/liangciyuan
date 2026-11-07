@@ -52,6 +52,9 @@ class WebDav {
 
   Future<void> init() => _runWebDavExclusive(_init);
 
+  /// 已就绪时复用，令牌变化或未初始化时重建；供外部入口统一调用。
+  Future<void> ensureReady() => _runWebDavExclusive(_ensureReady);
+
   Future<void> _init() async {
     initialized = false;
     final directory = await getApplicationSupportDirectory();
@@ -191,6 +194,22 @@ class WebDav {
   bool get isDanmakuShieldSyncEnabled =>
       GStorage.getSetting(SettingsKeys.accountSyncEnable) &&
       GStorage.getSetting(SettingsKeys.webDavEnableDanmakuShield);
+
+  /// 总开关开着但三项内容开关全关时，等于「开了同步却什么都没同步」。
+  ///
+  /// 旧版本没有内容开关，升级后这类账号会一直不同步任何数据（表现为
+  /// 收藏能同步、集数永远对不上）。启动时统一按「全开」补齐一次。
+  static Future<bool> normalizeContentToggles() async {
+    if (!GStorage.getSetting(SettingsKeys.accountSyncEnable)) return false;
+    final anyEnabled = GStorage.getSetting(SettingsKeys.webDavEnableHistory) ||
+        GStorage.getSetting(SettingsKeys.webDavEnableCollect) ||
+        GStorage.getSetting(SettingsKeys.webDavEnableDanmakuShield);
+    if (anyEnabled) return false;
+    await GStorage.putSetting(SettingsKeys.webDavEnableHistory, true);
+    await GStorage.putSetting(SettingsKeys.webDavEnableCollect, true);
+    await GStorage.putSetting(SettingsKeys.webDavEnableDanmakuShield, true);
+    return true;
+  }
 
   /// 把底层异常转成用户可读的一句话，便于定位同步失败的具体原因。
   static String describeError(Object error) {
@@ -514,7 +533,17 @@ class WebDav {
         mergedFromFiles,
       );
 
-      if (localBatch.shouldCheckpoint) {
+      // 本地有远端还没有的内容时也要发布快照。否则「只有首次同步/日志超过
+      // 1MB 才写快照」会让新设备永远看不到后来看到的集数（例如本机看到
+      // 第 75 集，云端仍停留在很早的快照）。
+      final localHasNewerState =
+          _historySnapshotDiffers(mergedRemoteSnapshot, mergedSnapshot);
+      // 快照已包含本设备全部事件，因此写快照等同于一次检查点：
+      // 本地待上传日志可以一并清掉，避免每次同步都重复上传。
+      final shouldCheckpoint =
+          localBatch.shouldCheckpoint || localHasNewerState;
+
+      if (shouldCheckpoint) {
         final snapshotFile = File(
           '${runDirectory.path}${Platform.pathSeparator}snapshot.json',
         );
@@ -523,7 +552,12 @@ class WebDav {
           snapshotFile: snapshotFile,
           deviceId: deviceId,
         );
-        await historySync.completeCheckpoint(localBatch);
+        await historySync.completeCheckpoint(
+          HistorySyncLogBatch(
+            files: localBatch.files,
+            shouldCheckpoint: true,
+          ),
+        );
         await _removeDeviceHistoryChanges(deviceId);
         await GStorage.putSetting(
           SettingsKeys.historySyncSnapshotInitialized,
@@ -560,6 +594,47 @@ class WebDav {
         snapshot.progressVersions.isEmpty &&
         snapshot.deletedVersions.isEmpty &&
         snapshot.clearVersion == null;
+  }
+
+  /// 合并结果是否比远端快照多出内容（或有更新的版本）。
+  ///
+  /// 只有这样才能判断「值得写一份新快照」：本地刚看完第 75 集时，
+  /// 合并结果会比远端多出第 75 集的进度或更新的 lastWatchEpisode。
+  static bool _historySnapshotDiffers(
+    HistorySyncSnapshot remote,
+    HistorySyncSnapshot merged,
+  ) {
+    if (remote.clearVersion != merged.clearVersion) return true;
+    if (merged.histories.length > remote.histories.length) return true;
+    if (merged.progressVersions.length > remote.progressVersions.length) {
+      return true;
+    }
+    if (merged.deletedVersions.length > remote.deletedVersions.length) {
+      return true;
+    }
+    final remoteHistories = {
+      for (final history in remote.histories) history.key: history,
+    };
+    for (final history in merged.histories) {
+      final other = remoteHistories[history.key];
+      if (other == null) return true;
+      // 观看到的集数是用户最直观的同步结果，任何变化都应写回云端。
+      if (history.lastWatchEpisode != other.lastWatchEpisode) return true;
+      if (history.lastWatchTime.millisecondsSinceEpoch >
+          other.lastWatchTime.millisecondsSinceEpoch) {
+        return true;
+      }
+      final otherProgress = other.progresses;
+      for (final entry in history.progresses.entries) {
+        final previous = otherProgress[entry.key];
+        if (previous == null) return true;
+        if (entry.value.progress.inMilliseconds !=
+            previous.progress.inMilliseconds) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   Future<_HistorySnapshotReadResult> _readRemoteHistorySnapshot(

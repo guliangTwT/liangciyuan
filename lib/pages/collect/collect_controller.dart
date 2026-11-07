@@ -90,13 +90,12 @@ abstract class _CollectController with Store {
       _reportSyncError('请先登录凉次元账号', onError);
       return false;
     }
-    if (!WebDav().initialized) {
-      try {
-        await WebDav().init();
-      } catch (e) {
-        _reportSyncError('云同步连接失败', onError, error: e);
-        return false;
-      }
+    final webDav = WebDav();
+    try {
+      await webDav.ensureReady();
+    } catch (e) {
+      _reportSyncError('云同步连接失败', onError, error: e);
+      return false;
     }
     return true;
   }

@@ -57,6 +57,15 @@ class WebDavAutoSync {
       KazumiLogger().i('CloudSync: auto sync skipped, account not ready');
       return;
     }
+    // 内容开关全关时定时器只是空转，不必排程。
+    final anyContentEnabled =
+        GStorage.getSetting(SettingsKeys.webDavEnableHistory) ||
+        GStorage.getSetting(SettingsKeys.webDavEnableCollect) ||
+        GStorage.getSetting(SettingsKeys.webDavEnableDanmakuShield);
+    if (!anyContentEnabled) {
+      KazumiLogger().i('CloudSync: auto sync skipped, no content enabled');
+      return;
+    }
 
     final interval = Duration(minutes: minutes);
     _timer = Timer.periodic(interval, (_) => unawaited(syncNow()));

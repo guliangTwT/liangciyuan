@@ -177,6 +177,15 @@ class _InitPageState extends State<InitPage> {
     bool cloudSyncEnable =
         account.loggedIn &&
         await GStorage.getSetting(SettingsKeys.accountSyncEnable);
+    if (cloudSyncEnable) {
+      // 老账号可能只有总开关、三项内容开关全关（旧版本没有这些开关），
+      // 那会表现为「收藏能同步、集数永远对不上」。启动时补齐一次。
+      if (await WebDav.normalizeContentToggles()) {
+        KazumiLogger().i(
+          'CloudSync: enabled all content toggles for a legacy account',
+        );
+      }
+    }
     bool cloudEnableHistory = await GStorage.getSetting(
       SettingsKeys.webDavEnableHistory,
     );

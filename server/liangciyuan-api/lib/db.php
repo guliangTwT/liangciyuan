@@ -22,11 +22,38 @@ function db(): PDO
     // 此时若超时还是 0 会直接抛异常。
     $pdo->exec('PRAGMA busy_timeout=5000');
     try {
-        $pdo->exec('PRAGMA journal_mode=WAL');
+        // 已经是 WAL 时不要重复设置：这条 PRAGMA 会尝试拿写锁，
+        // 每次请求都执行等于给并发同步多加一层争用。
+        $mode = (string) $pdo->query('PRAGMA journal_mode')->fetchColumn();
+        if (strtolower($mode) !== 'wal') {
+            $pdo->exec('PRAGMA journal_mode=WAL');
+        }
     } catch (Throwable $ignored) {
         // 已有连接持锁时切换失败并不致命，沿用现有 journal 模式即可。
     }
     $pdo->exec('PRAGMA foreign_keys=ON');
+
+    init_schema($pdo);
+
+    return $pdo;
+}
+
+/// 建表与列迁移。
+///
+/// 以前每次请求都跑一遍这些 DDL：共享主机上每个请求可能是新进程，
+/// 于是并发同步时多个请求同时抢写锁、互相等，PUT 会被拖到十几秒，
+/// 客户端 12 秒超时后报「同步未完成」。
+///
+/// 现在用 SQLite 自带的 PRAGMA user_version 做版本闸门：
+/// 版本达标时只多一条 SELECT，不再执行任何 DDL。
+/// 新增表或列时把 $target 加一即可。
+function init_schema(PDO $pdo): void
+{
+    $target = 2;
+    $current = (int) $pdo->query('PRAGMA user_version')->fetchColumn();
+    if ($current >= $target) {
+        return;
+    }
 
     $pdo->exec(<<<SQL
 CREATE TABLE IF NOT EXISTS users (
@@ -159,7 +186,9 @@ SQL);
     // 封禁原因，展示给用户，也便于后台复查。
     ensure_column($pdo, 'users', 'ban_reason', "TEXT NOT NULL DEFAULT ''");
 
-    return $pdo;
+    // 迁移完成后再抬高版本号：万一中途有语句失败，下次请求会重跑一遍
+    // （所有语句都是幂等的），不会留下半成品被当作已完成。
+    $pdo->exec('PRAGMA user_version = ' . $target);
 }
 
 function ensure_column(PDO $pdo, string $table, string $column, string $definition): void

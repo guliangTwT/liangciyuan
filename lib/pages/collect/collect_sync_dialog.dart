@@ -11,15 +11,32 @@ enum CollectSyncDestination { accountSettings }
 /// 说明：早期这里只有「云端收藏」一步，用户想同步观看记录还得去设置页。
 /// 现在三项内容都在这里完成，与账号页的「立即同步全部数据」一致。
 enum CollectSyncStep {
-  shield('弹幕屏蔽词', '同步关键词与正则规则', Icons.shield_rounded),
-  history('观看记录', '同步看到第几集与播放进度', Icons.history_rounded),
-  collect('云端收藏', '合并本地与账号云端收藏', Icons.cloud_sync_rounded);
+  shield(
+    SyncContent.shield,
+    '同步关键词与正则规则',
+    Icons.shield_rounded,
+  ),
+  history(
+    SyncContent.history,
+    '同步看到第几集与播放进度',
+    Icons.history_rounded,
+  ),
+  collect(
+    SyncContent.collect,
+    '合并本地与账号云端收藏',
+    Icons.cloud_sync_rounded,
+  );
 
-  const CollectSyncStep(this._title, this._description, this._icon);
+  const CollectSyncStep(this.content, this._description, this._icon);
 
-  final String _title;
+  /// 步骤对应的同步内容。步骤名一律取 [SyncContent.label]，
+  /// 与 [AccountSyncService] 返回的结果保持同一来源，避免两边字符串写歪
+  /// （曾因「云端收藏」对「收藏」不相等，把成功的步骤显示成未完成）。
+  final SyncContent content;
   final String _description;
   final IconData _icon;
+
+  String get title => content.label;
 }
 
 enum _StepStatus { waiting, running, succeeded, failed, skipped }
@@ -115,7 +132,7 @@ class _CollectSyncDialogState extends State<CollectSyncDialog> {
     // 按实际结果回填每一步的状态。
     setState(() {
       for (final state in _steps) {
-        final name = state.step._title;
+        final name = state.step.title;
         final succeeded = result.succeeded.contains(name);
         state.status = succeeded
             ? _StepStatus.succeeded
@@ -353,7 +370,7 @@ class _CollectSyncDialogState extends State<CollectSyncDialog> {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
-                          state.step._title,
+                          state.step.title,
                           style: theme.textTheme.titleSmall?.copyWith(
                             color: failed || skipped
                                 ? colors.onErrorContainer

@@ -17,7 +17,11 @@ function admin_db(): PDO
     $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
     $pdo->exec('PRAGMA busy_timeout=5000');
     try {
-        $pdo->exec('PRAGMA journal_mode=WAL');
+        // 已经是 WAL 时不重复设置，避免每次请求都尝试拿写锁。
+        $mode = (string) $pdo->query('PRAGMA journal_mode')->fetchColumn();
+        if (strtolower($mode) !== 'wal') {
+            $pdo->exec('PRAGMA journal_mode=WAL');
+        }
     } catch (Throwable $ignored) {
         // 并发切换失败不致命，沿用现有 journal 模式。
     }
@@ -26,9 +30,14 @@ function admin_db(): PDO
 }
 
 /// 后台可能比 API 先被访问，所以自己也要补齐新增列。
-/// 与 liangciyuan-api/lib/db.php 的 ensure_column 保持一致。
+/// 与 liangciyuan-api/lib/db.php 的 init_schema 共用同一个版本号：
+/// 谁先访问谁迁移，另一个看到版本达标就跳过，避免每次请求都跑 DDL。
 function admin_ensure_schema(PDO $pdo): void
 {
+    $target = 2;
+    if ((int) $pdo->query('PRAGMA user_version')->fetchColumn() >= $target) {
+        return;
+    }
     $columns = [
         'title' => "TEXT NOT NULL DEFAULT ''",
         'banned_until' => 'INTEGER NOT NULL DEFAULT 0',
@@ -50,6 +59,7 @@ function admin_ensure_schema(PDO $pdo): void
             }
         }
     }
+    $pdo->exec('PRAGMA user_version = ' . $target);
 }
 
 function admin_column_exists(PDO $pdo, string $table, string $column): bool

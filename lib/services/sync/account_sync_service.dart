@@ -5,6 +5,21 @@ import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/services/sync/danmaku_shield_sync_service.dart';
 import 'package:kazumi/services/sync/webdav.dart';
 
+/// 一次同步覆盖的内容。
+///
+/// [label] 是**唯一**的步骤名，界面与结果都必须用它来匹配。
+/// 历史上界面写「云端收藏」、结果写「收藏」，导致收藏同步成功后
+/// 仍然显示「未完成」（字符串比较永远不相等）。
+enum SyncContent {
+  shield('弹幕屏蔽词'),
+  history('观看记录'),
+  collect('云端收藏');
+
+  const SyncContent(this.label);
+
+  final String label;
+}
+
 /// 同步中每一步的进度回调。
 typedef SyncStepCallback =
     void Function(String message, {required int step, required int total});
@@ -117,36 +132,42 @@ class AccountSyncService {
     }
 
     if (enableShield) {
-      reportStep('正在同步弹幕屏蔽词…');
+      reportStep('正在同步${SyncContent.shield.label}…');
       try {
         // 用 sync() 而不是 syncIfEnabled()：后者会吞掉异常，
         // 失败会被静默掩盖（用户只会看到「同步完成」）。
         await inject<DanmakuShieldSyncService>().sync();
-        succeeded.add('弹幕屏蔽词');
+        succeeded.add(SyncContent.shield.label);
       } catch (e) {
         KazumiLogger().w('AccountSync: danmaku shield failed', error: e);
-        failures.add('弹幕屏蔽词：${WebDav.describeError(e)}');
+        failures.add(
+          '${SyncContent.shield.label}：${WebDav.describeError(e)}',
+        );
       }
     }
     if (enableHistory) {
-      reportStep('正在同步观看记录…');
+      reportStep('正在同步${SyncContent.history.label}…');
       try {
         await sync.syncHistory();
-        succeeded.add('观看记录');
+        succeeded.add(SyncContent.history.label);
       } catch (e) {
         KazumiLogger().w('AccountSync: history failed', error: e);
-        failures.add('观看记录：${WebDav.describeError(e)}');
+        failures.add(
+          '${SyncContent.history.label}：${WebDav.describeError(e)}',
+        );
       }
     }
     if (enableCollect) {
-      reportStep('正在同步收藏…');
+      reportStep('正在同步${SyncContent.collect.label}…');
       try {
         await sync.syncCollectibles();
-        succeeded.add('收藏');
+        succeeded.add(SyncContent.collect.label);
         reloadCollectibles?.call();
       } catch (e) {
         KazumiLogger().w('AccountSync: collect failed', error: e);
-        failures.add('收藏：${WebDav.describeError(e)}');
+        failures.add(
+          '${SyncContent.collect.label}：${WebDav.describeError(e)}',
+        );
       }
     }
 

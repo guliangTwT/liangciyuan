@@ -89,6 +89,8 @@ class AccountApi {
     String path, {
     Object? data,
     String? token,
+    Duration? receiveTimeout,
+    Duration? sendTimeout,
   }) async {
     final uri = '$baseUrl$path';
     try {
@@ -97,6 +99,8 @@ class AccountApi {
         data: data,
         options: Options(
           method: method,
+          receiveTimeout: receiveTimeout,
+          sendTimeout: sendTimeout,
           headers: {
             if (token != null && token.isNotEmpty)
               'authorization': 'Bearer $token',
@@ -266,6 +270,13 @@ class AccountApi {
     }
   }
 
+  /// 同步数据的读写超时。
+  ///
+  /// 共享主机的 SQLite 在并发写入时会短暂排队，默认 12 秒对
+  /// 「几十 KB 的 base64 PUT」也可能不够；超时后客户端会把整步标成失败，
+  /// 用户看到的就是「云端收藏未完成」。这里给足 45 秒。
+  static const Duration _syncTimeout = Duration(seconds: 45);
+
   Future<List<AccountBlobInfo>> listBlobInfos(String token) async {
     final body = await _request('GET', '/v1/sync', token: token);
     final items = body['items'];
@@ -296,7 +307,12 @@ class AccountApi {
 
   Future<AccountBlob?> getBlob(String token, String kind) async {
     try {
-      final body = await _request('GET', '/v1/sync/$kind', token: token);
+      final body = await _request(
+        'GET',
+        '/v1/sync/$kind',
+        token: token,
+        receiveTimeout: _syncTimeout,
+      );
       final payload = (body['payload'] ?? '').toString();
       if (payload.isEmpty) return null;
       return AccountBlob(
@@ -320,6 +336,8 @@ class AccountApi {
       '/v1/sync/$kind',
       token: token,
       data: {'payload': payload, 'updatedAt': updatedAt},
+      receiveTimeout: _syncTimeout,
+      sendTimeout: _syncTimeout,
     );
   }
 

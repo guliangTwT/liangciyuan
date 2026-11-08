@@ -9,7 +9,7 @@ import 'package:kazumi/services/account/account_service.dart';
 import 'package:kazumi/utils/comment_pagination.dart';
 import 'package:kazumi/utils/date_time.dart';
 
-/// 条目「吐槽」页：读写在凉次元自有账号服务，不再依赖 Bangumi。
+/// 条目「评论」页：读写在凉次元自有账号服务，不再依赖 Bangumi。
 class AccountCommentsView extends StatefulWidget {
   const AccountCommentsView({
     super.key,
@@ -131,18 +131,18 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
 
   String _describe(Object error) {
     if (error is AccountException) return error.message;
-    return '吐槽加载失败，请稍后重试';
+    return '评论加载失败，请稍后重试';
   }
 
   Future<void> _compose() async {
     if (_token.isEmpty) {
-      KazumiDialog.showToast(message: '发表吐槽需要先登录凉次元账号');
+      KazumiDialog.showToast(message: '发表评论需要先登录凉次元账号');
       context.pushNamed('/settings/account');
       return;
     }
     final draft = await showCommentComposerSheet(
       context,
-      title: '发表吐槽',
+      title: '发表评论',
       hintText: '说说这部番……',
     );
     if (draft == null || !mounted) return;
@@ -155,7 +155,7 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
         spoiler: draft.spoiler,
       );
       if (!mounted) return;
-      KazumiDialog.showToast(message: '吐槽已发布');
+      KazumiDialog.showToast(message: '评论已发布');
       await _load(reset: true);
     } catch (e) {
       if (!mounted) return;
@@ -171,7 +171,7 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
   Future<void> _delete(AccountComment comment) async {
     final confirmed = await KazumiDialog.show<bool>(
       builder: (context) => AlertDialog(
-        title: const Text('删除这条吐槽？'),
+        title: const Text('删除这条评论？'),
         content: Text(comment.content),
         actions: [
           TextButton(
@@ -269,7 +269,7 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                loggedIn ? '下面我简单喵两句' : '登录后即可发表吐槽',
+                loggedIn ? '下面我简单喵两句' : '登录后即可发表评论',
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -293,7 +293,7 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
         child: Center(
           child: Column(
             children: [
-              Text('吐槽加载失败', style: TextStyle(color: colors.error)),
+              Text('评论加载失败', style: TextStyle(color: colors.error)),
               const SizedBox(height: 8),
               OutlinedButton(
                 onPressed: () => _load(reset: true),
@@ -309,7 +309,7 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
         padding: const EdgeInsets.symmetric(vertical: 32),
         child: Center(
           child: Text(
-            '还没有人吐槽，来抢第一条',
+            '还没有人评论，来抢第一条',
             style: TextStyle(color: colors.onSurfaceVariant),
           ),
         ),
@@ -326,7 +326,7 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
                 child: Text('加载更多（$_total 条）'),
               )
             : Text(
-                '共 $_total 条吐槽',
+                '共 $_total 条评论',
                 style: TextStyle(color: colors.onSurfaceVariant),
               ),
       ),
@@ -336,47 +336,42 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
   Widget _commentCard(AccountComment comment, ColorScheme colors) {
     final revealed = _revealed.contains(comment.id);
     final hidden = comment.spoiler && !revealed;
-    // 有称号的用户（凉次元作者）整条卡片金色描边 + 暖色底，
-    // 与单集讨论、个人主页保持一致，一眼能认出官方发言。
+    // 有称号的用户（凉次元作者）：只加一条左侧竖线做标记，
+    // 与单集讨论卡片保持一致；正文样式不特殊化。
     final authored = comment.title.isNotEmpty;
     return Card.filled(
       margin: const EdgeInsets.only(bottom: 8),
-      color: authored
-          ? Color.alphaBlend(const Color(0x2EF0AE1B), colors.surfaceContainerLow)
-          : colors.surfaceContainerLow,
-      shape: authored
-          ? RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: const BorderSide(color: Color(0xFFC68C10), width: 1.5),
-            )
-          : null,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                GestureDetector(
-                  onTap: comment.userId <= 0
-                      ? null
-                      : () => context.pushNamed(
-                          '/settings/profile/${comment.userId}',
-                        ),
-                  child: authored
-                      ? Container(
-                          padding: const EdgeInsets.all(2),
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: LinearGradient(
-                              colors: [Color(0xFFFFD95C), Color(0xFFF0AE1B)],
-                            ),
-                          ),
-                          child: BangumiAvatar(imageUrl: comment.avatarUrl),
-                        )
-                      : BangumiAvatar(imageUrl: comment.avatarUrl),
+      color: colors.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: authored
+            ? const BorderSide(color: Color(0xFFD9A020), width: 0)
+            : BorderSide.none,
+      ),
+      child: Container(
+        decoration: authored
+            ? const BoxDecoration(
+                border: Border(
+                  left: BorderSide(color: Color(0xFFD9A020), width: 3),
                 ),
+              )
+            : null,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  GestureDetector(
+                    onTap: comment.userId <= 0
+                        ? null
+                        : () => context.pushNamed(
+                            '/settings/profile/${comment.userId}',
+                          ),
+                    child: BangumiAvatar(imageUrl: comment.avatarUrl),
+                  ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
@@ -391,17 +386,14 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
                             comment.nickname.isEmpty
                                 ? '凉次元用户'
                                 : comment.nickname,
-                            style: TextStyle(
+                            style: const TextStyle(
                               fontWeight: FontWeight.w600,
-                              color: authored
-                                  ? const Color(0xFF6B4300)
-                                  : null,
                             ),
                           ),
                           if (comment.title.isNotEmpty)
                             AuthorTitleBadge(title: comment.title),
                           if (comment.mine)
-                            _chip('我的吐槽', colors.primary, colors.primaryContainer),
+                            _chip('我的评论', colors.primary, colors.primaryContainer),
                           if (comment.spoiler)
                             _chip('含剧透', colors.error, colors.errorContainer),
                         ],
@@ -437,7 +429,7 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    '这条吐槽含剧透，点击查看',
+                    '这条评论含剧透，点击查看',
                     style: TextStyle(color: colors.onSurfaceVariant),
                   ),
                 ),
@@ -445,9 +437,10 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
             else
               SelectableText(comment.content),
           ],
+            ),
+          ),
         ),
-      ),
-    );
+      );
   }
 
   Widget _chip(String label, Color background, Color foreground) {

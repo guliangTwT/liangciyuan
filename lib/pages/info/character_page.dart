@@ -67,7 +67,7 @@ class _CharacterPageState extends State<CharacterPage> {
       _commentsError = false;
     });
     try {
-      // 人物吐槽也存凉次元账号服务；资料本身仍来自 Bangumi。
+      // 人物评论也存凉次元账号服务；资料本身仍来自 Bangumi。
       final account = AccountService()..ensureLoaded();
       final page = await AccountApi.instance.listComments(
         targetType: 'character',
@@ -149,7 +149,7 @@ class _CharacterPageState extends State<CharacterPage> {
             ),
             const ConnectedTabs(
               padding: materialBottomSheetTabsPadding,
-              labels: ['资料', '吐槽'],
+              labels: ['资料', '评论'],
             ),
             Expanded(
               child: TabBarView(
@@ -252,7 +252,7 @@ class _CharacterPageState extends State<CharacterPage> {
     if (_commentsError) {
       return SliverFillRemaining(
         child: GeneralErrorWidget(
-          title: '人物吐槽加载失败',
+          title: '人物评论加载失败',
           errMsg: '请检查网络连接后重试。',
           onRetry: _loadComments,
         ),

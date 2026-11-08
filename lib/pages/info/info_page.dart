@@ -48,7 +48,7 @@ class _InfoPageState extends State<InfoPage>
     with SingleTickerProviderStateMixin {
   static const List<String> _infoTabs = <String>[
     '概览',
-    '吐槽',
+    '评论',
     '角色',
     '关联',
     '制作人员',

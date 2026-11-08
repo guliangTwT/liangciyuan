@@ -147,6 +147,12 @@ SQL);
     // SQLite 的 ADD COLUMN 不支持 IF NOT EXISTS，先查表结构再补。
     ensure_column($pdo, 'users', 'title', "TEXT NOT NULL DEFAULT ''");
 
+    // 封禁：0 表示正常。停用到的时间点（秒级 Unix 时间戳）拒绝登录与发言。
+    // 用时间戳而不是布尔值，管理后台可以直接"封 7 天"。
+    ensure_column($pdo, 'users', 'banned_until', 'INTEGER NOT NULL DEFAULT 0');
+    // 封禁原因，展示给用户，也便于后台复查。
+    ensure_column($pdo, 'users', 'ban_reason', "TEXT NOT NULL DEFAULT ''");
+
     return $pdo;
 }
 

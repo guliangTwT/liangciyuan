@@ -67,6 +67,39 @@ function current_user(Request $request): array
     return $row;
 }
 
+/// 当前账号是否处于封禁中。
+function is_banned(array $user): bool
+{
+    $until = (int) ($user['banned_until'] ?? 0);
+    return $until > 0 && $until > now();
+}
+
+/// 封禁原因 + 解封时间的提示文案。
+function ban_message(array $user): string
+{
+    $until = (int) ($user['banned_until'] ?? 0);
+    $reason = trim((string) ($user['ban_reason'] ?? ''));
+    $when = $until > 0 ? date('Y-m-d H:i', $until) : '';
+    $base = $when !== '' ? "你的账号已被停用至 {$when}" : '你的账号已被停用';
+    if ($reason !== '') {
+        $base .= "（原因：{$reason}）";
+    }
+    return $base . '，期间无法发表内容。';
+}
+
+/// 写操作前调用：封禁中的账号一律拒绝。
+///
+/// 封禁用 403 而不是 401：401 会让客户端清掉本地登录态，
+/// 用户重新登录又失败，反而看不到"为什么被封"。
+function require_writable_user(Request $request): array
+{
+    $user = current_user($request);
+    if (is_banned($user)) {
+        throw new HttpException(403, ban_message($user));
+    }
+    return $user;
+}
+
 function public_profile(array $user): array
 {
     $avatar = (string) ($user['avatar'] ?? '');
@@ -78,6 +111,9 @@ function public_profile(array $user): array
         'title' => (string) ($user['title'] ?? ''),
         'emailVerified' => (bool) ($user['email_verified'] ?? false),
         'createdAt' => (int) ($user['created_at'] ?? 0),
+        // 封禁状态：客户端据此在设置页给出提示，而不是让用户反复点"发表"。
+        'bannedUntil' => (int) ($user['banned_until'] ?? 0),
+        'banReason' => (string) ($user['ban_reason'] ?? ''),
     ];
 }
 

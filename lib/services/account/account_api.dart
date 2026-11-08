@@ -367,7 +367,7 @@ class AccountApi {
     );
     final comment = body['comment'];
     if (comment is! Map<String, dynamic>) {
-      throw const AccountException('服务器返回的吐槽数据不完整');
+      throw const AccountException('服务器返回的评论数据不完整');
     }
     return AccountComment.fromJson(comment);
   }
@@ -413,9 +413,9 @@ class AccountApi {
     );
   }
 
-  /// 他人公开主页：昵称、头像、吐槽数与最近发布的吐槽。
+  /// 他人公开主页：昵称、头像、评论数与最近发布的评论。
   Future<AccountUserProfile> getUserProfile(int userId, {String? token}) async {
-    // 带 token 时服务端会标出「我的」吐槽；匿名浏览也可以。
+    // 带 token 时服务端会标出「我的」评论；匿名浏览也可以。
     final body = await _request(
       'GET',
       '/v1/users/$userId',

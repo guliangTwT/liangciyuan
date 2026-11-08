@@ -50,17 +50,12 @@ class ProfileHeaderView extends StatelessWidget {
                 child: GestureDetector(
                   onTap: onAvatarTap,
                   child: Container(
-                    padding: EdgeInsets.all(title.isNotEmpty ? 4 : 3),
+                    padding: const EdgeInsets.all(3),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      // 有称号的用户用金色头像环，个人主页第一眼就能看出来。
-                      gradient: title.isNotEmpty
-                          ? const LinearGradient(
-                              colors: [Color(0xFFFFD95C), Color(0xFFF0AE1B)],
-                            )
-                          : LinearGradient(
-                              colors: [colors.primary, colors.tertiary],
-                            ),
+                      gradient: LinearGradient(
+                        colors: [colors.primary, colors.tertiary],
+                      ),
                     ),
                     child: Container(
                       padding: const EdgeInsets.all(2),
@@ -212,7 +207,7 @@ class ProfileStatsBar extends StatelessWidget {
   }
 }
 
-/// 他人主页：展示公开资料与其发布的吐槽。
+/// 他人主页：展示公开资料与其发布的评论。
 class AccountProfilePage extends StatefulWidget {
   const AccountProfilePage({super.key, required this.userId});
 
@@ -289,7 +284,7 @@ class _AccountProfilePageState extends State<AccountProfilePage> {
                   nickname: profile?.nickname ?? '',
                   title: profile?.title ?? '',
                   joinedAt: profile?.joinedAt,
-                  subtitle: '${profile?.commentCount ?? 0} 条吐槽',
+                  subtitle: '${profile?.commentCount ?? 0} 条评论',
                 ),
                 const SizedBox(height: 8),
                 if (profile == null || profile.comments.isEmpty)
@@ -297,7 +292,7 @@ class _AccountProfilePageState extends State<AccountProfilePage> {
                     padding: const EdgeInsets.symmetric(vertical: 48),
                     child: Center(
                       child: Text(
-                        '还没有发布过吐槽',
+                        '还没有发布过评论',
                         style: TextStyle(color: colors.onSurfaceVariant),
                       ),
                     ),

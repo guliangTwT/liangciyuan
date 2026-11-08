@@ -86,7 +86,7 @@ class CommentsCard extends StatelessWidget {
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
-                                  '我的吐槽',
+                                  '我的评论',
                                   style: TextStyle(
                                       fontSize: 12,
                                       color: Theme.of(context)

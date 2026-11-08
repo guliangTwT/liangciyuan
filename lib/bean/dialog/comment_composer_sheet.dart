@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 
-/// 评论/吐槽草稿：内容 + 是否剧透。
+/// 评论/评论草稿：内容 + 是否剧透。
 class CommentDraft {
   const CommentDraft({required this.content, required this.spoiler});
 

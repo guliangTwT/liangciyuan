@@ -305,6 +305,10 @@ function handle_login(Request $request): void
     if (!$user || !password_verify($password, (string) $user['password_hash'])) {
         throw new HttpException(401, '邮箱或密码不正确');
     }
+    // 封禁期间禁止登录：会话里没有 token，客户端也就不会显示"已登录"。
+    if (is_banned($user)) {
+        throw new HttpException(403, ban_message($user));
+    }
 
     $token = create_token((int) $user['id']);
     // 每次登录都对齐一次白名单：改配置后老账号下次登录即生效。
@@ -333,7 +337,7 @@ function handle_me(Request $request): void
 
 function handle_update_me(Request $request): void
 {
-    $user = current_user($request);
+    $user = require_writable_user($request);
     $body = $request->json();
     $nickname = trim((string) ($body['nickname'] ?? ''));
     if ($nickname === '') {
@@ -351,7 +355,7 @@ function handle_update_me(Request $request): void
 
 function handle_upload_avatar(Request $request): void
 {
-    $user = current_user($request);
+    $user = require_writable_user($request);
     $config = app_config();
     if (!isset($_FILES['avatar']) || !is_array($_FILES['avatar'])) {
         throw new HttpException(400, '缺少 avatar 文件');
@@ -461,7 +465,7 @@ function handle_sync_get(Request $request): void
 
 function handle_sync_put(Request $request): void
 {
-    $user = current_user($request);
+    $user = require_writable_user($request);
     $kind = sync_kind($request);
     $config = app_config();
     $body = $request->json();
@@ -527,14 +531,14 @@ function handle_sync_put(Request $request): void
 
 function handle_sync_delete(Request $request): void
 {
-    $user = current_user($request);
+    $user = require_writable_user($request);
     $kind = sync_kind($request);
     db()->prepare('DELETE FROM sync_blobs WHERE user_id = ? AND kind = ?')
         ->execute([(int) $user['id'], $kind]);
     Response::ok();
 }
 
-// ---- 吐槽（自建评论） ----
+// ---- 评论（自建评论） ----
 
 function comment_target(array $source): array
 {
@@ -626,16 +630,16 @@ function handle_comments_list(Request $request): void
 
 function handle_comments_create(Request $request): void
 {
-    $user = current_user($request);
+    $user = require_writable_user($request);
     $body = $request->json();
     [$type, $targetId] = comment_target($body);
     $content = trim((string) ($body['content'] ?? ''));
     $length = mb_strlen($content, 'UTF-8');
     if ($length < 1) {
-        throw new HttpException(400, '吐槽内容不能为空');
+        throw new HttpException(400, '评论内容不能为空');
     }
     if ($length > 500) {
-        throw new HttpException(400, '吐槽最多 500 字');
+        throw new HttpException(400, '评论最多 500 字');
     }
     rate_limit('comment:user:' . (int) $user['id'], 10, 300);
     $spoiler = !empty($body['spoiler']) ? 1 : 0;
@@ -662,7 +666,7 @@ function handle_comments_create(Request $request): void
 
 function handle_comments_delete(Request $request): void
 {
-    $user = current_user($request);
+    $user = require_writable_user($request);
     $id = (int) ($request->params['id'] ?? 0);
     $pdo = db();
     $stmt = $pdo->prepare(
@@ -671,10 +675,10 @@ function handle_comments_delete(Request $request): void
     $stmt->execute([$id]);
     $row = $stmt->fetch();
     if (!$row) {
-        throw new HttpException(400, '吐槽不存在或已删除');
+        throw new HttpException(400, '评论不存在或已删除');
     }
     if ((int) $row['user_id'] !== (int) $user['id']) {
-        throw new HttpException(403, '只能删除自己的吐槽');
+        throw new HttpException(403, '只能删除自己的评论');
     }
     $pdo->prepare('UPDATE comments SET deleted = 1, updated_at = ? WHERE id = ?')
         ->execute([now(), $id]);
@@ -703,7 +707,7 @@ function handle_user_profile(Request $request): void
     $stmt->execute([$id]);
     $commentCount = (int) ($stmt->fetch()['c'] ?? 0);
 
-    // 该用户最近发布的吐槽（公开主页展示，倒序取前 20 条）。
+    // 该用户最近发布的评论（公开主页展示，倒序取前 20 条）。
     $stmt = $pdo->prepare(
         'SELECT c.*, u.nickname, u.avatar, u.title
          FROM comments c JOIN users u ON u.id = c.user_id
@@ -713,8 +717,8 @@ function handle_user_profile(Request $request): void
     );
     $stmt->execute([$id]);
 
-    // 公开主页只暴露昵称、头像、吐槽数与最近吐槽。
-    // 带令牌时顺便标出自己的吐槽，头像跳转等功能无需额外请求。
+    // 公开主页只暴露昵称、头像、评论数与最近评论。
+    // 带令牌时顺便标出自己的评论，头像跳转等功能无需额外请求。
     $viewerId = 0;
     if ($request->bearerToken() !== '') {
         try {
@@ -807,7 +811,7 @@ function handle_danmaku_list(Request $request): void
 
 function handle_danmaku_create(Request $request): void
 {
-    $user = current_user($request);
+    $user = require_writable_user($request);
     $body = $request->json();
     $bangumiId = (int) ($body['bangumiId'] ?? 0);
     $episode = (int) ($body['episode'] ?? 0);
@@ -874,7 +878,7 @@ function handle_danmaku_create(Request $request): void
 
 function handle_danmaku_delete(Request $request): void
 {
-    $user = current_user($request);
+    $user = require_writable_user($request);
     $id = (int) ($request->params['id'] ?? 0);
     $pdo = db();
     $stmt = $pdo->prepare('SELECT user_id FROM danmaku WHERE id = ? AND deleted = 0');
@@ -987,7 +991,7 @@ function handle_ratings_get(Request $request): void
 
 function handle_ratings_put(Request $request): void
 {
-    $user = current_user($request);
+    $user = require_writable_user($request);
     $body = $request->json();
     $bangumiId = rating_bangumi_id($body);
     $score = (int) ($body['score'] ?? 0);
@@ -1008,7 +1012,7 @@ function handle_ratings_put(Request $request): void
 
 function handle_ratings_delete(Request $request): void
 {
-    $user = current_user($request);
+    $user = require_writable_user($request);
     $bangumiId = rating_bangumi_id($request->query);
     db()->prepare('DELETE FROM ratings WHERE bangumi_id = ? AND user_id = ?')
         ->execute([$bangumiId, (int) $user['id']]);

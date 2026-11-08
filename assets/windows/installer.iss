@@ -1,5 +1,5 @@
 ; 凉次元 Windows 安装包脚本（Inno Setup 6）
-; 用法: ISCC.exe /DAppVersion=3.0.0 assets\windows\installer.iss
+; 用法: ISCC.exe /DAppVersion=1.0.0 assets\windows\installer.iss
 ; 产物: build/windows/x64/runner/Release/liangciyuan-<版本>-windows-x64-setup.exe
 
 #ifndef AppVersion
@@ -22,8 +22,8 @@ AppName={#MyAppName}
 AppVersion={#AppVersion}
 AppVerName={#MyAppName} {#AppVersion}
 AppPublisher={#MyAppNameEn}
-AppPublisherURL=https://github.com/GuLiang-I/liangciyuan
-AppSupportURL=https://github.com/GuLiang-I/liangciyuan
+AppPublisherURL=https://github.com/guliangTwT/liangciyuan
+AppSupportURL=https://github.com/guliangTwT/liangciyuan
 ; 与 windows/runner/main.cpp 中创建的互斥量一致：安装时提示关闭正在运行的应用。
 AppMutex=liangciyuan.win.mutex
 DefaultDirName={autopf}\{#MyAppNameEn}

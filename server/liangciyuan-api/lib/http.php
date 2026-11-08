@@ -75,7 +75,19 @@ final class Response
         header('Content-Type: application/json; charset=utf-8');
         header('X-Content-Type-Options: nosniff');
         header('Cache-Control: no-store');
-        echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        // 库里万一存了非法 UTF-8（历史脏数据），json_encode 会返回 false，
+        // 页面变成空 body 却仍是 200，客户端只会报「无法识别的数据」。
+        // 用 SUBSTITUTE 保证至少是合法 JSON，坏字节替换成 U+FFFD。
+        $encoded = json_encode(
+            $data,
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
+        );
+        if ($encoded === false) {
+            http_response_code(500);
+            echo '{"ok":false,"error":"服务器内部错误"}';
+            exit;
+        }
+        echo $encoded;
         exit;
     }
 

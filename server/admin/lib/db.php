@@ -83,6 +83,11 @@ function admin_rate_table(PDO $pdo): void
            window_start INTEGER NOT NULL
          )'
     );
+    // 低概率清理过期记录，避免表无限增长（失败 IP 只增不减）。
+    if (random_int(1, 100) === 1) {
+        $pdo->prepare('DELETE FROM admin_login_attempts WHERE window_start < ?')
+            ->execute([time() - 86400]);
+    }
 }
 
 function admin_now(): int
@@ -95,9 +100,18 @@ function admin_esc(?string $value): string
     return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
+/// 跳转到站内页面。
+///
+/// 只接受以 /user 开头的相对路径：`back` 来自表单字段，是用户可提交的内容，
+/// 直接拼进 Location 会变成开放重定向（`//evil.com` 之类）。
+/// 虽然需要有效 CSRF 才能提交，仍不该留这个口子。
 function admin_redirect(string $path): void
 {
-    header('Location: ' . $path);
+    $isInternal = str_starts_with($path, '/user')
+        && !str_starts_with($path, '//')
+        && !str_contains($path, "\r")
+        && !str_contains($path, "\n");
+    header('Location: ' . ($isInternal ? $path : '/user/'));
     exit;
 }
 

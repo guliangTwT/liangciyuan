@@ -93,8 +93,14 @@ function do_restore_comment(): void
 {
     $id = (int) ($_POST['comment_id'] ?? 0);
     $back = (string) ($_POST['back'] ?? '/user/?a=comments');
-    admin_db()
-        ->prepare('UPDATE comments SET deleted = 0, updated_at = ? WHERE id = ?')
+    $pdo = admin_db();
+    $stmt = $pdo->prepare('SELECT id FROM comments WHERE id = ?');
+    $stmt->execute([$id]);
+    if (!$stmt->fetch()) {
+        admin_flash('评论不存在。', 'error');
+        admin_redirect($back);
+    }
+    $pdo->prepare('UPDATE comments SET deleted = 0, updated_at = ? WHERE id = ?')
         ->execute([admin_now(), $id]);
     admin_flash('已恢复该评论。');
     admin_redirect($back);

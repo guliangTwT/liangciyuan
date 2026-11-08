@@ -629,21 +629,25 @@ class AutoUpdater {
     try {
       if (Platform.isWindows) {
         if (installationType == InstallationType.windowsSetup) {
-          // 静默覆盖安装：Inno Setup 支持 /SILENT，用户只需通过一次 UAC。
-          // 提前一帧把提示渲染出来，否则 UAC 弹窗会先于 toast 出现。
-          KazumiDialog.showToast(message: '正在静默安装更新，请在系统提示中允许…');
+          // 静默覆盖安装：先让启动器盯着本进程退出，再由它拉起安装包。
+          //
+          // 不能直接启动安装包：安装器的 AppMutex 与主程序同名，只要主程序
+          // 还活着就会弹「请先关闭正在运行的程序」，而 /SUPPRESSMSGBOXES
+          // 会把它按「取消」，安装器直接中止（表现为界面一闪、版本没变）。
+          KazumiDialog.showToast(message: '正在安装更新，请在系统提示中允许…');
           await Future<void>.delayed(const Duration(milliseconds: 120));
-          final launched = SilentInstaller.launchSilent(filePath);
+          final launched = SilentInstaller.launchAfterExit(filePath);
           if (launched) {
-            // UAC 由系统接管；等提示渲染完再退出，避免文件被占用导致覆盖失败。
-            await Future<void>.delayed(const Duration(milliseconds: 400));
+            // 启动器已在轮询本进程；尽快退出，让安装器通过互斥量检查。
+            await Future<void>.delayed(const Duration(milliseconds: 150));
             exit(0);
           }
-          // 静默拉起失败（例如被安全软件拦截）时退回可视化安装。
+          // 启动器都拉不起来时退回可视化安装向导（此时仍会因互斥量提示，
+          // 但至少用户能看到并手动关闭，不会静默失败）。
           KazumiLogger().w(
-            'Update: silent install unavailable, falling back to wizard',
+            'Update: launch-after-exit unavailable, falling back to wizard',
           );
-          KazumiDialog.showToast(message: '无法静默安装，正在打开安装向导…');
+          KazumiDialog.showToast(message: '无法自动安装，正在打开安装向导…');
         }
         if (installationType == InstallationType.windowsSetup ||
             installationType == InstallationType.windowsMsix) {

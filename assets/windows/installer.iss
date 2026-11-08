@@ -14,8 +14,8 @@
 [Setup]
 ; 凉次元在运行时会 mmap data\app.so；让安装器请求 Restart Manager 关闭并重启应用，
 ; 避免用户忽略“文件被占用”后出现新旧文件混装。
-CloseApplications=yes
-RestartApplications=yes
+CloseApplications=force
+RestartApplications=no
 ; 独立 AppId（GUID），与上游 Kazumi 的安装包互不干扰，可共存。
 AppId={{8A6C2F4E-1B3D-4E2A-9C7B-5D4E6F8091A2}
 AppName={#MyAppName}
@@ -24,8 +24,6 @@ AppVerName={#MyAppName} {#AppVersion}
 AppPublisher={#MyAppNameEn}
 AppPublisherURL=https://github.com/guliangTwT/liangciyuan
 AppSupportURL=https://github.com/guliangTwT/liangciyuan
-; 与 windows/runner/main.cpp 中创建的互斥量一致：安装时提示关闭正在运行的应用。
-AppMutex=liangciyuan.win.mutex
 DefaultDirName={autopf}\{#MyAppNameEn}
 DefaultGroupName={#MyAppName}
 UninstallDisplayName={#MyAppName}

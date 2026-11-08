@@ -79,6 +79,12 @@ class SilentInstaller {
         .split(Platform.pathSeparator)
         .last;
 
+    // 关键：交给 cmd 的路径必须是反斜杠。
+    // 应用内部一律用 `/` 拼路径（updateDir.path + '/' + fileName），
+    // 而 `start "" /wait "%INSTALLER%"` 对正斜杠路径会直接失败（实测 exit=1），
+    // 安装器根本没起来，脚本随后又把旧版拉起来，表现为「更新完还是旧版本」。
+    String winPath(String path) => path.replaceAll('/', r'\');
+
     final switches = [
       verySilent ? '/VERYSILENT' : '/SILENT',
       '/CLOSEAPPLICATIONS',
@@ -106,16 +112,31 @@ class SilentInstaller {
           readyFile.deleteSync();
         } catch (_) {}
       }
+      // 安装失败的痕迹：应用重启后由启动检查读出来提示用户，
+      // 否则失败后只会「悄悄回到旧版本」，没人知道发生了什么。
+      final failedFile = File(
+        '${Directory.systemTemp.path}\\liangciyuan-update-$pid.failed',
+      );
+      if (failedFile.existsSync()) {
+        try {
+          failedFile.deleteSync();
+        } catch (_) {}
+      }
       final script = '''
 @echo off
 chcp 65001 >nul
 setlocal
 set "APP_NAME=$appName"
-set "INSTALLER=$installerPath"
-set "APP_EXE=${appExe.path}"
-set "READY=$readyFile.path"
+set "INSTALLER=${winPath(installerPath)}"
+set "APP_EXE=${winPath(appExe.path)}"
+set "READY=${winPath(readyFile.path)}"
+set "FAILED=${winPath(failedFile.path)}"
 rem 先点亮就绪标记，再开始轮询
 > "%READY%" echo ready
+if not exist "%INSTALLER%" (
+  > "%FAILED%" echo installer missing
+  goto :relaunch
+)
 for /l %%i in (1,1,$rounds) do (
   tasklist /fi "IMAGENAME eq %APP_NAME%" /nh 2>nul | find /i "%APP_NAME%" >nul
   if errorlevel 1 goto :gone
@@ -125,6 +146,10 @@ for /l %%i in (1,1,$rounds) do (
 rem 多等一秒，确保文件句柄（app.so / dll）真的释放
 ping -n 2 127.0.0.1 >nul
 start "" /wait "%INSTALLER%" $switches
+if errorlevel 1 (
+  > "%FAILED%" echo installer exit=%ERRORLEVEL%
+)
+:relaunch
 rem 安装结束后重新启动应用（安装被取消时 exe 仍是旧的，也能正常打开）
 ping -n 2 127.0.0.1 >nul
 if exist "%APP_EXE%" start "" "%APP_EXE%"
@@ -151,6 +176,43 @@ endlocal
     } catch (e) {
       KazumiLogger().w('Update: launch-after-exit failed', error: e);
       return false;
+    }
+  }
+
+  /// 取走上次安装失败的痕迹（内容为失败原因），没有则返回 null。
+  ///
+  /// 自动安装是「应用先退出、装完再重启」，失败时用户只会看到
+  /// 「应用重新打开还是旧版本」。启动器会写一个 .failed 标记，
+  /// 这里在下次启动时读出来提示一次，顺便清掉临时的 .cmd/.ready。
+  static String? consumeInstallFailure() {
+    if (!Platform.isWindows) return null;
+    try {
+      final dir = Directory.systemTemp;
+      if (!dir.existsSync()) return null;
+      String? reason;
+      for (final entity in dir.listSync()) {
+        if (entity is! File) continue;
+        final name = entity.path.split(Platform.pathSeparator).last;
+        if (!name.startsWith('liangciyuan-update-')) continue;
+        if (name.endsWith('.failed')) {
+          try {
+            reason = entity.readAsStringSync().trim();
+          } catch (_) {}
+          try {
+            entity.deleteSync();
+          } catch (_) {}
+        } else if (name.endsWith('.ready') || name.endsWith('.cmd')) {
+          // 启动器已经跑完（有 .failed 说明进程结束过），这些临时文件可以清掉。
+          // 没有 .failed 时也清：下次更新会重新生成。
+          try {
+            entity.deleteSync();
+          } catch (_) {}
+        }
+      }
+      return (reason == null || reason.isEmpty) ? null : reason;
+    } catch (e) {
+      KazumiLogger().w('Update: consume install failure failed', error: e);
+      return null;
     }
   }
 

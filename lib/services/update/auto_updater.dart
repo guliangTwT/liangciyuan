@@ -269,6 +269,9 @@ class AutoUpdater {
   }
 
   Future<void> autoCheckForUpdates() async {
+    // 先看上次自动安装有没有失败：它是「应用退出→装完重启」的流程，
+    // 失败时用户只会看到旧版本，必须主动告知一次。
+    _notifyPendingInstallFailure();
     final autoUpdate = GStorage.getSetting(SettingsKeys.autoUpdate);
     if (!autoUpdate) return;
 
@@ -282,7 +285,19 @@ class AutoUpdater {
     }
   }
 
+  /// 上次自动安装失败时提示用户手动安装，避免「更新完仍是旧版本」无解。
+  void _notifyPendingInstallFailure() {
+    final reason = SilentInstaller.consumeInstallFailure();
+    if (reason == null) return;
+    KazumiLogger().w('Update: previous install did not finish: $reason');
+    KazumiDialog.showToast(
+      message: '上次更新未完成，请到设置 → 关于 手动下载安装包',
+      duration: const Duration(seconds: 6),
+    );
+  }
+
   Future<void> manualCheckForUpdates() async {
+    _notifyPendingInstallFailure();
     try {
       final updateInfo = await checkForUpdates();
       if (updateInfo != null) {

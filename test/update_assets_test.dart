@@ -80,12 +80,15 @@ void main() {
       );
     });
 
-    test('candidates keep the single direct URL', () {
+    test('candidates put the direct URL first and add acceleration mirrors', () {
       final asset = getUpdateAssetForType(assets, InstallationType.androidApk);
-      expect(getUpdateDownloadUrlCandidatesFromAsset(
+      final candidates = getUpdateDownloadUrlCandidatesFromAsset(
         asset,
         UpdateDownloadSource.direct,
-      ), hasLength(1));
+      );
+      expect(candidates.first, startsWith('https://codeberg.org/'));
+      // Codeberg 地址会附带一个 GitHub 后备地址。
+      expect(candidates.length, greaterThan(1));
     });
 
     test('asset SHA-256 is parsed for integrity checking', () {

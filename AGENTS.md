@@ -2,16 +2,18 @@
 
 ## 发布流程（每次更新必须执行完整）
 
-凉次元的唯一发布渠道是 **Codeberg Releases**：`https://codeberg.org/GuLiang/liangciyuan`。
-仓库只推 `main` 不会产出安装包；安装包由本机构建，再用 `tool/publish_codeberg.ps1`
-上传。应用内更新直接读 Codeberg 的 release API，不经过任何自建服务器。
+凉次元的正式发布渠道是 **GitHub Releases**：
+`https://github.com/guliangTwT/liangciyuan`。
+**Codeberg 作为后备**：`https://codeberg.org/GuLiang/liangciyuan`，两处同步维护。
+仓库只推 `main` 不会产出安装包；安装包由本机构建，再上传到 Release。
+应用内更新先读 GitHub，读不到才退回 Codeberg，不经过任何自建服务器。
 
 每次完成改动后，按顺序执行：
 
 1. **更新 `CHANGELOG.md`**：文件顶部新增 `## <版本号>（YYYY-MM-DD）` 小节，按
    `### 新增` / `### 修复` / `### 变更` 归类，写清用户可感知的变化。
 2. **提升 `pubspec.yaml` 的 `version`**：格式 `x.y.z+build`，与 CHANGELOG 一致
-   （例如 `3.11.0+31100`）。
+   （例如 `1.0.1+10101`）。
 3. **验证**：`dart analyze` 不得有 error/warning；`flutter test` 必须全部通过。
 4. **构建**（在项目根目录，cmd 里执行）：
    ```bat
@@ -20,46 +22,34 @@
    flutter build windows
    flutter build apk --release --split-per-abi
    ```
+   构建必须在**纯 ASCII 路径**下进行（`subst X: <项目路径>` 后 `cd /d X:\`），
+   否则 MSBuild 读 `.dart_tool\flutter_build\*\app.dill` 会报 255。
    - Windows 安装包用 `assets/windows/installer.iss`：
      `ISCC.exe /DAppVersion=<版本号> /Q assets\windows\installer.iss`
    - 产物按契约命名后放进 `dist\`：
      - `liangciyuan-<版本>-windows-x64-setup.exe`
      - `liangciyuan-<版本>-windows-x64.zip`（可选）
      - `liangciyuan-<版本>-android-arm64.apk`
-5. **提交并推送**：
-   ```bat
-   git add -A
-   git commit -m "release: <版本号>"
-   git push origin main
-   ```
-   tag 用裸版本号（`3.11.0`），不要 `v` 前缀；tag 不是发布的前提，发布以 Codeberg
-   Release 为准。
-6. **上传发布**：
-   ```powershell
-   $env:CODEBERG_TOKEN = "<token>"
-   powershell -ExecutionPolicy Bypass -File tool\publish_codeberg.ps1
-   ```
-   脚本会：读版本号 → 收集 `dist\` 产物 → 生成 `dist\checksums.txt`（sha256sum 格式）
-   → 创建/复用 release → 上传缺失资产 → 最后上传 `checksums.txt` → 回读校验大小。
+5. **提交并推送**：`git push origin main`，同时推 Codeberg
+   （`git push codeberg main`）。tag 用 `v<版本号>`（`v1.0.0`），应用侧会自动
+   去掉 `v` 前缀再比较。
+6. **上传发布**：GitHub 用 `github-publish` skill 的脚本，Codeberg 用
+   `codeberg-publish` skill 的脚本。两边都要传同一批资产。
 7. **验收**：
    ```bat
    dart run tool\verify_update_channel.dart --download
    ```
-   必须全部通过：tag 是纯数字版本、`checksums.txt` 覆盖每个安装包、每个资产支持
-   `Range`、完整下载后 SHA-256 与清单一致。
 
-### 为什么需要 checksums.txt
+### 关于 checksums.txt
 
-Codeberg（Forgejo/Gitea）的 release API **不返回资产摘要**，只有文件名、大小和
-下载地址。应用会额外拉取同一 release 里的 `checksums.txt`，把 SHA-256 补回资产；
-读不到校验文件时应用会拒绝下载并跳转发布页，而不是装一个无法验证的包。
-因此：**永远先上传安装包，最后上传 `checksums.txt`**，不要单独补发某一种平台
-却不更新校验文件。
+GitHub 的 release API 自带 `digest`（SHA-256），应用直接用；Codeberg
+（Forgejo/Gitea）**不返回摘要**，所以在 Codeberg 发布时必须附带 `checksums.txt`，
+应用会读取它把校验值补回资产。缺少校验信息时应用会拒绝下载并跳转发布页，
+因此：**Codeberg 侧永远先传安装包，最后传 `checksums.txt`**。
 
 ### 发布凭证
 
-- `CODEBERG_TOKEN` 只在本地环境变量里，**绝不写进仓库**。需要的权限范围：
-  `write:repository`。
+- GitHub 与 Codeberg 的 token 都只存在本机 skill 的脚本里，**绝不写进仓库**。
 - 仓库内不得出现任何 token、keystore 或邮箱授权码。
 
 ## Android 发布签名（重要）
@@ -90,13 +80,29 @@ Codeberg（Forgejo/Gitea）的 release API **不返回资产摘要**，只有文
   提交前必须检查 `git diff pubspec.lock`。
 - 构建若因 Maven 限流失败，直接重跑构建，不要改代码。
 
-## 账号云同步后端（已下线）
+## 账号云同步后端（已恢复）
 
-- 代码保留在 `server/liangciyuan-api/`（PHP 8.2 + SQLite，无 Composer 依赖）。
-- **原线上实例 `https://guliang.me/liangciyuan/api.php` 已随虚拟主机清空而删除**，
-  账号注册/登录/云同步当前不可用；Codeberg 不能托管 PHP。
-- 若要恢复：把 `server/liangciyuan-api/` 部署到任意支持 PHP 8.2 的主机，然后修改
-  `lib/services/storage/settings_keys.dart` 中 `accountApiBase` 的默认值。
-- 发件配置：服务器端的 `config.local.php`（QQ 邮箱与授权码）不提交仓库。
-- 数据：`liangciyuan.sqlite` 与头像目录，必须放在 Web 根之外或用伪静态禁止直连。
+- 代码：`server/liangciyuan-api/`（PHP 8.2 + SQLite，无 Composer 依赖）。
+- 线上：`https://guliang.me/liangciyuan/api.php`（虚拟主机 PHP-82，目录 `/liangciyuan`）。
+- 部署：`server/liangciyuan-api.zip` 只打包 `api.php`、`lib/`、`config.example.php`、`README.md`，
+  用 `hk-vhost` skill 的 `mnbt.ps1 deploy server/liangciyuan-api.zip -To /liangciyuan`。
+- 发件配置：服务器 `/liangciyuan/config.local.php` 里的 `mail_user`（QQ 邮箱）与
+  `mail_auth`（QQ 授权码），**不提交仓库**。
+- 健康检查：`GET /v1/health` 返回 `db` 与 `mailConfigured`。
+- **数据目录必须屏蔽直链**：`/data/liangciyuan.sqlite`、`/data/liangciyuan-avatars/`，
+  以及 `/liangciyuan/config.local.php`、`/liangciyuan/lib/`、`/liangciyuan/README.md`。
+  这些靠面板的伪静态实现，**规则文件只能用 ASCII，注释写中文会被面板按 GBK 解析并吞掉下一行**。
+  参考规则：
+  ```nginx
+  # liangciyuan account API: expose api.php only
+  location = /liangciyuan/ { return 403; }
+  location = /liangciyuan/config.local.php { return 403; }
+  location = /liangciyuan/config.example.php { return 403; }
+  location = /liangciyuan/README.md { return 403; }
+  location ^~ /liangciyuan/lib/ { return 403; }
+  location = /data/liangciyuan.sqlite { return 403; }
+  location ^~ /data/liangciyuan-avatars/ { return 403; }
+  ```
+  改完必须回读验证：`rewrite -Get` 后确认每行都在（中文注释一旦出现就会丢规则）。
+- 部署后必查四个状态码：`api.php/v1/ping` 为 200，其余三项为 403。
 - 注册仅接受 `@qq.com` / `@vip.qq.com` / `@foxmail.com`。

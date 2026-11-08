@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:kazumi/request/core/network_exception.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/update/parallel_downloader.dart';
+import 'package:kazumi/services/update/update_download_candidates.dart';
 import 'package:kazumi/services/update/update_download_source.dart';
 import 'package:kazumi/utils/crypto.dart';
 
@@ -17,13 +18,6 @@ String getUpdateDownloadUrlFromAsset(
         UpdateDownloadSource.direct => 'browser_download_url',
       }];
   return url is String ? url.trim() : '';
-}
-
-/// 候选下载地址。Codeberg Release 的每个资产只有一个直链，这里只做
-/// 去空与去重；保留统一入口，以后要加镜像不用改调用方。
-List<String> updateDownloadCandidates(String url) {
-  final value = url.trim();
-  return value.isEmpty ? const [] : [value];
 }
 
 /// Every URL worth trying for this asset, in preference order.

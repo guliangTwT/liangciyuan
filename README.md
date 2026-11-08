@@ -6,6 +6,7 @@
 
 <img src="assets/images/logo/liangciyuan.png" width=200></img>
 
+<a href="https://github.com/guliangTwT/liangciyuan"><img src="https://img.shields.io/badge/GitHub-guliangTwT%2Fliangciyuan-181717?style=for-the-badge&logo=github&logoColor=white"></img></a>
 <a href="https://codeberg.org/GuLiang/liangciyuan"><img src="https://img.shields.io/badge/Codeberg-GuLiang%2Fliangciyuan-2185D0?style=for-the-badge&logo=codeberg&logoColor=white"></img></a>
 
 <img src="https://img.shields.io/badge/Flutter-03A9F4?style=for-the-badge&logo=flutter&logoColor=white"></img>
@@ -38,10 +39,14 @@ Android 产物可直接用 `flutter build apk --release --split-per-abi` 构建�
 
 ## 下载
 
-唯一官方发布渠道是本仓库的 Codeberg [Releases](https://codeberg.org/GuLiang/liangciyuan/releases/latest) 页面：
+官方发布渠道是 GitHub [Releases](https://github.com/guliangTwT/liangciyuan/releases/latest)，
+Codeberg [Releases](https://codeberg.org/GuLiang/liangciyuan/releases/latest) 作为镜像同步发布：
 
+<a href="https://github.com/guliangTwT/liangciyuan/releases">
+  <img src="https://img.shields.io/badge/下载-GitHub%20Releases-181717?style=for-the-badge&logo=github&logoColor=white" alt="Get it on GitHub" width="240"/>
+</a>
 <a href="https://codeberg.org/GuLiang/liangciyuan/releases">
-  <img src="https://img.shields.io/badge/下载-Codeberg%20Releases-2185D0?style=for-the-badge&logo=codeberg&logoColor=white" alt="Get it on Codeberg" width="260"/>
+  <img src="https://img.shields.io/badge/镜像-Codeberg%20Releases-2185D0?style=for-the-badge&logo=codeberg&logoColor=white" alt="Mirror on Codeberg" width="240"/>
 </a>
 
 当前提供的发布资产：

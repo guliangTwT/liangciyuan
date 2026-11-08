@@ -2,34 +2,42 @@
 
 所有对凉次元 的显著变更都会记录在本文件中。
 
-## 3.11.0（2026-11-08）
+> 版本号从本版起重新计数：`1.0.0` 是凉次元转为 GitHub 主源后的第一个正式版本，
+> 此前的 `3.x` 属于旧的自建更新通道。版本号重置不影响覆盖安装（Android 允许
+> 降级版本号安装，只要签名一致）。
+
+## 1.0.0（2026-11-08）
 
 ### 变更
 
-- **发布渠道整体迁移到 Codeberg**：项目主页、源码地址、应用内更新全部改为
-  `https://codeberg.org/GuLiang/liangciyuan`，不再依赖 GitHub。
-  - 「检查更新」直接读 Codeberg 的 release API（Forgejo/Gitea 兼容），一次请求拿到版本、说明与资产列表。
-  - 下载源只剩 Codeberg 直链，去掉了 GitHub 加速镜像与 `gh-proxy` 兜底逻辑。
-- **完整性校验改为 `checksums.txt`**：Codeberg 的 release API 不返回资产摘要，
-  发布时会附带 `checksums.txt`；应用下载前读取并把 SHA-256 补回每个资产，安装包
-  仍然要校验通过才会落盘。缺少校验文件时明确提示并打开发布页，不再下载无法验证的包。
+- **发布渠道：GitHub 为主，Codeberg 为后备**。
+  - 应用内检查更新先读 GitHub Releases；GitHub 拿不到（网络不通、限流、仓库不可见）时自动改用 Codeberg。
+  - 源码同步维护在 `https://github.com/GuLiang-I/liangciyuan` 与 `https://codeberg.org/GuLiang/liangciyuan`。
+  - 安装包下载地址遇到 GitHub 不通时，会依次尝试加速前缀；Codeberg 地址则在必要时回落到 GitHub 同路径。
+- **完整性校验**：GitHub 的 release 自带 `digest`，直接使用；Codeberg 不返回摘要，
+  改读同一 release 里的 `checksums.txt` 补回 SHA-256。缺少校验信息时不下载，
+  提示并打开发布页。
+- **版本号重置为 1.0.0**，此前的 3.x 版本号不再沿用。
 
 ### 修复
 
+- **账号登录恢复**：账号后端重新部署到虚拟主机 `/liangciyuan/`，
+  注册、登录、找回密码、云同步、评论、评分、弹幕接口恢复可用。
+  - 补上伪静态拦截：`config.local.php`、`lib/`、`data/`（含 SQLite 与头像）
+    不再能被直接下载。
 - 「前往下载」在没有发布页地址时错误地打开 API 地址，现在回落到项目发布页。
 
 ### 移除
 
 - 旧的 `guliang.me` 自建更新清单（`latest.json`）与虚拟主机下载通道。
-- GitHub Release 作为后备通道的相关代码，以及 Git 仓库内的 GitHub Actions 工作流。
+- Git 仓库内的 GitHub Actions 工作流（发布改为本地构建 + 脚本上传）。
 
 ### 说明
 
-- 3.10.0 及更早版本读的是已删除的旧通道，**这些版本无法自动升级到本版**，
-  需要手动安装一次 3.11.0；之后的应用内更新恢复正常。
-- 账号云同步后端原本部署在已清空的虚拟主机上，当前不可用；代码保留在
-  `server/liangciyuan-api/`，重新部署并修改 `accountApiBase` 后可恢复。
-- Android 签名未变（`CN=Liangciyuan, OU=Release`），可直接覆盖安装 3.10.0。
+- 旧版本（`3.x`）读的是已删除的 `guliang.me` 更新清单，**无法自动升级到本版**，
+  需要手动安装一次 1.0.0；之后的应用内更新恢复正常。
+- 虚拟主机清空时账号数据库一并删除，**旧账号无法找回**，需要重新注册。
+- Android 签名未变（`CN=Liangciyuan, OU=Release`），可直接覆盖安装。
 
 ## 3.10.0（2026-11-08）
 

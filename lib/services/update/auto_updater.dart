@@ -18,7 +18,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:kazumi/utils/device.dart';
 import 'package:kazumi/utils/version.dart';
-
 enum InstallationType {
   windowsSetup('安装包'),
   windowsMsix('MSIX'),
@@ -161,7 +160,8 @@ class AutoUpdater {
         throw Exception('无效的响应数据');
       }
 
-      final remoteVersion = data['tag_name'] as String;
+      // GitHub 的 tag 习惯带 `v` 前缀，版本比较只认纯数字。
+      final remoteVersion = normalizeVersionTag('${data['tag_name']}');
       final currentVersion = ApiEndpoints.version;
 
       if (needUpdate(currentVersion, remoteVersion)) {
@@ -196,15 +196,33 @@ class AutoUpdater {
     }
   }
 
-  /// Codeberg 是唯一发布渠道。
+  /// GitHub 为主源，Codeberg 为后备。
   ///
-  /// Forgejo 的接口与 GitHub 同形（`tag_name` / `body` / `html_url` /
-  /// `assets[].browser_download_url`），但它不返回资产摘要，所以还要多读
-  /// 一次同一 release 里的 `checksums.txt`。加时间戳是为了跳过中间缓存。
+  /// 两家接口同形（`tag_name` / `body` / `html_url` / `assets[]`），
+  /// 所以同一套解析逻辑通用。GitHub 拿不到（被墙、限流、仓库不可见）时
+  /// 才去问 Codeberg，用户不会因为主源故障就检查不了更新。
   Future<Map<String, dynamic>> _latestRelease() async {
-    final url =
-        '${ApiEndpoints.latestApp}'
-        '?t=${DateTime.now().millisecondsSinceEpoch}';
+    final sources = [
+      ApiEndpoints.latestApp,
+      ApiEndpoints.latestAppFallback,
+    ];
+    Object? lastError;
+    for (final base in sources) {
+      try {
+        final release = await _fetchRelease(base);
+        await _attachChecksums(release);
+        return release;
+      } catch (e) {
+        lastError = e;
+        KazumiLogger().w('Update: release query failed for $base', error: e);
+      }
+    }
+    throw lastError ?? Exception('Update check failed');
+  }
+
+  /// 加时间戳跳过中间缓存，发版后立刻生效。
+  Future<Map<String, dynamic>> _fetchRelease(String base) async {
+    final url = '$base?t=${DateTime.now().millisecondsSinceEpoch}';
     final raw = await _downloadClient.getPlain(
       url,
       headers: const {
@@ -217,18 +235,22 @@ class AutoUpdater {
     if (data is! Map) {
       throw Exception('Invalid update response');
     }
-    final release = Map<String, dynamic>.from(data);
-    await _attachChecksums(release);
-    return release;
+    return Map<String, dynamic>.from(data);
   }
 
   /// 把 `checksums.txt` 里的 SHA-256 补回每个资产。
   ///
-  /// 读不到校验文件时保持原样：下载入口会明确拒绝，并引导用户去发布页，
-  /// 而不是下一个无法验证的安装包。
+  /// GitHub 的 release 自带 `digest` 字段，不再需要这一步；Codeberg 不返回
+  /// 摘要，才要去读同一 release 里的 `checksums.txt`。读不到时保持原样：
+  /// 下载入口会明确拒绝，并引导用户去发布页，而不是下一个无法验证的安装包。
   Future<void> _attachChecksums(Map<String, dynamic> release) async {
     final assets = release['assets'];
     if (assets is! List || assets.isEmpty) return;
+    final missing = assets.whereType<Map>().where((asset) {
+      final digest = (asset['digest'] as String?)?.trim() ?? '';
+      return digest.isEmpty;
+    });
+    if (missing.isEmpty) return;
     final url = findChecksumAssetUrl(assets);
     if (url == null) {
       KazumiLogger().w('Update: release has no checksums asset');

@@ -94,15 +94,28 @@ class SilentInstaller {
       // 而 `tasklist /fi "PID eq N"` 在部分系统上还会漏报，
       // 两种误判都会让启动器在应用仍运行时就去安装（安装器随即中止）。
       // 进程名唯一且稳定，配合 `find /i` 做忽略大小写匹配。
-      final rounds = timeout.inSeconds * 2;
+      final rounds = timeout.inSeconds;
+      // 启动器写一个就绪标记，主进程确认它真的跑起来后才退出。
+      // 否则 cmd 被策略/杀软拦下时，应用会误判成功并 exit(0)，
+      // 用户面前什么都不剩（这正是「窗口一闪、版本没变」的另一条路径）。
+      final readyFile = File(
+        '${Directory.systemTemp.path}\\liangciyuan-update-$pid.ready',
+      );
+      if (readyFile.existsSync()) {
+        try {
+          readyFile.deleteSync();
+        } catch (_) {}
+      }
       final script = '''
 @echo off
 chcp 65001 >nul
 setlocal
-set "TARGET_PID=$pid"
 set "APP_NAME=$appName"
 set "INSTALLER=$installerPath"
 set "APP_EXE=${appExe.path}"
+set "READY=$readyFile.path"
+rem 先点亮就绪标记，再开始轮询
+> "%READY%" echo ready
 for /l %%i in (1,1,$rounds) do (
   tasklist /fi "IMAGENAME eq %APP_NAME%" /nh 2>nul | find /i "%APP_NAME%" >nul
   if errorlevel 1 goto :gone
@@ -127,7 +140,14 @@ endlocal
         mode: ProcessStartMode.detached,
         runInShell: false,
       );
-      return true;
+      // 等启动器写出就绪标记（最多 3 秒）。拿不到就认为它没起来，
+      // 交由调用方回退到可视化安装，而不是让应用直接退出。
+      for (var i = 0; i < 30; i++) {
+        if (readyFile.existsSync()) return true;
+        sleep(const Duration(milliseconds: 100));
+      }
+      KazumiLogger().w('Update: launcher did not signal ready');
+      return false;
     } catch (e) {
       KazumiLogger().w('Update: launch-after-exit failed', error: e);
       return false;

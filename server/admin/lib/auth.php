@@ -117,8 +117,14 @@ function admin_login(): void
         return;
     }
 
-    // 配置里存的是 bcrypt 哈希；为便于首次部署，也接受直接写明文。
-    $ok = password_verify($given, $expected) || hash_equals($expected, $given);
+    // 配置里必须存 bcrypt 哈希。早期为方便首次部署允许写明文，
+    // 但「明文比较」有一个致命副作用：哈希本身会被当作有效密码
+    // （提交 $2y$... 那串就能登录）。因此只在确认配置不是哈希时才允许明文。
+    $info = password_get_info($expected);
+    $isHash = ($info['algo'] ?? null) !== null && ($info['algo'] ?? 0) !== 0;
+    $ok = $isHash
+        ? password_verify($given, $expected)
+        : hash_equals($expected, $given);
     if (!$ok) {
         admin_note_failure();
         render_login('密码不正确。');

@@ -30,6 +30,9 @@ function sync_kind_to_path(string $kind): ?string
 }
 
 /// 该用户的全部同步块（kind、体积、更新时间）。
+///
+/// 注意 updated_at 存的是**毫秒**（见 handlers.php 的 sync_put），
+/// 后台渲染一律用秒，所以这里统一换算，避免各处再各自 /1000。
 function sync_blocks(int $userId): array
 {
     $stmt = admin_db()->prepare(
@@ -37,7 +40,12 @@ function sync_blocks(int $userId): array
          FROM sync_blobs WHERE user_id = ? ORDER BY updated_at DESC'
     );
     $stmt->execute([$userId]);
-    return $stmt->fetchAll();
+    $rows = $stmt->fetchAll();
+    foreach ($rows as &$row) {
+        $row['updated_at'] = (int) floor(((int) $row['updated_at']) / 1000);
+    }
+    unset($row);
+    return $rows;
 }
 
 /// 读出某个 kind 的原始 JSON（payload 是 base64）。
@@ -115,19 +123,32 @@ function parse_history_rows(array $snapshot): array
 }
 
 /// images 字段在不同版本里是字符串或数组，统一取出一个封面地址。
+///
+/// 只接受 http/https：封面来自用户同步的数据，若放任 `javascript:` / `data:`
+/// 之类进入 `<img src>`，等于让普通用户决定管理员浏览器去加载什么。
 function extract_cover(mixed $images): string
 {
+    $candidate = '';
     if (is_string($images) && $images !== '') {
         $decoded = json_decode($images, true);
         if (is_array($decoded)) {
-            return (string) ($decoded['large'] ?? $decoded['common'] ?? $decoded['medium'] ?? '');
+            $candidate = (string) ($decoded['large'] ?? $decoded['common'] ?? $decoded['medium'] ?? '');
+        } else {
+            $candidate = $images;
         }
-        return $images;
+    } elseif (is_array($images)) {
+        $value = $images['large'] ?? $images['common'] ?? $images['medium'] ?? '';
+        $candidate = is_scalar($value) ? (string) $value : '';
     }
-    if (is_array($images)) {
-        return (string) ($images['large'] ?? $images['common'] ?? $images['medium'] ?? '');
+    $candidate = trim($candidate);
+    if ($candidate === '') {
+        return '';
     }
-    return '';
+    $scheme = strtolower((string) parse_url($candidate, PHP_URL_SCHEME));
+    if ($scheme !== 'http' && $scheme !== 'https') {
+        return '';
+    }
+    return $candidate;
 }
 
 /// 收藏：只能报告同步状态，无法解析出条目（Hive 二进制）。

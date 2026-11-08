@@ -18,7 +18,13 @@ function admin_find_user(int $id): ?array
 function do_ban(): void
 {
     $id = (int) ($_POST['user_id'] ?? 0);
+    // 只接受下拉框里的固定值：负数/超长/非数字一律按 7 天处理，
+    // 避免「写 99999 天但实际只封 3650 天」这类文案与实际不符。
+    $allowedDays = [0, 1, 7, 30, 365];
     $days = (int) ($_POST['days'] ?? 7);
+    if (!in_array($days, $allowedDays, true)) {
+        $days = 7;
+    }
     $reason = trim((string) ($_POST['reason'] ?? ''));
     $user = admin_find_user($id);
     if (!$user) {
@@ -26,9 +32,9 @@ function do_ban(): void
         admin_redirect('/user/');
     }
     // days = 0 表示永久封禁（给一个很远的未来时间）
-    $until = $days <= 0
+    $until = $days === 0
         ? admin_now() + 86400 * 3650
-        : admin_now() + 86400 * min($days, 3650);
+        : admin_now() + 86400 * $days;
     if (mb_strlen($reason, 'UTF-8') > 200) {
         $reason = mb_substr($reason, 0, 200, 'UTF-8');
     }
@@ -39,7 +45,7 @@ function do_ban(): void
     // 立刻踢掉该用户所有会话：封禁应当马上生效，而不是等 token 过期。
     $pdo->prepare('DELETE FROM tokens WHERE user_id = ?')->execute([$id]);
 
-    $label = $days <= 0 ? '永久' : $days . ' 天';
+    $label = $days === 0 ? '永久' : $days . ' 天';
     admin_flash('已封禁 ' . admin_email_of($user) . '（' . $label . '）。');
     admin_redirect('/user/?a=user&id=' . $id);
 }

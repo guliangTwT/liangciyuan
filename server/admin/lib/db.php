@@ -15,9 +15,41 @@ function admin_db(): PDO
     $pdo = new PDO('sqlite:' . $path);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-    $pdo->exec('PRAGMA journal_mode=WAL');
     $pdo->exec('PRAGMA busy_timeout=5000');
+    try {
+        $pdo->exec('PRAGMA journal_mode=WAL');
+    } catch (Throwable $ignored) {
+        // 并发切换失败不致命，沿用现有 journal 模式。
+    }
+    admin_ensure_schema($pdo);
     return $pdo;
+}
+
+/// 后台可能比 API 先被访问，所以自己也要补齐新增列。
+/// 与 liangciyuan-api/lib/db.php 的 ensure_column 保持一致。
+function admin_ensure_schema(PDO $pdo): void
+{
+    $columns = [
+        'title' => "TEXT NOT NULL DEFAULT ''",
+        'banned_until' => 'INTEGER NOT NULL DEFAULT 0',
+        'ban_reason' => "TEXT NOT NULL DEFAULT ''",
+    ];
+    $existing = [];
+    foreach ($pdo->query('PRAGMA table_info(users)')->fetchAll() as $row) {
+        $existing[strtolower((string) $row['name'])] = true;
+    }
+    foreach ($columns as $name => $definition) {
+        if (isset($existing[$name])) {
+            continue;
+        }
+        try {
+            $pdo->exec('ALTER TABLE users ADD COLUMN ' . $name . ' ' . $definition);
+        } catch (PDOException $e) {
+            if (stripos($e->getMessage(), 'duplicate column') === false) {
+                throw $e;
+            }
+        }
+    }
 }
 
 function admin_column_exists(PDO $pdo, string $table, string $column): bool

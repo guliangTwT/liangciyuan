@@ -328,7 +328,14 @@ class AutoUpdater {
         if (releaseUrl.isEmpty) {
           releaseUrl = ApiEndpoints.releasePage;
         }
-        launchUrl(Uri.parse(releaseUrl), mode: LaunchMode.externalApplication);
+        // 打不开浏览器时必须给用户反馈，否则「前往下载」看起来像没响应。
+        final opened = await launchUrl(
+          Uri.parse(releaseUrl),
+          mode: LaunchMode.externalApplication,
+        );
+        if (!opened) {
+          KazumiDialog.showToast(message: '无法打开浏览器，请手动访问 $releaseUrl');
+        }
         return;
       }
 
@@ -587,13 +594,8 @@ class AutoUpdater {
     }
     final filePath =
         '${updateDir.path}/${_getFileNameFromUrl(urls.first, version)}';
-    // 清理旧版本安装包，避免长期累积占用空间。
-    await _pruneOldUpdateFiles(
-      updateDir,
-      keepFileName: filePath.split('/').last,
-    );
     // 测速、择优、分块并行下载与校验都由 downloadUpdateFile 内部处理。
-    return downloadUpdateFile(
+    final result = await downloadUpdateFile(
       urls: urls,
       filePath: filePath,
       expectedHash: expectedHash,
@@ -602,6 +604,13 @@ class AutoUpdater {
         _downloadProgress.value = total > 0 ? received / total : 0;
       },
     );
+    // 下载**成功后**才清理旧版本：放在下载之前的话，一旦这次下载失败或被取消，
+    // 上一份已经校验通过的安装包已经被删掉，用户两手空空。
+    await _pruneOldUpdateFiles(
+      updateDir,
+      keepFileName: filePath.split('/').last,
+    );
+    return result;
   }
 
   /// 只保留当前版本的安装包，其余删除。
@@ -655,10 +664,19 @@ class AutoUpdater {
           // ERROR_ELEVATION_REQUIRED（740），launchUrl 走 ShellExecute
           // 才能触发 UAC 弹出安装向导。
           final Uri fileUri = Uri.file(filePath);
-          if (await canLaunchUrl(fileUri)) {
-            await launchUrl(fileUri);
-          } else {
-            throw 'Could not launch $fileUri';
+          // canLaunchUrl 在 Windows 上几乎恒为 true（只查 HKCR\file 有没有
+          // URL Protocol），不能当作「打得开」的证据。真正要看的是
+          // launchUrl 的返回值：false 表示没有关联程序，此时必须留在这里，
+          // 否则安装器没起来而应用已经退出。
+          final opened = await canLaunchUrl(fileUri) &&
+              await launchUrl(fileUri);
+          if (!opened) {
+            KazumiLogger().w('Update: launch installer failed: $fileUri');
+            KazumiDialog.showToast(
+              message: '无法启动安装程序，请到下载目录手动运行',
+              duration: const Duration(seconds: 5),
+            );
+            return;
           }
         } else {
           await Process.start('explorer.exe', [filePath], runInShell: true);
@@ -671,6 +689,8 @@ class AutoUpdater {
           await Process.start('open', [filePath]);
           exit(0);
         }
+        // 不是 .dmg 时不要静默结束：否则用户点「立即安装」毫无反应。
+        KazumiDialog.showToast(message: '无法识别该安装包，请到下载目录手动安装');
       } else if (Platform.isAndroid) {
         // 先确认「安装未知应用」权限；未开启时引导用户去设置，
         // 否则系统安装器会直接拒绝，看起来像「点了没反应」。

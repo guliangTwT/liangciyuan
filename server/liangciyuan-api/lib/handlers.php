@@ -80,12 +80,9 @@ function handle_send_code(Request $request): void
         throw new HttpException(429, '发送过于频繁，请稍后再试');
     }
 
-    rate_limit('send-code:ip:' . client_ip(), (int) $config['code_ip_hourly_limit'], 3600);
-    rate_limit('send-code:email:' . $email, (int) $config['code_email_hourly_limit'], 3600);
-
-    // 清理过期与已使用的验证码，避免表无限增长。
-    $pdo->prepare('DELETE FROM email_codes WHERE expires_at < ? OR (used = 1 AND created_at < ?)')
-        ->execute([now(), now() - 86400]);
+    // 存在性检查必须在扣配额之前：放在后面的话，对已注册邮箱连发 5 次
+    // 就能把该邮箱一小时的配额烧光（每次都在扣完配额后才抛 409），
+    // 等于任何人都能定向封死别人重置密码的能力。
     $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ?');
     $stmt->execute([$email]);
     $existingUser = $stmt->fetch();
@@ -95,6 +92,13 @@ function handle_send_code(Request $request): void
     if ($purpose === 'reset' && !$existingUser) {
         throw new HttpException(400, '该邮箱尚未注册，请先注册');
     }
+
+    rate_limit('send-code:ip:' . client_ip(), (int) $config['code_ip_hourly_limit'], 3600);
+    rate_limit('send-code:email:' . $email, (int) $config['code_email_hourly_limit'], 3600);
+
+    // 清理过期与已使用的验证码，避免表无限增长。
+    $pdo->prepare('DELETE FROM email_codes WHERE expires_at < ? OR (used = 1 AND created_at < ?)')
+        ->execute([now(), now() - 86400]);
 
     $code = (string) random_int(100000, 999999);
     $pdo->prepare(
@@ -145,6 +149,10 @@ function handle_reset_password(Request $request): void
     rate_limit('reset:ip:' . client_ip(), 10, 3600);
 
     $pdo = db();
+    // 用 beginTransaction() 而不是 exec('BEGIN IMMEDIATE')：后者不会更新
+    // PDO 的事务状态，inTransaction() 恒为 false，事务内再调用 rate_limit
+    // 会嵌套 BEGIN 直接报错。WAL 下先读后写的并发风险由这里的
+    // BEGIN 立即执行 + 后续写操作隐式升级锁来处理，失败会走 500 并重试。
     $pdo->beginTransaction();
     try {
         $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ?');
@@ -222,6 +230,8 @@ function handle_register(Request $request): void
     rate_limit('register:ip:' . client_ip(), 10, 3600);
 
     $pdo = db();
+    // 同 reset：必须用 beginTransaction() 才能让 PDO 正确跟踪事务状态，
+    // 否则事务内的 rate_limit（验证码错误时调用）会嵌套 BEGIN 报错。
     $pdo->beginTransaction();
     try {
         $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ?');
@@ -390,16 +400,17 @@ function handle_upload_avatar(Request $request): void
     if (!move_uploaded_file((string) $file['tmp_name'], $staged)) {
         throw new HttpException(500, '保存头像失败');
     }
-    // 先落地新文件，再删除旧文件，避免移动失败时旧头像也丢失。
+    // 先 rename 成功再删旧文件：反过来一旦 rename 失败，旧头像已被删除，
+    // 而 users.avatar 仍指向旧文件名，用户头像会直接 404。
+    if (!rename($staged, $dir . '/' . $name)) {
+        @unlink($staged);
+        throw new HttpException(500, '保存头像失败');
+    }
     foreach (['jpg', 'png', 'webp'] as $ext) {
         $old = $dir . '/' . $userId . '.' . $ext;
         if ($old !== $dir . '/' . $name && is_file($old)) {
             @unlink($old);
         }
-    }
-    if (!rename($staged, $dir . '/' . $name)) {
-        @unlink($staged);
-        throw new HttpException(500, '保存头像失败');
     }
 
     db()->prepare('UPDATE users SET avatar = ?, updated_at = ? WHERE id = ?')
@@ -484,9 +495,11 @@ function handle_sync_put(Request $request): void
     }
 
     $pdo = db();
-    // 配额检查与写入必须在同一 IMMEDIATE 事务里完成，否则并发 PUT 不同 kind
+    // 配额检查与写入必须在同一事务里完成，否则并发 PUT 不同 kind
     // 会同时通过 COUNT/SUM 检查，突破类型与总字节上限。
-    $pdo->exec('BEGIN IMMEDIATE');
+    // 用 beginTransaction() 而不是 exec('BEGIN IMMEDIATE')：后者不会更新
+    // PDO 的事务状态，函数内部若再调用 rate_limit 之类会嵌套 BEGIN 报错。
+    $pdo->beginTransaction();
     $committed = false;
     try {
         $stmt = $pdo->prepare(
@@ -513,12 +526,12 @@ function handle_sync_put(Request $request): void
                checksum = excluded.checksum,
                updated_at = excluded.updated_at'
         )->execute([(int) $user['id'], $kind, $payload, $checksum, $storedAt]);
-        $pdo->exec('COMMIT');
+        $pdo->commit();
         $committed = true;
     } catch (Throwable $e) {
-        if (!$committed) {
+        if (!$committed && $pdo->inTransaction()) {
             try {
-                $pdo->exec('ROLLBACK');
+                $pdo->rollBack();
             } catch (Throwable $ignored) {
                 // SQLite 可能已自动回滚。
             }

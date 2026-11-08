@@ -18,9 +18,15 @@ function db(): PDO
     $pdo = new PDO('sqlite:' . $path);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-    $pdo->exec('PRAGMA journal_mode=WAL');
-    $pdo->exec('PRAGMA foreign_keys=ON');
+    // busy_timeout 必须最先设置：切 WAL 本身可能遇到 SQLITE_BUSY，
+    // 此时若超时还是 0 会直接抛异常。
     $pdo->exec('PRAGMA busy_timeout=5000');
+    try {
+        $pdo->exec('PRAGMA journal_mode=WAL');
+    } catch (Throwable $ignored) {
+        // 已有连接持锁时切换失败并不致命，沿用现有 journal 模式即可。
+    }
+    $pdo->exec('PRAGMA foreign_keys=ON');
 
     $pdo->exec(<<<SQL
 CREATE TABLE IF NOT EXISTS users (
@@ -164,7 +170,15 @@ function ensure_column(PDO $pdo, string $table, string $column, string $definiti
             return;
         }
     }
-    $pdo->exec('ALTER TABLE ' . $table . ' ADD COLUMN ' . $column . ' ' . $definition);
+    try {
+        $pdo->exec('ALTER TABLE ' . $table . ' ADD COLUMN ' . $column . ' ' . $definition);
+    } catch (PDOException $e) {
+        // 部署后第一批并发请求会同时判定「列缺失」，第二个 ALTER 会报
+        // duplicate column name。这说明列已经被另一个请求加上了，视为成功。
+        if (stripos($e->getMessage(), 'duplicate column') === false) {
+            throw $e;
+        }
+    }
 }
 
 function rate_limit(string $key, int $limit, int $windowSeconds): void
@@ -179,9 +193,18 @@ function rate_limit(string $key, int $limit, int $windowSeconds): void
         $pdo->prepare('DELETE FROM rate_limits WHERE window_start < ?')
             ->execute([$now - 86400]);
     }
-    // WAL 下延迟事务先读后写会撞 SQLITE_BUSY_SNAPSHOT（busy_timeout 不生效），
-    // 限流这类「读-改-写」必须用 IMMEDIATE 事务直接拿写锁。
-    $pdo->exec('BEGIN IMMEDIATE');
+
+    // 事务策略必须和调用方一致，否则会嵌套 BEGIN 报
+    // "cannot start a transaction within a transaction"，随后的 ROLLBACK
+    // 还会把调用方的事务一起回滚（注册/重置就是这种情况）。
+    //
+    // 注意：PDO 的 inTransaction() 只在 beginTransaction() 之后才为 true，
+    // 用 exec('BEGIN ...') 开的事务它看不清；所以全项目统一用
+    // beginTransaction()/commit()/rollBack()，不要混用 exec 版。
+    $nested = $pdo->inTransaction();
+    if (!$nested) {
+        $pdo->beginTransaction();
+    }
     $committed = false;
     try {
         $stmt = $pdo->prepare('SELECT count, window_start FROM rate_limits WHERE key = ?');
@@ -197,12 +220,14 @@ function rate_limit(string $key, int $limit, int $windowSeconds): void
         } else {
             $pdo->prepare('UPDATE rate_limits SET count = count + 1 WHERE key = ?')->execute([$key]);
         }
-        $pdo->exec('COMMIT');
+        if (!$nested) {
+            $pdo->commit();
+        }
         $committed = true;
     } catch (Throwable $e) {
-        if (!$committed) {
+        if (!$committed && !$nested) {
             try {
-                $pdo->exec('ROLLBACK');
+                $pdo->rollBack();
             } catch (Throwable $ignored) {
                 // 事务可能已被 SQLite 自动回滚。
             }

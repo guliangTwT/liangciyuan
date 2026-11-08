@@ -197,10 +197,16 @@ class _UpdateAvailableDialogState extends State<UpdateAvailableDialog> {
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                       ),
-                      onPressed: () => launchUrl(
-                        Uri.parse(info.releaseNotes),
-                        mode: LaunchMode.externalApplication,
-                      ),
+                      // 发布页地址来自服务端，格式不合法的可能性要兜住，
+                      // 否则 Uri.parse 抛 FormatException 会直接冒到 Flutter 错误处理。
+                      onPressed: () async {
+                        final uri = Uri.tryParse(info.releaseNotes);
+                        if (uri == null) return;
+                        await launchUrl(
+                          uri,
+                          mode: LaunchMode.externalApplication,
+                        );
+                      },
                       iconAlignment: IconAlignment.end,
                       icon: const Icon(Icons.open_in_new_rounded, size: 16),
                       label: const Text('更新日志'),

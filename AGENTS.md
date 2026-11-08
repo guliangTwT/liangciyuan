@@ -106,3 +106,26 @@ GitHub 的 release API 自带 `digest`（SHA-256），应用直接用；Codeberg
   改完必须回读验证：`rewrite -Get` 后确认每行都在（中文注释一旦出现就会丢规则）。
 - 部署后必查四个状态码：`api.php/v1/ping` 为 200，其余三项为 403。
 - 注册仅接受 `@qq.com` / `@vip.qq.com` / `@foxmail.com`。
+
+## 管理后台（/user/）
+
+- 地址：`https://guliang.me/user/`，代码在 `server/admin/`，部署到主机 `/user`。
+- 与账号后端**共用同一个 SQLite**（`/data/liangciyuan.sqlite`），不另建库。
+- 密码哈希只存在服务器 `/user/config.local.php` 的 `admin_password`，
+  用 `password_hash()` 生成；**仓库里不得出现明文或哈希**。
+- 能做的事：查看用户列表与详情、观看记录（解析 `p_*` 快照 JSON）、
+  收藏同步状态、封禁/解封、删除/恢复评论、删除弹幕。
+- 收藏是 Hive 二进制，服务端读不出具体番剧，后台只展示同步状态与体积；
+  这是格式限制，不要假装能列出条目。
+- 部署前的必查项：
+  1. `/user/config.local.php` 与 `/user/lib/` 必须 403（伪静态里已配）；
+  2. 未登录访问 `/user/` 应为 302 跳到登录页；
+  3. 封禁一个测试账号后，该账号登录与发言都应返回 403。
+
+## 封禁机制
+
+- `users.banned_until`（秒级时间戳，0 为正常）+ `users.ban_reason`；
+  两个字段由 `ensure_column` 在首次连库时自动补上，不需要手工迁移。
+- 登录时拒绝（403），所有写接口走 `require_writable_user()`；
+  读接口仍用 `current_user()`，封禁期间还能看自己的资料。
+- 封禁会立刻删除该用户的所有 token，避免旧会话继续生效。

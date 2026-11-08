@@ -75,6 +75,9 @@ class SilentInstaller {
     }
     // 安装器会把 exe 放在 {app} 下；安装后用同目录的 exe 重启。
     final appExe = File(Platform.resolvedExecutable);
+    final appName = Platform.resolvedExecutable
+        .split(Platform.pathSeparator)
+        .last;
 
     final switches = [
       verySilent ? '/VERYSILENT' : '/SILENT',
@@ -87,18 +90,21 @@ class SilentInstaller {
       final launcher = File(
         '${Directory.systemTemp.path}\\liangciyuan-update-$pid.cmd',
       );
-      // tasklist 精确匹配 PID 比 waitfor 稳（不依赖句柄继承）；
-      // 每轮 `ping -n 2` 约 1 秒，轮数 = 超时秒数 × 2。
+      // 用 IMAGENAME 而不是 PID 判断：PID 在同一会话里可能被复用，
+      // 而 `tasklist /fi "PID eq N"` 在部分系统上还会漏报，
+      // 两种误判都会让启动器在应用仍运行时就去安装（安装器随即中止）。
+      // 进程名唯一且稳定，配合 `find /i` 做忽略大小写匹配。
       final rounds = timeout.inSeconds * 2;
       final script = '''
 @echo off
 chcp 65001 >nul
 setlocal
 set "TARGET_PID=$pid"
+set "APP_NAME=$appName"
 set "INSTALLER=$installerPath"
 set "APP_EXE=${appExe.path}"
 for /l %%i in (1,1,$rounds) do (
-  tasklist /fi "PID eq %TARGET_PID%" 2>nul | find "%TARGET_PID%" >nul
+  tasklist /fi "IMAGENAME eq %APP_NAME%" /nh 2>nul | find /i "%APP_NAME%" >nul
   if errorlevel 1 goto :gone
   ping -n 2 127.0.0.1 >nul
 )

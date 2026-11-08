@@ -7,11 +7,14 @@ class ApiEndpoints {
   /// 规则API级别
   static const int apiLevel = 9;
 
-  /// 项目主页
-  static const String projectUrl = "https://github.com/GuLiang-I/liangciyuan";
+  /// 项目主页（Codeberg 是唯一官方发布渠道）
+  static const String projectUrl = "https://codeberg.org/GuLiang/liangciyuan";
 
-  /// Github 项目主页
-  static const String sourceUrl = "https://github.com/GuLiang-I/liangciyuan";
+  /// 源码主页
+  static const String sourceUrl = projectUrl;
+
+  /// 发布页：没有应用内安装包时，用户在这里手动下载
+  static const String releasePage = "$projectUrl/releases";
 
   /// 改编来源（Kazumi）
   static const String upstreamUrl = "https://github.com/Predidit/Kazumi";
@@ -30,9 +33,9 @@ class ApiEndpoints {
   static const String gitcodeMirror =
       'https://raw.gitcode.com/gh_mirrors/ka/KazumiRules/raw/main/';
 
-  /// 在线升级
+  /// 在线升级：Codeberg（Forgejo）的 Gitea 兼容 API
   static const String latestApp =
-      'https://api.github.com/repos/GuLiang-I/liangciyuan/releases/latest';
+      'https://codeberg.org/api/v1/repos/GuLiang/liangciyuan/releases/latest';
 
   /// Bangumi 镜像测试后端
   static const String bangumiMirrorDomain = 'https://api.kazumi.fyi';

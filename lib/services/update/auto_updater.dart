@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
@@ -8,7 +7,7 @@ import 'package:kazumi/bean/dialog/update_available_dialog.dart';
 import 'package:kazumi/request/clients/download_http_client.dart';
 import 'package:kazumi/request/config/api_endpoints.dart';
 import 'package:kazumi/services/logging/logger.dart';
-import 'package:kazumi/services/update/update_download_mirrors.dart';
+import 'package:kazumi/services/update/update_checksums.dart';
 import 'package:kazumi/services/update/update_download_source.dart';
 import 'package:kazumi/services/update/update_downloader.dart';
 import 'package:kazumi/services/update/apk_install_bridge.dart';
@@ -42,7 +41,7 @@ enum InstallationType {
 class UpdateInfo {
   final String version;
   final String description;
-  final String downloadUrl;
+  final List<String> downloadUrls;
   final String releaseNotes;
   final String publishedAt;
   final InstallationType? installationType;
@@ -52,7 +51,7 @@ class UpdateInfo {
   UpdateInfo({
     required this.version,
     required this.description,
-    required this.downloadUrl,
+    required this.downloadUrls,
     required this.releaseNotes,
     required this.publishedAt,
     this.installationType,
@@ -113,13 +112,6 @@ List<String> getUpdateFilePatterns(InstallationType installationType) {
   }
 }
 
-/// GitHub 直连在国内网络环境不可靠；gh-proxy.org 可以代理 API 与资产下载。
-Uri? githubFallbackUrl(String url) =>
-    url.startsWith('https://github.com/') ||
-        url.startsWith('https://api.github.com/')
-    ? Uri.parse('https://gh-proxy.com/$url')
-    : null;
-
 class AutoUpdater {
   static final AutoUpdater _instance = AutoUpdater._internal();
 
@@ -173,19 +165,25 @@ class AutoUpdater {
       final currentVersion = ApiEndpoints.version;
 
       if (needUpdate(currentVersion, remoteVersion)) {
+        // 资产列表为空时（只发了更新说明），别假装能应用内下载：
+        // 让对话框退化成「前往下载」，跳转到发布页。
         final assets = (data['assets'] as List<dynamic>?) ?? const [];
-        final availableTypes = _installationTypesWithAssets(
-          _detectAvailableInstallationTypes(),
-          assets,
-        );
+        final availableTypes = assets.isEmpty
+            ? const <InstallationType>[]
+            : _installationTypesWithAssets(
+                _detectAvailableInstallationTypes(),
+                assets,
+              );
 
         return UpdateInfo(
           version: remoteVersion,
           description: data['body'] ?? '发现新版本',
-          downloadUrl: '',
-          releaseNotes: data['html_url'] ?? '',
+          downloadUrls: const [],
+          releaseNotes: data['html_url'] ?? ApiEndpoints.releasePage,
           publishedAt: data['published_at'] ?? '',
-          installationType: availableTypes.first,
+          installationType: availableTypes.isEmpty
+              ? InstallationType.unknown
+              : availableTypes.first,
           availableInstallationTypes: availableTypes,
           assets: assets,
         );
@@ -198,35 +196,54 @@ class AutoUpdater {
     }
   }
 
-  /// GitHub 直连在国内网络环境不可靠；gh-proxy.org 可以代理 API 与资产下载。
+  /// Codeberg 是唯一发布渠道。
+  ///
+  /// Forgejo 的接口与 GitHub 同形（`tag_name` / `body` / `html_url` /
+  /// `assets[].browser_download_url`），但它不返回资产摘要，所以还要多读
+  /// 一次同一 release 里的 `checksums.txt`。加时间戳是为了跳过中间缓存。
   Future<Map<String, dynamic>> _latestRelease() async {
-    final candidates = updateDownloadCandidates(ApiEndpoints.latestApp);
-    final completer = Completer<Map<String, dynamic>>();
-    var failures = 0;
-    for (final url in candidates) {
-      unawaited(() async {
-        try {
-          final raw = await _downloadClient.getPlain(
-            url,
-            receiveTimeout: const Duration(seconds: 8),
-          );
-          final data = json.decode(raw);
-          if (data is! Map) {
-            throw Exception('Invalid update response');
-          }
-          if (!completer.isCompleted) {
-            completer.complete(Map<String, dynamic>.from(data));
-          }
-        } catch (e) {
-          failures++;
-          KazumiLogger().w('Update: release query failed for $url', error: e);
-          if (failures == candidates.length && !completer.isCompleted) {
-            completer.completeError(Exception('Update check failed'));
-          }
-        }
-      }());
+    final url =
+        '${ApiEndpoints.latestApp}'
+        '?t=${DateTime.now().millisecondsSinceEpoch}';
+    final raw = await _downloadClient.getPlain(
+      url,
+      headers: const {
+        'Accept': 'application/json',
+        'Cache-Control': 'no-cache',
+      },
+      receiveTimeout: const Duration(seconds: 8),
+    );
+    final data = json.decode(raw);
+    if (data is! Map) {
+      throw Exception('Invalid update response');
     }
-    return completer.future;
+    final release = Map<String, dynamic>.from(data);
+    await _attachChecksums(release);
+    return release;
+  }
+
+  /// 把 `checksums.txt` 里的 SHA-256 补回每个资产。
+  ///
+  /// 读不到校验文件时保持原样：下载入口会明确拒绝，并引导用户去发布页，
+  /// 而不是下一个无法验证的安装包。
+  Future<void> _attachChecksums(Map<String, dynamic> release) async {
+    final assets = release['assets'];
+    if (assets is! List || assets.isEmpty) return;
+    final url = findChecksumAssetUrl(assets);
+    if (url == null) {
+      KazumiLogger().w('Update: release has no checksums asset');
+      return;
+    }
+    try {
+      final raw = await _downloadClient.getPlain(
+        url,
+        receiveTimeout: const Duration(seconds: 8),
+      );
+      final applied = applyChecksums(assets, parseChecksums(raw));
+      KazumiLogger().i('Update: applied checksums to $applied asset(s)');
+    } catch (e) {
+      KazumiLogger().w('Update: checksums query failed', error: e);
+    }
   }
 
   Future<void> autoCheckForUpdates() async {
@@ -287,24 +304,43 @@ class AutoUpdater {
       if (!selectedType.downloadsInApp) {
         String releaseUrl = updateInfo.releaseNotes;
         if (releaseUrl.isEmpty) {
-          releaseUrl = ApiEndpoints.latestApp;
+          releaseUrl = ApiEndpoints.releasePage;
         }
         launchUrl(Uri.parse(releaseUrl), mode: LaunchMode.externalApplication);
         return;
       }
 
       final asset = getUpdateAssetForType(updateInfo.assets, selectedType);
-      final downloadUrl = getUpdateDownloadUrlFromAsset(asset, source);
-      if (asset == null || downloadUrl.isEmpty) {
+      final downloadUrls = getUpdateDownloadUrlCandidatesFromAsset(
+        asset,
+        source,
+      );
+      if (asset == null || downloadUrls.isEmpty) {
         KazumiDialog.showToast(message: '没有找到 ${selectedType.label} 的下载链接');
         return;
       }
 
       final expectedHash = getUpdateFileHashFromAsset(asset);
+      // 没有校验值就不下载：Codeberg 的 release 里必带 checksums.txt，
+      // 读不到说明发布不完整或请求被拦截，让用户去发布页手动装更诚实。
+      if (expectedHash.isEmpty) {
+        KazumiDialog.showToast(
+          message: '该版本缺少校验信息，正在打开发布页',
+          duration: const Duration(seconds: 4),
+        );
+        final page = updateInfo.releaseNotes.isEmpty
+            ? ApiEndpoints.releasePage
+            : updateInfo.releaseNotes;
+        await launchUrl(
+          Uri.parse(page),
+          mode: LaunchMode.externalApplication,
+        );
+        return;
+      }
       final downloadInfo = UpdateInfo(
         version: updateInfo.version,
         description: updateInfo.description,
-        downloadUrl: downloadUrl,
+        downloadUrls: downloadUrls,
         releaseNotes: updateInfo.releaseNotes,
         publishedAt: updateInfo.publishedAt,
         installationType: selectedType,
@@ -343,7 +379,7 @@ class AutoUpdater {
         final cancelToken = CancelToken();
         final downloadPath = await task.loading(
           action: () => _downloadFile(
-            updateInfo.downloadUrl,
+            updateInfo.downloadUrls,
             updateInfo.version,
             expectedHash,
             cancelToken,
@@ -400,7 +436,7 @@ class AutoUpdater {
         );
 
         KazumiLogger().e(
-          'Update: download failed | source=${updateInfo.downloadUrl} | '
+          'Update: download failed | source=${updateInfo.downloadUrls.join(', ')} | '
           '${describeUpdateDownloadError(e, stackTrace)}',
           error: e,
         );
@@ -514,7 +550,7 @@ class AutoUpdater {
   }
 
   Future<String> _downloadFile(
-    String url,
+    List<String> urls,
     String version,
     String expectedHash,
     CancelToken cancelToken,
@@ -527,12 +563,16 @@ class AutoUpdater {
     if (!await updateDir.exists()) {
       await updateDir.create(recursive: true);
     }
-    final filePath = '${updateDir.path}/${_getFileNameFromUrl(url, version)}';
+    final filePath =
+        '${updateDir.path}/${_getFileNameFromUrl(urls.first, version)}';
     // 清理旧版本安装包，避免长期累积占用空间。
-    await _pruneOldUpdateFiles(updateDir, keepFileName: filePath.split('/').last);
+    await _pruneOldUpdateFiles(
+      updateDir,
+      keepFileName: filePath.split('/').last,
+    );
     // 测速、择优、分块并行下载与校验都由 downloadUpdateFile 内部处理。
     return downloadUpdateFile(
-      url: url,
+      urls: urls,
       filePath: filePath,
       expectedHash: expectedHash,
       cancelToken: cancelToken,
@@ -569,9 +609,7 @@ class AutoUpdater {
         if (installationType == InstallationType.windowsSetup) {
           // 静默覆盖安装：Inno Setup 支持 /SILENT，用户只需通过一次 UAC。
           // 提前一帧把提示渲染出来，否则 UAC 弹窗会先于 toast 出现。
-          KazumiDialog.showToast(
-            message: '正在静默安装更新，请在系统提示中允许…',
-          );
+          KazumiDialog.showToast(message: '正在静默安装更新，请在系统提示中允许…');
           await Future<void>.delayed(const Duration(milliseconds: 120));
           final launched = SilentInstaller.launchSilent(filePath);
           if (launched) {
@@ -623,9 +661,7 @@ class AutoUpdater {
           // 系统通道不可用时退回 open_filex（会弹「用哪个应用打开」）。
           final result = await OpenFilex.open(filePath);
           if (result.type != ResultType.done) {
-            KazumiDialog.showToast(
-              message: '无法打开安装文件: ${result.message}',
-            );
+            KazumiDialog.showToast(message: '无法打开安装文件: ${result.message}');
             return;
           }
         }

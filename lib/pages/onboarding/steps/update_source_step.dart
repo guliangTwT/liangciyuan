@@ -4,13 +4,13 @@ import 'package:kazumi/pages/onboarding/onboarding_step_layout.dart';
 class UpdateSourceStep extends StatelessWidget {
   const UpdateSourceStep({
     super.key,
-    required this.useGithubUpdate,
+    required this.autoUpdate,
     required this.onChanged,
   });
 
-  /// 仅有一个官方发布渠道（GitHub Releases），因此本步骤只控制
+  /// 仅有一个官方发布渠道（Codeberg Releases），因此本步骤只控制
   /// 是否启用应用内自动检查更新；关闭后仍可随时手动检查。
-  final bool useGithubUpdate;
+  final bool autoUpdate;
   final ValueChanged<bool> onChanged;
 
   @override
@@ -25,7 +25,7 @@ class UpdateSourceStep extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _AutoUpdateCard(
-          selected: useGithubUpdate,
+          selected: autoUpdate,
           onChanged: onChanged,
         ),
         const SizedBox(height: 12),
@@ -106,7 +106,7 @@ class _AutoUpdateCard extends StatelessWidget {
           subtitle: Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text(
-              '新版本通过 GitHub Releases 发布，开启后将自动检查并可在应用内下载安装；关闭后仍可随时在 设置 → 关于 手动检查。',
+              '新版本通过 Codeberg Releases 发布，开启后将自动检查并可在应用内下载安装；关闭后仍可随时在 设置 → 关于 手动检查。',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: selected ? foreground : colors.onSurfaceVariant,
                 height: 1.5,

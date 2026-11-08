@@ -59,3 +59,6 @@ android/build/reports/problems/
 # Android release signing (never commit private keys)
 android/*.jks
 android/key.properties
+
+# 发布产物（体积大，不入库；由 tool/publish_codeberg.ps1 上传）
+dist/

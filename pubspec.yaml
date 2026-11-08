@@ -1,11 +1,11 @@
 name: kazumi
 description: "凉次元：改编自 Kazumi 的跨平台番剧探索与播放应用。"
 publish_to: "none"
-version: 3.10.0+31000
+version: 3.11.0+31100
 
 environment:
   sdk: ">=3.10.0 <4.0.0"
-  # CI 的 flutter-action 仅支持精确版本；与本地构建工具链保持一致。
+  # 与本地构建工具链保持一致；升级 Flutter 前先跑通 analyze 与 test。
   flutter: 3.47.9
 
 dependencies:
@@ -151,7 +151,7 @@ msix_config:
   display_name: 凉次元
   identity_name: GuLiang-I.Liangciyuan
   publisher_display_name: Liangciyuan
-  # 未购买签名证书，仅用于本地未签名 MSIX 打包测试；正式分发走 GitHub Releases。
+  # 未购买签名证书，仅用于本地未签名 MSIX 打包测试；正式分发走 Codeberg Releases。
   publisher: CN=Liangciyuan
   logo_path: assets/images/logo/liangciyuan.png
   sign_msix: false

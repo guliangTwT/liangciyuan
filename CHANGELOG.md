@@ -2,6 +2,35 @@
 
 所有对凉次元 的显著变更都会记录在本文件中。
 
+## 3.11.0（2026-11-08）
+
+### 变更
+
+- **发布渠道整体迁移到 Codeberg**：项目主页、源码地址、应用内更新全部改为
+  `https://codeberg.org/GuLiang/liangciyuan`，不再依赖 GitHub。
+  - 「检查更新」直接读 Codeberg 的 release API（Forgejo/Gitea 兼容），一次请求拿到版本、说明与资产列表。
+  - 下载源只剩 Codeberg 直链，去掉了 GitHub 加速镜像与 `gh-proxy` 兜底逻辑。
+- **完整性校验改为 `checksums.txt`**：Codeberg 的 release API 不返回资产摘要，
+  发布时会附带 `checksums.txt`；应用下载前读取并把 SHA-256 补回每个资产，安装包
+  仍然要校验通过才会落盘。缺少校验文件时明确提示并打开发布页，不再下载无法验证的包。
+
+### 修复
+
+- 「前往下载」在没有发布页地址时错误地打开 API 地址，现在回落到项目发布页。
+
+### 移除
+
+- 旧的 `guliang.me` 自建更新清单（`latest.json`）与虚拟主机下载通道。
+- GitHub Release 作为后备通道的相关代码，以及 Git 仓库内的 GitHub Actions 工作流。
+
+### 说明
+
+- 3.10.0 及更早版本读的是已删除的旧通道，**这些版本无法自动升级到本版**，
+  需要手动安装一次 3.11.0；之后的应用内更新恢复正常。
+- 账号云同步后端原本部署在已清空的虚拟主机上，当前不可用；代码保留在
+  `server/liangciyuan-api/`，重新部署并修改 `accountApiBase` 后可恢复。
+- Android 签名未变（`CN=Liangciyuan, OU=Release`），可直接覆盖安装 3.10.0。
+
 ## 3.10.0（2026-11-08）
 
 ### 新增

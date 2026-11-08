@@ -51,7 +51,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
   int _currentIndex = 0;
   bool _agreed = false;
   bool _busy = false;
-  late bool _useGithubUpdate;
+  late bool _autoUpdate;
 
   PluginsController get _pluginsController => widget.pluginsController;
   bool get _isLastStep => _currentIndex == _steps.length - 1;
@@ -59,7 +59,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
   @override
   void initState() {
     super.initState();
-    _useGithubUpdate = GStorage.getSetting(SettingsKeys.autoUpdate);
+    _autoUpdate = GStorage.getSetting(SettingsKeys.autoUpdate);
   }
 
   @override
@@ -71,9 +71,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
   Widget _buildStep(_OnboardingStep step) => switch (step) {
         _OnboardingStep.welcome => const DisclaimerStep(),
         _OnboardingStep.updates => UpdateSourceStep(
-            useGithubUpdate: _useGithubUpdate,
+            autoUpdate: _autoUpdate,
             onChanged: (value) {
-              setState(() => _useGithubUpdate = value);
+              setState(() => _autoUpdate = value);
               unawaited(GStorage.putSetting(SettingsKeys.autoUpdate, value));
             },
           ),

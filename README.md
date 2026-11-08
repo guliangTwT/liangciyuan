@@ -6,7 +6,7 @@
 
 <img src="assets/images/logo/liangciyuan.png" width=200></img>
 
-<a href="https://github.com/GuLiang-I/liangciyuan"><img src="https://img.shields.io/badge/GitHub-GuLiang--I%2Fliangciyuan-181717?style=for-the-badge&logo=github&logoColor=white"></img></a>
+<a href="https://codeberg.org/GuLiang/liangciyuan"><img src="https://img.shields.io/badge/Codeberg-GuLiang%2Fliangciyuan-2185D0?style=for-the-badge&logo=codeberg&logoColor=white"></img></a>
 
 <img src="https://img.shields.io/badge/Flutter-03A9F4?style=for-the-badge&logo=flutter&logoColor=white"></img>
 <img src="https://img.shields.io/badge/Dart-00B4AB?style=for-the-badge&logo=Dart&logoColor=white"></img>
@@ -38,10 +38,10 @@ Android 产物可直接用 `flutter build apk --release --split-per-abi` 构建�
 
 ## 下载
 
-唯一官方发布渠道是本仓库的 GitHub [Releases](https://github.com/GuLiang-I/liangciyuan/releases/latest) 页面：
+唯一官方发布渠道是本仓库的 Codeberg [Releases](https://codeberg.org/GuLiang/liangciyuan/releases/latest) 页面：
 
-<a href="https://github.com/GuLiang-I/liangciyuan/releases">
-  <img src="static/svg/get_it_on_github.svg" alt="Get it on Github" width="200"/>
+<a href="https://codeberg.org/GuLiang/liangciyuan/releases">
+  <img src="https://img.shields.io/badge/下载-Codeberg%20Releases-2185D0?style=for-the-badge&logo=codeberg&logoColor=white" alt="Get it on Codeberg" width="260"/>
 </a>
 
 当前提供的发布资产：
@@ -52,7 +52,7 @@ Android 产物可直接用 `flutter build apk --release --split-per-abi` 构建�
 | Windows | `liangciyuan-<版本>-windows-x64.zip` | 便携版，解压即用，不含自动更新引导 |
 | Android | `liangciyuan-<版本>-android-arm64.apk` | arm64 设备 |
 
-**安装包目前未做代码签名。** Windows 首次运行时若出现 SmartScreen 提示，点击“更多信息 → 仍要运行”即可；该提示仅表示发布者未经证书验证，不代表文件有问题。每个 Release 的资产均附有 SHA-256 校验值（GitHub `digest` 字段），应用内更新会自动校验。
+**安装包目前未做代码签名。** Windows 首次运行时若出现 SmartScreen 提示，点击“更多信息 → 仍要运行”即可；该提示仅表示发布者未经证书验证，不代表文件有问题。每个 Release 都附带 `checksums.txt`（SHA-256），应用内更新下载前会读取它并在安装前完整校验。
 
 ## 屏幕截图
 

@@ -1,0 +1,3 @@
+0b8cec731144e5a35b523a0dc8b513957a9c2afb4af08da97347de0e398803a0  liangciyuan-3.11.0-android-arm64.apk
+d8351fba1cd359d6cc8758b4dd6ad8fb4442c2698a9d2259ebda918238b80685  liangciyuan-3.11.0-windows-x64-setup.exe
+d8351fba1cd359d6cc8758b4dd6ad8fb4442c2698a9d2259ebda918238b80685  liangciyuan-3.11.0-windows-x64.zip

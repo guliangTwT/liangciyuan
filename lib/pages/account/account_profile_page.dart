@@ -50,12 +50,17 @@ class ProfileHeaderView extends StatelessWidget {
                 child: GestureDetector(
                   onTap: onAvatarTap,
                   child: Container(
-                    padding: const EdgeInsets.all(3),
+                    padding: EdgeInsets.all(title.isNotEmpty ? 4 : 3),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      gradient: LinearGradient(
-                        colors: [colors.primary, colors.tertiary],
-                      ),
+                      // 有称号的用户用金色头像环，个人主页第一眼就能看出来。
+                      gradient: title.isNotEmpty
+                          ? const LinearGradient(
+                              colors: [Color(0xFFFFD95C), Color(0xFFF0AE1B)],
+                            )
+                          : LinearGradient(
+                              colors: [colors.primary, colors.tertiary],
+                            ),
                     ),
                     child: Container(
                       padding: const EdgeInsets.all(2),
@@ -97,7 +102,7 @@ class ProfileHeaderView extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     if (title.isNotEmpty) ...[
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 8),
                       AuthorTitleBadge(title: title, compact: false),
                     ],
                     if (subtitle.isNotEmpty) ...[

@@ -44,12 +44,27 @@ class _AccountCommentCardState extends State<AccountCommentCard> {
     final theme = Theme.of(context);
     final comment = widget.comment;
     final hidden = comment.spoiler && !_spoilerRevealed;
+    // 有称号的用户（例如凉次元作者）整条卡片加金色描边与暖色底，
+    // 让「这是官方回复」在刷列表时一眼可见，而不只是靠一个小徽标。
+    final authored = comment.title.isNotEmpty;
+    final radius = BorderRadius.circular(widget.compact ? 16 : 24);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
-        color: colors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(widget.compact ? 16 : 24),
+        color: authored
+            ? Color.alphaBlend(
+                const Color(0x2EF0AE1B),
+                colors.surfaceContainerLow,
+              )
+            : colors.surfaceContainerLow,
+        borderRadius: radius,
         clipBehavior: Clip.antiAlias,
+        shape: authored
+            ? RoundedRectangleBorder(
+                borderRadius: radius,
+                side: const BorderSide(color: Color(0xFFC68C10), width: 1.5),
+              )
+            : null,
         child: Padding(
           padding: EdgeInsets.all(widget.compact ? 12 : 16),
           child: Column(
@@ -70,10 +85,27 @@ class _AccountCommentCardState extends State<AccountCommentCard> {
                       child: Padding(
                         // 补足 48dp 最小点击热区（compact 头像只有 32dp）。
                         padding: EdgeInsets.all(widget.compact ? 8 : 2),
-                        child: BangumiAvatar(
-                          radius: widget.compact ? 16 : 22,
-                          imageUrl: comment.avatarUrl,
-                        ),
+                        child: authored
+                            ? Container(
+                                padding: const EdgeInsets.all(2),
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      Color(0xFFFFD95C),
+                                      Color(0xFFF0AE1B),
+                                    ],
+                                  ),
+                                ),
+                                child: BangumiAvatar(
+                                  radius: widget.compact ? 16 : 22,
+                                  imageUrl: comment.avatarUrl,
+                                ),
+                              )
+                            : BangumiAvatar(
+                                radius: widget.compact ? 16 : 22,
+                                imageUrl: comment.avatarUrl,
+                              ),
                       ),
                     ),
                   ),
@@ -95,6 +127,9 @@ class _AccountCommentCardState extends State<AccountCommentCard> {
                               overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.titleSmall?.copyWith(
                                 fontWeight: FontWeight.w700,
+                                color: authored
+                                    ? const Color(0xFF6B4300)
+                                    : null,
                               ),
                             ),
                             if (comment.title.isNotEmpty)

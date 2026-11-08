@@ -275,6 +275,8 @@ function handle_register(Request $request): void
     }
 
     $token = create_token($userId);
+    // 白名单账号（例如作者本人）在注册时就带上称号。
+    grant_title_for_email($userId, $email);
     $stmt = $pdo->prepare('SELECT * FROM users WHERE id = ?');
     $stmt->execute([$userId]);
     $user = $stmt->fetch();
@@ -305,6 +307,11 @@ function handle_login(Request $request): void
     }
 
     $token = create_token((int) $user['id']);
+    // 每次登录都对齐一次白名单：改配置后老账号下次登录即生效。
+    grant_title_for_email((int) $user['id'], $email);
+    $stmt = db()->prepare('SELECT * FROM users WHERE id = ?');
+    $stmt->execute([(int) $user['id']]);
+    $user = $stmt->fetch();
     Response::ok([
         'token' => $token,
         'user' => public_profile($user),

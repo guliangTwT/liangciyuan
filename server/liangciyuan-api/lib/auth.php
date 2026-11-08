@@ -89,3 +89,29 @@ function revoke_current_token(Request $request): void
             ->execute([hash('sha256', $token)]);
     }
 }
+
+/// 按 config.local.php 的 granted_titles 表授予称号。
+///
+/// 称号只能由服务端给：客户端没有任何写入入口。白名单放在服务器配置里，
+/// 升级代码不会覆盖，也不需要手工改数据库。
+function grant_title_for_email(int $userId, string $email): void
+{
+    $config = app_config();
+    $titles = $config['granted_titles'] ?? [];
+    if (!is_array($titles)) {
+        return;
+    }
+    $wanted = (string) ($titles[normalize_email($email)] ?? '');
+    if ($wanted === '') {
+        return;
+    }
+    $pdo = db();
+    $stmt = $pdo->prepare('SELECT title FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $current = (string) ($stmt->fetch()['title'] ?? '');
+    if ($current === $wanted) {
+        return;
+    }
+    $pdo->prepare('UPDATE users SET title = ?, updated_at = ? WHERE id = ?')
+        ->execute([$wanted, now(), $userId]);
+}

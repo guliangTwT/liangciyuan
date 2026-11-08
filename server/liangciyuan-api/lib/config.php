@@ -29,6 +29,9 @@ function app_config(): array
         'max_sync_kinds' => 64,
         'max_sync_total_bytes' => 67108864,
         'max_avatar_bytes' => 2097152,
+        // 服务端授予的称号：键为邮箱（小写），值为称号。
+        // 注册与登录时按此表自动同步，避免手工改库；表里没有的账号称号为空。
+        'granted_titles' => [],
     ];
 
     $local = $base . '/config.local.php';

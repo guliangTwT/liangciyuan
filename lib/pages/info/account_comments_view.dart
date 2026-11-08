@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/dialog/comment_composer_sheet.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
+import 'package:kazumi/bean/widget/author_title_badge.dart';
 import 'package:kazumi/bean/widget/bangumi_avatar.dart';
 import 'package:kazumi/services/account/account_api.dart';
 import 'package:kazumi/services/account/account_service.dart';
@@ -335,9 +336,20 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
   Widget _commentCard(AccountComment comment, ColorScheme colors) {
     final revealed = _revealed.contains(comment.id);
     final hidden = comment.spoiler && !revealed;
+    // 有称号的用户（凉次元作者）整条卡片金色描边 + 暖色底，
+    // 与单集讨论、个人主页保持一致，一眼能认出官方发言。
+    final authored = comment.title.isNotEmpty;
     return Card.filled(
       margin: const EdgeInsets.only(bottom: 8),
-      color: colors.surfaceContainerLow,
+      color: authored
+          ? Color.alphaBlend(const Color(0x2EF0AE1B), colors.surfaceContainerLow)
+          : colors.surfaceContainerLow,
+      shape: authored
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: const BorderSide(color: Color(0xFFC68C10), width: 1.5),
+            )
+          : null,
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
@@ -352,7 +364,18 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
                       : () => context.pushNamed(
                           '/settings/profile/${comment.userId}',
                         ),
-                  child: BangumiAvatar(imageUrl: comment.avatarUrl),
+                  child: authored
+                      ? Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(
+                              colors: [Color(0xFFFFD95C), Color(0xFFF0AE1B)],
+                            ),
+                          ),
+                          child: BangumiAvatar(imageUrl: comment.avatarUrl),
+                        )
+                      : BangumiAvatar(imageUrl: comment.avatarUrl),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -368,10 +391,15 @@ class _AccountCommentsViewState extends State<AccountCommentsView> {
                             comment.nickname.isEmpty
                                 ? '凉次元用户'
                                 : comment.nickname,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.w600,
+                              color: authored
+                                  ? const Color(0xFF6B4300)
+                                  : null,
                             ),
                           ),
+                          if (comment.title.isNotEmpty)
+                            AuthorTitleBadge(title: comment.title),
                           if (comment.mine)
                             _chip('我的吐槽', colors.primary, colors.primaryContainer),
                           if (comment.spoiler)

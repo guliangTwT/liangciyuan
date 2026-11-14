@@ -14,8 +14,10 @@ import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:kazumi/bean/widget/split_list_row.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/modules/search/plugin_search_module.dart';
+import 'package:kazumi/navigation.dart';
 import 'package:kazumi/pages/collect/collect_controller.dart';
 import 'package:kazumi/pages/info/info_controller.dart';
+import 'package:kazumi/pages/plugin_editor/rule_help.dart';
 import 'package:kazumi/pages/video/video_playback_args.dart';
 import 'package:kazumi/plugins/anti_crawler_config.dart';
 import 'package:kazumi/plugins/plugins.dart';
@@ -174,6 +176,34 @@ class _SourceSheetState extends State<SourceSheet> with KazumiDialogOwner {
         },
       );
 
+  /// 关闭当前面板后打开另一个页面。
+  ///
+  /// 弹层是 root navigator 上的路由，直接 push 会叠在弹层上方；先 pop 再跳，
+  /// 返回时才能回到番剧详情而不是又弹回来。
+  void _closeAndRun(VoidCallback action) {
+    Navigator.of(context).pop();
+    WidgetsBinding.instance.addPostFrameCallback((_) => action());
+  }
+
+  void _openHelp() {
+    final rootContext = rootNavigatorKey.currentContext;
+    if (rootContext == null) return;
+    _closeAndRun(() {
+      RuleHelpSheet.show(
+        rootContext,
+        onOpenCatalog: () => rootContext.pushNamed('/settings/plugin/shop'),
+        onOpenManager: () => rootContext.pushNamed('/settings/plugin/'),
+        onOpenNetwork: () => rootContext.pushNamed('/settings/proxy/'),
+      );
+    });
+  }
+
+  void _openCatalog() {
+    final rootContext = rootNavigatorKey.currentContext;
+    if (rootContext == null) return;
+    _closeAndRun(() => rootContext.pushNamed('/settings/plugin/shop'));
+  }
+
   @override
   Widget build(BuildContext context) => Observer(
         builder: (context) {
@@ -213,6 +243,8 @@ class _SourceSheetState extends State<SourceSheet> with KazumiDialogOwner {
             onOpenBrowser: _openInBrowser,
             onPlay: _openSearchItem,
             onClose: () => Navigator.of(context).pop(),
+            onOpenHelp: _openHelp,
+            onOpenCatalog: _openCatalog,
           );
         },
       );

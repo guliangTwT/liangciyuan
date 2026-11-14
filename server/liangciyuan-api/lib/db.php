@@ -49,7 +49,7 @@ function db(): PDO
 /// 新增表或列时把 $target 加一即可。
 function init_schema(PDO $pdo): void
 {
-    $target = 2;
+    $target = 3;
     $current = (int) $pdo->query('PRAGMA user_version')->fetchColumn();
     if ($current >= $target) {
         return;
@@ -185,6 +185,30 @@ SQL);
     ensure_column($pdo, 'users', 'banned_until', 'INTEGER NOT NULL DEFAULT 0');
     // 封禁原因，展示给用户，也便于后台复查。
     ensure_column($pdo, 'users', 'ban_reason', "TEXT NOT NULL DEFAULT ''");
+
+    // 后台操作日志：管理站点 /user/ 会用到。放在这里是为了让「谁先访问」
+    // 都能把表补齐，两个入口共用同一个版本号。
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS admin_login_attempts (
+           ip TEXT PRIMARY KEY,
+           count INTEGER NOT NULL,
+           window_start INTEGER NOT NULL
+         )'
+    );
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS admin_audit_log (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           action TEXT NOT NULL,
+           target_user INTEGER NOT NULL DEFAULT 0,
+           detail TEXT NOT NULL DEFAULT "",
+           ip TEXT NOT NULL DEFAULT "",
+           created_at INTEGER NOT NULL
+         )'
+    );
+    $pdo->exec(
+        'CREATE INDEX IF NOT EXISTS idx_admin_audit_time
+         ON admin_audit_log(created_at)'
+    );
 
     // 迁移完成后再抬高版本号：万一中途有语句失败，下次请求会重跑一遍
     // （所有语句都是幂等的），不会留下半成品被当作已完成。

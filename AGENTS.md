@@ -24,6 +24,10 @@
    ```
    构建必须在**纯 ASCII 路径**下进行（`subst X: <项目路径>` 后 `cd /d X:\`），
    否则 MSBuild 读 `.dart_tool\flutter_build\*\app.dill` 会报 255。
+   - `tool\fix_ech_http_ca.py` 必须在 `flutter pub get` **之后**再跑一次：
+     pub 缓存被刷新（换版本、清缓存）会覆盖掉补丁，随后 Windows 构建
+     以 `error C2026: 字符串太大` 失败。脚本同时查 `pub.dev` 与
+     `pub.flutter-io.cn` 两个缓存目录，镜像环境下也能打上补丁。
    - Windows 安装包用 `assets/windows/installer.iss`：
      `ISCC.exe /DAppVersion=<版本号> /Q assets\windows\installer.iss`
    - 产物按契约命名后放进 `dist\`：

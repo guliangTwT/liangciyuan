@@ -62,11 +62,20 @@ def main() -> int:
         return 2
     # The package lives under the pinned Pub cache; locate it without guessing
     # at the user's environment variables.
-    pub_cache = Path.home() / "AppData" / "Local" / "Pub" / "Cache" / "hosted" / "pub.dev"
-    candidates = sorted(pub_cache.glob("ech_http-*")) if pub_cache.is_dir() else []
+    #
+    # 国内镜像（PUB_HOSTED_URL=https://pub.flutter-io.cn）会把包装到
+    # hosted/pub.flutter-io.cn 下，所以两个目录都要找——只看 pub.dev
+    # 会在镜像环境下静默跳过补丁，随后 build 仍以 C2026 失败。
+    cache_root = Path.home() / "AppData" / "Local" / "Pub" / "Cache" / "hosted"
+    candidates: list[Path] = []
+    for host in ("pub.dev", "pub.flutter-io.cn"):
+        host_dir = cache_root / host
+        if host_dir.is_dir():
+            candidates.extend(sorted(host_dir.glob("ech_http-*")))
     if not candidates:
-        print(f"ech_http package not found under {pub_cache}", file=sys.stderr)
+        print(f"ech_http package not found under {cache_root}", file=sys.stderr)
         return 1
+    # 版本目录名排序即可得到最新版本（0.2.10 > 0.2.9）。
     src = candidates[-1] / "src"
     cmake = src / "CMakeLists.txt"
     template = src / "ca_bundle.h.in"

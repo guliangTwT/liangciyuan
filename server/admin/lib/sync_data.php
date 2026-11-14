@@ -6,10 +6,11 @@ declare(strict_types=1);
  *
  * 客户端同步的数据分两类，格式完全不同：
  *
- * 1. 观看记录：`p_<base64(路径)>` 形式的 blob，内容是可读 JSON
- *    （history/snapshot.json），能解析出番剧名与进度。
- * 2. 收藏：`collectibles` / `collectchanges`，是 Hive 的二进制文件，
- *    PHP 无法解析出具体番剧——只能报告"是否同步过"和体积。
+ * 1. 观看记录：`p_<base64url(远端路径)>` 形式的 blob，内容是可读 JSON
+ *    （/kazumiSync/history/snapshot.json），能解析出番剧名与进度。
+ * 2. 收藏：同样是 `p_...`，但内容是 Hive 的二进制文件
+ *    （/kazumiSync/collectibles.tmp），PHP 无法解析出具体番剧——
+ *    只能报告「是否同步过」和体积。
  *
  * 这里如实区分这两种情况，不假装能读出收藏内容。
  */
@@ -152,16 +153,36 @@ function extract_cover(mixed $images): string
 }
 
 /// 收藏：只能报告同步状态，无法解析出条目（Hive 二进制）。
+///
+/// 账号云同步把每个文件存成 `p_<base64(远端路径)>`，收藏对应
+/// `/kazumiSync/collectibles.tmp` 与 `/kazumiSync/collectchanges.tmp`。
+/// 早期版本用的是裸 kind 名，这里两种都认，否则已同步的收藏会显示成「没同步」。
 function collectible_summary(int $userId): array
 {
-    $result = ['collectibles' => null, 'collectchanges' => null];
+    $result = [
+        'collectibles' => null,
+        'collectchanges' => null,
+        'danmakuShield' => null,
+        'files' => 0,
+    ];
     foreach (sync_blocks($userId) as $block) {
         $kind = (string) $block['kind'];
-        if ($kind === 'collectibles' || $kind === 'collectchanges') {
-            $result[$kind] = [
-                'size' => (int) $block['size'],
-                'updatedAt' => (int) $block['updated_at'],
-            ];
+        $path = sync_kind_to_path($kind);
+        // 只看文件名：目录层级（/kazumiSync/ 前缀）由客户端决定，不该硬编码。
+        $base = $path === null ? $kind : basename($path);
+        $entry = [
+            'size' => (int) $block['size'],
+            'updatedAt' => (int) $block['updated_at'],
+        ];
+        if ($base === 'collectibles.tmp' || $base === 'collectibles') {
+            $result['collectibles'] = $entry;
+        } elseif ($base === 'collectchanges.tmp' || $base === 'collectchanges') {
+            $result['collectchanges'] = $entry;
+        } elseif ($base === 'danmakuShield.tmp' || $base === 'danmakuShield') {
+            $result['danmakuShield'] = $entry;
+        } elseif (str_ends_with($base, '.jsonl') || str_ends_with($base, '.json')) {
+            // 历史快照/事件文件：数量用于「同步了哪些内容」的概览。
+            $result['files']++;
         }
     }
     return $result;

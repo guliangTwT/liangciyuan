@@ -59,6 +59,9 @@ touch_admin_session();
 
 switch ($action) {
     case '':
+    case 'dashboard':
+        render_dashboard();
+        break;
     case 'users':
         render_users();
         break;
@@ -66,13 +69,16 @@ switch ($action) {
         render_user_detail((int) ($_GET['id'] ?? 0));
         break;
     case 'history':
-        render_history((int) ($_GET['id'] ?? 0));
+        render_user_detail((int) ($_GET['id'] ?? 0));
         break;
     case 'comments':
         render_comments();
         break;
     case 'danmaku':
         render_danmaku();
+        break;
+    case 'audit':
+        render_audit();
         break;
     case 'ban':
         require_post();
@@ -81,6 +87,10 @@ switch ($action) {
     case 'unban':
         require_post();
         do_unban();
+        break;
+    case 'set-title':
+        require_post();
+        do_set_title();
         break;
     case 'delete-comment':
         require_post();

@@ -53,7 +53,15 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
   }
 
   @override
+  void initState() {
+    super.initState();
+    // 页面内部要用「跳到时间表」这类跨标签跳转，必须经过这里才能同步底部栏。
+    registerTabSwitchHandler(_selectDestination);
+  }
+
+  @override
   void dispose() {
+    registerTabSwitchHandler(null);
     rootRouteObserver.unsubscribe(this);
     super.dispose();
   }

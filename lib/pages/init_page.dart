@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/pages/my/my_controller.dart';
+import 'package:kazumi/pages/startup_loading_view.dart';
 import 'package:kazumi/services/sync/danmaku_shield_sync_service.dart';
 import 'package:kazumi/services/sync/webdav.dart';
 import 'package:kazumi/services/sync/webdav_auto_sync.dart';
@@ -51,6 +52,15 @@ class _InitPageState extends State<InitPage> {
   MyController get myController => widget.myController;
   DownloadController get downloadController => widget.downloadController;
 
+  /// 启动页上的阶段文案。初始化很快时用户只会看到很短的一瞬，
+  /// 所以只在耗时步骤前更新，不做逐帧刷新。
+  String _status = '正在读取本地数据…';
+
+  void _setStatus(String value) {
+    if (!mounted || _status == value) return;
+    setState(() => _status = value);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -63,6 +73,7 @@ class _InitPageState extends State<InitPage> {
     _loadShaders();
     unawaited(myController.loadShieldList());
     _webDavInit();
+    _setStatus('正在准备下载服务…');
     try {
       await downloadController.init();
       _setupBackgroundDownloadNavigation();
@@ -72,6 +83,7 @@ class _InitPageState extends State<InitPage> {
 
     await _checkRunningOnX11();
     await _showShortcutDialog();
+    _setStatus('正在加载番剧来源…');
     await _pluginInit();
 
     if (!mounted) {
@@ -85,6 +97,7 @@ class _InitPageState extends State<InitPage> {
       return;
     }
 
+    _setStatus('即将进入…');
     final updateController = myController;
     unawaited(
       runStartupUpdateCheck(
@@ -359,15 +372,6 @@ class _InitPageState extends State<InitPage> {
 
   @override
   Widget build(BuildContext context) {
-    return const LoadingWidget();
-  }
-}
-
-class LoadingWidget extends StatelessWidget {
-  const LoadingWidget({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(body: Container());
+    return StartupLoadingView(status: _status);
   }
 }

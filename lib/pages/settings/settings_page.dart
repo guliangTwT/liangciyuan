@@ -58,7 +58,7 @@ const List<_SettingsGroup> _settingsGroups = [
     categories: [
       _SettingsCategory(
         label: '规则管理',
-        description: '番剧资源规则',
+        description: '番剧来源与使用说明',
         icon: Icons.extension_rounded,
         path: '/settings/plugin',
       ),

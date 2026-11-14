@@ -25,6 +25,22 @@ mixin _$PopularController on _PopularController, Store {
     });
   }
 
+  late final _$currentChannelAtom =
+      Atom(name: '_PopularController.currentChannel', context: context);
+
+  @override
+  HomeChannel get currentChannel {
+    _$currentChannelAtom.reportRead();
+    return super.currentChannel;
+  }
+
+  @override
+  set currentChannel(HomeChannel value) {
+    _$currentChannelAtom.reportWrite(value, super.currentChannel, () {
+      super.currentChannel = value;
+    });
+  }
+
   late final _$bangumiListAtom =
       Atom(name: '_PopularController.bangumiList', context: context);
 
@@ -54,6 +70,38 @@ mixin _$PopularController on _PopularController, Store {
   set trendList(ObservableList<BangumiItem> value) {
     _$trendListAtom.reportWrite(value, super.trendList, () {
       super.trendList = value;
+    });
+  }
+
+  late final _$shelvesAtom =
+      Atom(name: '_PopularController.shelves', context: context);
+
+  @override
+  ObservableList<HomeShelf> get shelves {
+    _$shelvesAtom.reportRead();
+    return super.shelves;
+  }
+
+  @override
+  set shelves(ObservableList<HomeShelf> value) {
+    _$shelvesAtom.reportWrite(value, super.shelves, () {
+      super.shelves = value;
+    });
+  }
+
+  late final _$shelvesLoadedAtom =
+      Atom(name: '_PopularController.shelvesLoaded', context: context);
+
+  @override
+  bool get shelvesLoaded {
+    _$shelvesLoadedAtom.reportRead();
+    return super.shelvesLoaded;
+  }
+
+  @override
+  set shelvesLoaded(bool value) {
+    _$shelvesLoadedAtom.reportWrite(value, super.shelvesLoaded, () {
+      super.shelvesLoaded = value;
     });
   }
 
@@ -89,6 +137,15 @@ mixin _$PopularController on _PopularController, Store {
     });
   }
 
+  late final _$loadHomeShelvesAsyncAction =
+      AsyncAction('_PopularController.loadHomeShelves', context: context);
+
+  @override
+  Future<void> loadHomeShelves({bool force = false}) {
+    return _$loadHomeShelvesAsyncAction
+        .run(() => super.loadHomeShelves(force: force));
+  }
+
   late final _$queryBangumiByTrendAsyncAction =
       AsyncAction('_PopularController.queryBangumiByTrend', context: context);
 
@@ -111,8 +168,11 @@ mixin _$PopularController on _PopularController, Store {
   String toString() {
     return '''
 currentTag: ${currentTag},
+currentChannel: ${currentChannel},
 bangumiList: ${bangumiList},
 trendList: ${trendList},
+shelves: ${shelves},
+shelvesLoaded: ${shelvesLoaded},
 isLoadingMore: ${isLoadingMore},
 isTimeOut: ${isTimeOut}
     ''';

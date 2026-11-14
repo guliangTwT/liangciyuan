@@ -136,6 +136,8 @@ function admin_login(): void
     $_SESSION['admin_ok'] = true;
     $_SESSION['admin_last'] = admin_now();
     unset($_SESSION['csrf']);
+    // 登录也留痕：异常时间点的登录比单看业务操作更能说明问题。
+    admin_audit('login', '登录成功');
     admin_redirect('/user/');
 }
 

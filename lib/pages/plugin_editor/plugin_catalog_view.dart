@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
+import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/card/rule_card.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/settings/network_mirror_settings.dart';
@@ -12,6 +13,7 @@ import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/modules/plugin/plugin_http_module.dart';
 import 'package:kazumi/pages/plugin_editor/plugin_update_actions.dart';
+import 'package:kazumi/pages/plugin_editor/rule_help.dart';
 import 'package:kazumi/pages/plugin_editor/rule_management_widgets.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
 import 'package:kazumi/services/network/rules_mirror.dart';
@@ -115,6 +117,17 @@ class _PluginCatalogViewState extends State<PluginCatalogView> {
     }
   }
 
+  /// 打开使用说明。入口在仓库页和管理页都要有——用户遇到问题时
+  /// 通常正停在这两个页面之一。
+  void _openHelp() {
+    RuleHelpSheet.show(
+      context,
+      onOpenCatalog: () {},
+      onOpenManager: () => context.pushNamed('/settings/plugin/'),
+      onOpenNetwork: () => context.pushNamed('/settings/proxy/'),
+    );
+  }
+
   Future<void> _install(
       PluginHTTPItem item, PluginCatalogItemStatus status) async {
     if (!_installing.add(item.name)) return;
@@ -175,7 +188,9 @@ class _PluginCatalogViewState extends State<PluginCatalogView> {
           description: '浏览社区规则，为你的番剧搜索添加更多选择。',
           icon: Icons.travel_explore_rounded,
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
+        RuleCatalogHint(onHelp: _openHelp),
+        const SizedBox(height: 16),
         TextField(
           controller: _search,
           onChanged: (_) => setState(() {}),
@@ -238,9 +253,7 @@ class _PluginCatalogViewState extends State<PluginCatalogView> {
 
   Widget _emptyBody() {
     if (_loading) {
-      return const Padding(
-          padding: EdgeInsets.all(48),
-          child: Center(child: LoadingIndicator()));
+      return const RuleCatalogLoading();
     }
     if (_loadFailed && _controller.pluginHTTPList.isEmpty) {
       return GeneralErrorWidget(

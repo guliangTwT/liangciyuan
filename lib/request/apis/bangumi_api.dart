@@ -144,47 +144,51 @@ class BangumiApi {
     return bangumiCalendar;
   }
 
+  /// 按标签拉取番剧列表。
+  ///
+  /// 首页频道（日漫/国漫/剧场…）用它做分页浏览。以前这里用「随机 rank 区间」
+  /// 取一页，结果是：小标签（特摄、欧美）经常整页空、翻页还会重复。
+  /// 现在改成稳定的排序 + offset 分页，翻多少页都不会重。
   static Future<List<BangumiItem>> getBangumiList({
-    int rank = 2,
     String tag = '',
+    int limit = 24,
+    int offset = 0,
+    String sort = 'heat',
+    bool excludeNsfw = true,
   }) async {
-    List<BangumiItem> bangumiList = [];
-    late Map<String, dynamic> params;
-    if (tag == '') {
-      params = <String, dynamic>{
-        'keyword': '',
-        'sort': 'rank',
-        "filter": {
-          "type": [2],
-          "tag": ["日本"],
-          "rank": [">$rank", "<=1050"],
-          "nsfw": false,
-        },
-      };
-    } else {
-      params = <String, dynamic>{
-        'keyword': '',
-        'sort': 'rank',
-        "filter": {
-          "type": [2],
-          "tag": [tag],
-          "rank": [">$rank", "<=99999"],
-          "nsfw": false,
-        },
-      };
-    }
+    final List<BangumiItem> bangumiList = [];
+    final params = <String, dynamic>{
+      'keyword': '',
+      'sort': sort,
+      'filter': {
+        'type': [2],
+        if (tag.isNotEmpty) 'tag': [tag],
+        // rank 0 表示未排名，过滤掉它们就没有「0 分」条目混进来。
+        'rank': ['>0', '<=99999'],
+        'nsfw': !excludeNsfw,
+      },
+    };
     try {
       final jsonData = await _client.post(
         ApiEndpoints.formatUrl(
           ApiEndpoints.bangumiAPIDomain + ApiEndpoints.bangumiRankSearch,
-          [100, 0],
+          [limit, offset],
         ),
         data: params,
       );
       final jsonList = jsonData['data'];
-      for (dynamic jsonItem in jsonList) {
+      if (jsonList is! List) return bangumiList;
+      for (final jsonItem in jsonList) {
         if (jsonItem is Map<String, dynamic>) {
-          bangumiList.add(BangumiItem.fromJson(jsonItem));
+          try {
+            bangumiList.add(BangumiItem.fromJson(jsonItem));
+          } catch (e, stackTrace) {
+            KazumiLogger().w(
+              'BangumiApi: skipped malformed subject',
+              error: e,
+              stackTrace: stackTrace,
+            );
+          }
         }
       }
     } catch (e) {

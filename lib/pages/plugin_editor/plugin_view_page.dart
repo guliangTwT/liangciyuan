@@ -16,6 +16,7 @@ import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/pages/plugin_editor/plugin_update_actions.dart';
 import 'package:kazumi/pages/plugin_editor/rule_dialogs.dart';
+import 'package:kazumi/pages/plugin_editor/rule_help.dart';
 import 'package:kazumi/pages/plugin_editor/rule_management_widgets.dart';
 import 'package:kazumi/plugins/plugins.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
@@ -274,7 +275,18 @@ class _PluginViewPageState extends State<PluginViewPage> {
                                 label: const Text('规则仓库')),
                           ],
                         ),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 16),
+                        RuleManagerHint(
+                          count: all.length,
+                          onHelp: () => RuleHelpSheet.show(
+                            context,
+                            onOpenCatalog: () => context
+                                .pushNamed('/settings/plugin/shop'),
+                            onOpenManager: () {},
+                            onOpenNetwork: () =>
+                                context.pushNamed('/settings/proxy/'),
+                          ),
+                        ),
                         TextField(
                           controller: _search,
                           onChanged: (_) => setState(() {}),

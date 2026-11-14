@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ffi' show Abi;
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -65,6 +66,42 @@ class UpdateInfo {
   }
 }
 
+/// Android APK 的架构标记，用于在多个分架构包里挑出与本机匹配的那个。
+///
+/// 以前 `androidApk` 的匹配条件只有 `android` + `.apk`，三个架构包全满足，
+/// `firstWhere` 会拿到发布时排在最前面的那个——arm64 手机可能因此装上
+/// x86_64 的包，安装后被系统判为不兼容。
+///
+/// 用 `dart:ffi` 的 [Abi.current] 读当前进程架构：这是唯一可靠的来源，
+/// Android 上 `Platform.version` 之类都拿不到 ABI。
+/// 非 Android 平台（例如跑单测的桌面主机）返回空偏好，退回「第一个 APK」，
+/// 保持原有行为——那时这个函数只是被调用，并不会真的安装。
+List<String> _androidPreferredMarkers() {
+  final abi = Abi.current();
+  if (abi == Abi.androidArm64) return const ['arm64', 'aarch64'];
+  if (abi == Abi.androidArm) return const ['armv7', 'armeabi'];
+  if (abi == Abi.androidX64) return const ['x86_64', 'x64'];
+  if (abi == Abi.androidIA32) return const ['x86'];
+  return const [];
+}
+
+/// 该资产名是否属于「另一个架构」——用于把不匹配的包排到最后而不是直接丢弃。
+bool _isForeignAndroidAbi(String name) {
+  final preferred = _androidPreferredMarkers();
+  if (preferred.isEmpty) return false;
+  const groups = <List<String>>[
+    ['arm64', 'aarch64'],
+    ['armv7', 'armeabi'],
+    ['x86_64', 'x64'],
+  ];
+  for (final markers in groups) {
+    if (!markers.any(name.contains)) continue;
+    // 命中了一个架构标记：命中偏好算本机，否则算别的架构。
+    return !markers.any(preferred.contains);
+  }
+  return false;
+}
+
 Map<String, dynamic>? getUpdateAssetForType(
   List<dynamic> assets,
   InstallationType type,
@@ -72,11 +109,20 @@ Map<String, dynamic>? getUpdateAssetForType(
   final patterns = getUpdateFilePatterns(type).map((p) => p.toLowerCase());
 
   try {
-    final asset = assets.cast<Map<String, dynamic>>().firstWhere((asset) {
+    final matches = assets.cast<Map<String, dynamic>>().where((asset) {
       final name = (asset['name'] as String?)?.toLowerCase() ?? '';
       return patterns.every((pattern) => name.contains(pattern));
-    });
-    return asset;
+    }).toList();
+    if (matches.isEmpty) return null;
+    if (type != InstallationType.androidApk) return matches.first;
+
+    // Android：优先本机架构；实在没有匹配项时退回第一个 APK
+    // （旧版本只发布了一个 arm64 包，不能因此判定「没有安装包」）。
+    final own = matches.where((asset) {
+      final name = (asset['name'] as String?)?.toLowerCase() ?? '';
+      return !_isForeignAndroidAbi(name);
+    }).toList();
+    return own.isNotEmpty ? own.first : matches.first;
   } catch (_) {
     return null;
   }

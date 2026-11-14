@@ -12,6 +12,7 @@ Run after `flutter pub get` and before `flutter build windows`.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -52,6 +53,55 @@ endwhile()
 configure_file(ca_bundle.h.in "${CMAKE_CURRENT_BINARY_DIR}/ca_bundle.h" @ONLY)'''
 
 
+def resolve_package_dir(root: Path) -> Path | None:
+    """按项目实际解析到的版本定位 ech_http。
+
+    不能靠「缓存目录名字排序取最新」：换过镜像后 pub.dev 与
+    pub.flutter-io.cn 两个缓存目录里可能有不同版本，排序会把旧版本
+    当成目标去打补丁，而构建用的是另一个，白白失败一次。
+    `.dart_tool/package_config.json` 是 pub 实际解析结果，最可靠。
+    """
+    config_path = root / ".dart_tool" / "package_config.json"
+    if config_path.is_file():
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            config = {}
+        for pkg in config.get("packages", []) or []:
+            if pkg.get("name") != "ech_http":
+                continue
+            uri = str(pkg.get("rootUri") or "")
+            if uri.startswith("file:///"):
+                # Windows: file:///C:/... → C:/...
+                path = Path(uri[len("file:///"):].replace("/", "\\"))
+                if path.is_dir():
+                    return path
+            elif uri.startswith("file://"):
+                path = Path(uri[len("file://"):])
+                if path.is_dir():
+                    return path
+
+    # 退路：在缓存里找，取版本号最大的那个。
+    cache_root = Path.home() / "AppData" / "Local" / "Pub" / "Cache" / "hosted"
+    candidates: list[Path] = []
+    for host in ("pub.dev", "pub.flutter-io.cn"):
+        host_dir = cache_root / host
+        if host_dir.is_dir():
+            candidates.extend(host_dir.glob("ech_http-*"))
+    if not candidates:
+        return None
+
+    def version_key(path: Path) -> tuple:
+        tail = path.name.split("-", 1)[-1]
+        parts = []
+        for chunk in tail.split("."):
+            digits = "".join(ch for ch in chunk if ch.isdigit())
+            parts.append(int(digits) if digits else 0)
+        return tuple(parts)
+
+    return max(candidates, key=version_key)
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: fix_ech_http_ca.py <flutter-project-root>", file=sys.stderr)
@@ -60,23 +110,12 @@ def main() -> int:
     if not root.is_dir():
         print(f"Project root not found: {root}", file=sys.stderr)
         return 2
-    # The package lives under the pinned Pub cache; locate it without guessing
-    # at the user's environment variables.
-    #
-    # 国内镜像（PUB_HOSTED_URL=https://pub.flutter-io.cn）会把包装到
-    # hosted/pub.flutter-io.cn 下，所以两个目录都要找——只看 pub.dev
-    # 会在镜像环境下静默跳过补丁，随后 build 仍以 C2026 失败。
-    cache_root = Path.home() / "AppData" / "Local" / "Pub" / "Cache" / "hosted"
-    candidates: list[Path] = []
-    for host in ("pub.dev", "pub.flutter-io.cn"):
-        host_dir = cache_root / host
-        if host_dir.is_dir():
-            candidates.extend(sorted(host_dir.glob("ech_http-*")))
-    if not candidates:
-        print(f"ech_http package not found under {cache_root}", file=sys.stderr)
+
+    package = resolve_package_dir(root)
+    if package is None:
+        print("ech_http package not found; run `flutter pub get` first.", file=sys.stderr)
         return 1
-    # 版本目录名排序即可得到最新版本（0.2.10 > 0.2.9）。
-    src = candidates[-1] / "src"
+    src = package / "src"
     cmake = src / "CMakeLists.txt"
     template = src / "ca_bundle.h.in"
     if not cmake.is_file() or not template.is_file():

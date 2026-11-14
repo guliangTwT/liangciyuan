@@ -7,7 +7,7 @@
 // 私有仓库需要 token 时可设置 CODEBERG_TOKEN（公开仓库不需要）。
 //
 // 检查项：
-//   1. /releases/latest 返回 200，tag 是纯数字版本；
+//   1. /releases/latest 返回 200，tag 去掉可选的 `v` 前缀后是纯数字版本；
 //   2. 资产里同时有 APK、Windows 安装包和 checksums.txt；
 //   3. checksums.txt 覆盖每个安装包，哈希为 64 位十六进制；
 //   4. 每个安装包都支持 Accept-Ranges: bytes，Range 请求返回 206；
@@ -39,10 +39,14 @@ Future<void> main(List<String> args) async {
   try {
     final release = await _getJson(client, api);
     final tag = '${release['tag_name'] ?? ''}';
-    if (!RegExp(r'^\d+(\.\d+)*$').hasMatch(tag)) {
+    // 发布 tag 习惯带 `v` 前缀（v1.0.10），应用侧用 normalizeVersionTag()
+    // 去掉它再比较。这里必须做同样的归一化，否则每次带 v 的发布都会被
+    // 误判成「不是纯数字版本」——这是验收脚本的缺陷，不是发布的问题。
+    final normalized = tag.startsWith('v') ? tag.substring(1) : tag;
+    if (!RegExp(r'^\d+(\.\d+)*$').hasMatch(normalized)) {
       _fail('tag_name 不是纯数字版本：$tag');
     } else {
-      _ok('latest = $tag');
+      _ok('latest = $normalized');
     }
 
     final assets = (release['assets'] as List<dynamic>?) ?? const [];
@@ -156,7 +160,13 @@ Future<({bool supportsRange, int totalLength})> _probeRange(
   request.headers.set(HttpHeaders.rangeHeader, 'bytes=0-1023');
   final response = await request.close();
   final acceptRanges = response.headers.value('accept-ranges') ?? '';
-  final total = response.headers.contentLength;
+  // 206 的 contentLength 是「本次分块」的长度（这里是 1024），不是文件总长。
+  // 文件总长只在 content-range 的 `/` 后面，例如 `bytes 0-1023/32917843`。
+  // 之前直接读 contentLength，所以每次验收都打印 0.00 MB。
+  final contentRange = response.headers.value('content-range') ?? '';
+  final totalMatch = RegExp(r'/(\d+)\s*$').firstMatch(contentRange);
+  final total =
+      totalMatch == null ? 0 : int.tryParse(totalMatch.group(1)!) ?? 0;
   final ok = response.statusCode == HttpStatus.partialContent;
   await response.drain<void>();
   return (

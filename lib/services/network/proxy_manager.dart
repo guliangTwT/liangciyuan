@@ -21,6 +21,9 @@ class ProxyManager {
   static void _resetClients() {
     DioFactory.reset();
     EchTransport.reset();
+    // 图片客户端现在是长驻连接池，不像以前「用完即关」；换代理必须显式
+    // 丢弃，否则图片还会从旧代理出去。
+    ProxyAwareImageCacheManager.instance.resetConnections();
     CachedNetworkImageProvider.defaultCacheManager =
         ProxyAwareImageCacheManager.instance;
   }

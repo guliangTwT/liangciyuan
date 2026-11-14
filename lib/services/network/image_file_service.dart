@@ -11,16 +11,56 @@ import 'package:kazumi/services/network/image_acceleration.dart';
 import 'package:kazumi/services/network/image_file_response.dart';
 import 'package:kazumi/utils/constants.dart' show bangumiHTTPHeader;
 
+/// 决定一个 [http.Client] 能否共用的配置组合。
+///
+/// 只有代理与证书策略相同的请求才能共享连接池；换了代理就必须换客户端，
+/// 否则请求还是从旧代理出去。
+typedef _ClientKey = (String?, int?, bool);
+
 class ImageFileService extends FileService {
-  final _clients = <http.Client>{};
+  /// 按配置组合缓存的 HTTP 客户端。
+  ///
+  /// 这里原来是**每个图片请求**新建 `IOClient(createHttpClient())`，
+  /// 响应体一读完就 `close()`。那等于每张封面都要重新做一次 TCP 与 TLS
+  /// 握手：首页一屏几十张图，时间几乎全花在握手上；滚动时新图片也只能
+  /// 等前面的连接慢慢建起来，看起来就是「图一张张挤出来」。
+  ///
+  /// 缓存客户端后，同一个 host 的连接和 TLS session 都可以复用。
+  final _clients = <_ClientKey, http.Client>{};
   bool _closed = false;
 
   void close() {
     _closed = true;
-    for (final client in _clients) {
+    _dropClients();
+  }
+
+  /// 代理或证书策略变化后丢弃池里的连接。
+  ///
+  /// 客户端现在是长驻的，不像以前「用完即关」，所以换代理时必须显式
+  /// 清掉，否则图片还会从旧代理出去。
+  void reset() {
+    if (_closed) return;
+    _dropClients();
+  }
+
+  void _dropClients() {
+    for (final client in _clients.values) {
       client.close();
     }
     _clients.clear();
+  }
+
+  http.Client _clientFor(NetworkConfig config) {
+    final key = (
+      config.proxyHost,
+      config.proxyPort,
+      config.allowBadCertificates,
+    );
+    return _clients.putIfAbsent(key, () {
+      // 图片单独限流：一屏几十张封面全发出去会被 CDN 当异常流量，
+      // TCP 慢启动也全挤在一起。8 路并行的总吞吐比不限制更高。
+      return IOClient(config.createHttpClient(maxConnectionsPerHost: 8));
+    });
   }
 
   @override
@@ -49,10 +89,10 @@ class ImageFileService extends FileService {
       release = lease.release;
       request.headers['user-agent'] = bangumiHTTPHeader['user-agent']!;
     } else {
-      final client = IOClient(NetworkConfig.fromSettings().createHttpClient());
-      _clients.add(client);
+      final client = _clientFor(NetworkConfig.fromSettings());
       send = client.send;
-      release = () => _release(client);
+      // 连接留在池里给后面的图片复用，响应结束不做任何收尾。
+      release = _keepClientAlive;
     }
     if (headers != null) request.headers.addAll(headers);
 
@@ -76,7 +116,5 @@ class ImageFileService extends FileService {
     );
   }
 
-  void _release(http.Client client) {
-    if (_clients.remove(client)) client.close();
-  }
+  static void _keepClientAlive() {}
 }

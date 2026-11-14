@@ -9,6 +9,7 @@ import 'package:kazumi/navigation.dart';
 import 'package:kazumi/pages/popular/popular_controller.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/platform/desktop_window_config.dart';
+import 'package:kazumi/utils/bangumi_image_size.dart';
 import 'package:kazumi/utils/device.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:window_manager/window_manager.dart';
@@ -695,7 +696,6 @@ class _BannerImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final src = item.images['large'] ?? item.images['common'] ?? '';
     // 必须给出有限的宽高：NetworkImgLayer 会按尺寸计算解码缓存，
     // 传 infinity 会在 cacheSize() 里抛 "Infinity or NaN toInt"。
     final image = LayoutBuilder(
@@ -706,6 +706,13 @@ class _BannerImage extends StatelessWidget {
         final height = constraints.hasBoundedHeight && constraints.maxHeight > 0
             ? constraints.maxHeight
             : 1.0;
+        // 轮播图铺满宽度，但手机竖屏时内容宽也就 390 左右，
+        // 这时 common 档已经够清晰，不必拉原图。
+        final src = BangumiImageSize.pick(
+          item.images,
+          logicalWidth: width,
+          devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+        );
         // 和列表卡片共用同一层磁盘缓存，来回切频道不会重新下载大图。
         return NetworkImgLayer(
           src: src,

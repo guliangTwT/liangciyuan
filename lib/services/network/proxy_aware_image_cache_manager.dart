@@ -10,6 +10,9 @@ class ProxyAwareImageCacheManager extends CacheManager with ImageCacheManager {
 
   final ImageFileService _fileService;
 
+  /// 代理变化后丢弃已缓存的连接。
+  void resetConnections() => _fileService.reset();
+
   @override
   Future<void> dispose() async {
     _fileService.close();

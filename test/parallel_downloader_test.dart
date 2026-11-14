@@ -174,6 +174,146 @@ void main() {
     expect(await File(savePath).readAsBytes(), equals(payload));
     expect(stopwatch.elapsed, lessThan(const Duration(seconds: 10)));
   });
+
+  /// 起一个记录 Range 请求次数的本地服务，返回 (服务, 命中区间列表)。
+  Future<(HttpServer, List<(int, int)>)> rangedServer(
+    List<int> data, {
+    String path = '/f.bin',
+  }) async {
+    final ranges = <(int, int)>[];
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    server.listen((request) async {
+      final range = request.headers.value(HttpHeaders.rangeHeader);
+      if (range == null) {
+        request.response.statusCode = 200;
+        request.response.contentLength = data.length;
+        request.response.add(data);
+      } else {
+        final match = RegExp(r'bytes=(\d+)-(\d*)').firstMatch(range)!;
+        final start = int.parse(match.group(1)!);
+        final end = match.group(2)!.isEmpty
+            ? data.length - 1
+            : int.parse(match.group(2)!);
+        ranges.add((start, end));
+        request.response.statusCode = 206;
+        request.response.headers.set(
+          HttpHeaders.contentRangeHeader,
+          'bytes $start-$end/${data.length}',
+        );
+        request.response.contentLength = end - start + 1;
+        request.response.add(data.sublist(start, end + 1));
+      }
+      await request.response.close();
+    });
+    return (server, ranges);
+  }
+
+  test('大文件开满并发分块数', () async {
+    // 32MB 的包，按 chunks=8 且每块至少 512KB，应该正好 8 块。
+    final rng = math.Random(11);
+    final data = List<int>.generate(32 * 1024 * 1024, (_) => rng.nextInt(256));
+    final (server, ranges) = await rangedServer(data);
+
+    await ParallelDownloader(chunks: 8).download(
+      urls: ['http://127.0.0.1:${server.port}/f.bin'],
+      savePath: '${tempDir.path}/big.bin',
+      cancelToken: CancelToken(),
+      onProgress: (received, total) {},
+    );
+
+    // 探测请求是 bytes=0-0，其余每个区间应该各出现一次。
+    final body = ranges.where((r) => !(r.$1 == 0 && r.$2 == 0)).toList();
+    expect(body.length, 8, reason: '大文件应开满 chunks 路并行');
+    expect(await File('${tempDir.path}/big.bin').length(), data.length);
+  });
+
+  test('并发数被硬压上限，防止镜像用 429 拒绝', () async {
+    // 实测 16 路会让 ghfast 这类镜像直接返回 429，整次下载失败。
+    // 即便调用方要 32 路，也必须压回上限。
+    final rng = math.Random(19);
+    final data = List<int>.generate(32 * 1024 * 1024, (_) => rng.nextInt(256));
+    final (server, ranges) = await rangedServer(data);
+
+    await ParallelDownloader(chunks: 32).download(
+      urls: ['http://127.0.0.1:${server.port}/f.bin'],
+      savePath: '${tempDir.path}/capped.bin',
+      cancelToken: CancelToken(),
+      onProgress: (received, total) {},
+    );
+
+    final body = ranges.where((r) => !(r.$1 == 0 && r.$2 == 0)).toList();
+    expect(
+      body.length,
+      lessThanOrEqualTo(8),
+      reason: '并发超过 8 会触发镜像限流',
+    );
+    expect(await File('${tempDir.path}/capped.bin').length(), data.length);
+  });
+
+  test('小文件按块大小下限减少分块数，不硬拆成满并发', () async {
+    // 4MB / 512KB = 8 块。如果文件更小，块数还要继续降。
+    final rng = math.Random(13);
+    final data = List<int>.generate(4 * 1024 * 1024, (_) => rng.nextInt(256));
+    final (server, ranges) = await rangedServer(data);
+
+    await ParallelDownloader(chunks: 8).download(
+      urls: ['http://127.0.0.1:${server.port}/f.bin'],
+      savePath: '${tempDir.path}/small.bin',
+      cancelToken: CancelToken(),
+      onProgress: (received, total) {},
+    );
+
+    final body = ranges.where((r) => !(r.$1 == 0 && r.$2 == 0)).toList();
+    expect(body.length, 8, reason: '4MB 文件正好 8 块');
+    expect(await File('${tempDir.path}/small.bin').length(), data.length);
+  });
+
+  test('2MB 文件自动降到 4 块', () async {
+    final rng = math.Random(23);
+    final data = List<int>.generate(2 * 1024 * 1024, (_) => rng.nextInt(256));
+    final (server, ranges) = await rangedServer(data);
+
+    await ParallelDownloader(chunks: 8).download(
+      urls: ['http://127.0.0.1:${server.port}/f.bin'],
+      savePath: '${tempDir.path}/tiny.bin',
+      cancelToken: CancelToken(),
+      onProgress: (received, total) {},
+    );
+
+    final body = ranges.where((r) => !(r.$1 == 0 && r.$2 == 0)).toList();
+    expect(body.length, 4, reason: '2MB / 512KB = 4 块');
+    expect(await File('${tempDir.path}/tiny.bin').length(), data.length);
+  });
+
+  test('进度回调被节流，不会每来一块数据就回调一次', () async {
+    final rng = math.Random(17);
+    final data = List<int>.generate(8 * 1024 * 1024, (_) => rng.nextInt(256));
+    final (server, _) = await rangedServer(data);
+
+    var callbacks = 0;
+    var lastProgress = -1;
+    await ParallelDownloader(chunks: 8).download(
+      urls: ['http://127.0.0.1:${server.port}/f.bin'],
+      savePath: '${tempDir.path}/throttled.bin',
+      cancelToken: CancelToken(),
+      onProgress: (received, total) {
+        callbacks++;
+        expect(received, greaterThanOrEqualTo(lastProgress),
+            reason: '进度必须单调递增');
+        lastProgress = received;
+      },
+    );
+
+    // 8MB 会被切成很多次 socket 读；没有节流时回调数是几百次量级。
+    expect(
+      callbacks,
+      lessThan(200),
+      reason: '回调过多会让下载界面不停重建',
+    );
+    expect(callbacks, greaterThan(0));
+    expect(lastProgress, data.length, reason: '最终进度必须到 100%');
+  });
 }
 class _TestPaths extends PathProviderPlatform {
   _TestPaths(this.path);

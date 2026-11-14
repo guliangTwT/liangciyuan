@@ -161,6 +161,12 @@ class DownloadManager implements IDownloadManager {
         GStorage.getSetting(SettingsKeys.downloadParallelSegments);
   }
 
+  /// 每个任务开始时重新读一次并发设置。
+  ///
+  /// 以前只在构造时读：用户在设置里把「分片并发数」从 3 调到 10，
+  /// 已运行的实例还是按 3 跑，要重启应用才生效——设置看起来是坏的。
+  void _reloadParallelSettings() => _loadSettings();
+
   /// Returns available bytes, or -1 if unable to determine
   Future<int> _getAvailableStorage(String path) async {
     try {
@@ -402,6 +408,8 @@ class DownloadManager implements IDownloadManager {
     required DownloadEpisode episode,
   }) async {
     final key = _taskKey(task.recordKey, task.episodeNumber);
+    // 每次开新任务都重读并发设置，改完设置不必重启应用。
+    _reloadParallelSettings();
     try {
       final episodeDir = await _prepareEpisodeDir(
           episode, bangumiId, pluginName, task.episodeNumber);
@@ -677,6 +685,9 @@ class DownloadManager implements IDownloadManager {
     required DownloadEpisode episode,
   }) async {
     final key = _taskKey(task.recordKey, task.episodeNumber);
+    // 直链下载同样受益于最新的并发设置（分片数在 _runDirectFileDownload
+    // 之外用不到，但保持一致，避免以后有人以为这里是固定值）。
+    _reloadParallelSettings();
     try {
       final episodeDir = await _prepareEpisodeDir(
           episode, bangumiId, pluginName, task.episodeNumber);

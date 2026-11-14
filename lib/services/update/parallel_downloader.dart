@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
 import 'package:kazumi/request/clients/download_http_client.dart';
+import 'package:kazumi/request/core/network_exception.dart';
 import 'package:kazumi/services/logging/logger.dart';
 
 /// 分块并行下载器：把一个支持 Range 的大文件拆成 [chunks] 份并发下载。
@@ -20,11 +21,22 @@ import 'package:kazumi/services/logging/logger.dart';
 class ParallelDownloader {
   ParallelDownloader({this.chunks = 8});
 
-  /// 并发分块数。镜像普遍限制单连接 ~100-300KB/s，8 路可到 1.5MB/s+。
+  /// 并发分块数。
+  ///
+  /// 镜像是按**单连接**限速的，多开连接能提高总吞吐。但这个数不能一味加大：
+  /// 实测对 ghfast 这类镜像用 16 路会立刻收到 429（Too Many Requests），
+  /// 分块全部失败重试，最后整次更新下载失败——比慢更糟。
+  /// 8 路是「明显快于单连接」与「不触发镜像限流」之间的平衡点。
   final int chunks;
 
+  /// 低于这个大小不值得分块：拆成多份后每块太小，每块都要付一次
+  /// 完整的请求往返，反而比单连接慢。
   static const _minChunkBytes = 512 * 1024;
   static const _maxRetriesPerChunk = 3;
+
+  /// 分块并发上限。即便调用方传了更大的值也压回这个数——
+  /// 429 是镜像的硬限流，撞上去就是整次下载失败。
+  static const _maxConcurrentChunks = 8;
 
   /// 所有候选都无响应时的最长等待；正常情况第一个成功响应就返回。
   static const _probeBudget = Duration(seconds: 4);
@@ -65,9 +77,16 @@ class ParallelDownloader {
       return;
     }
 
-    final partSize = (total / chunks).ceil();
+    // 每块至少 _minChunkBytes，否则请求往返的开销超过并行带来的收益。
+    // 30 MB 的安装包够开满 chunks 路；几 MB 的文件自动减到合适的块数。
+    // 同时硬压 _maxConcurrentChunks：并发过高会被镜像以 429 拒绝。
+    final chunkCount = math.min(
+      math.min(chunks, _maxConcurrentChunks),
+      total ~/ _minChunkBytes,
+    );
+    final partSize = (total / chunkCount).ceil();
     final ranges = <(int, int)>[
-      for (var i = 0; i < chunks; i++)
+      for (var i = 0; i < chunkCount; i++)
         (i * partSize, math.min((i + 1) * partSize - 1, total - 1)),
     ];
     // 末尾可能出现空块（partSize 向上取整时）。
@@ -276,16 +295,33 @@ class ParallelDownloader {
             'ParallelDownload: $url range $range attempt $attempt failed',
             error: e,
           );
-          // 已经换过源仍失败时不再叠加等待，直接下一个源。
           if (attempt < _maxRetriesPerChunk) {
-            await Future<void>.delayed(
-              Duration(milliseconds: 300 * attempt),
-            );
+            // 429 表示镜像在限流：必须等得更久，且退避要明显。
+            // 之前固定 300ms 递增，撞上限流后很快就把重试次数耗光，
+            // 整次更新下载随之失败。
+            final rateLimited = _isRateLimited(e);
+            final backoffMs = rateLimited
+                ? 1200 * attempt
+                : 300 * attempt;
+            await Future<void>.delayed(Duration(milliseconds: backoffMs));
           }
         }
       }
     }
     throw lastError ?? Exception('分块 ${range.$1}-${range.$2} 下载失败（$expected 字节）');
+  }
+
+  /// 是否为 429（Too Many Requests）/ 503（服务暂时不可用）。
+  ///
+  /// 这两类都是「现在太挤了，等会儿再来」，重试有意义；而 404、403 之类
+  /// 重试多少次都一样，只会拖长失败时间。
+  static bool _isRateLimited(Object error) {
+    final status = switch (error) {
+      NetworkException() => error.statusCode,
+      DioException() => error.response?.statusCode,
+      _ => null,
+    };
+    return status == 429 || status == 503;
   }
 
   Future<void> _downloadRangeOnce({
@@ -402,6 +438,16 @@ class _ChunkProgress {
   final List<int> _current = [];
   final List<int> _maxSeen = [];
 
+  /// 上次回调的时间与字节数。
+  ///
+  /// 16 路并发下每个网络块都会进一次 [update]，一秒钟几百次回调，
+  /// 每次都让下载对话框重建一次——下载途中界面发涩、进度数字乱跳。
+  /// 这里按「时间或进度有实质变化」节流，用户看到的是平滑的百分比。
+  DateTime _lastEmit = DateTime.fromMillisecondsSinceEpoch(0);
+  int _lastEmittedBytes = -1;
+
+  static const _minEmitInterval = Duration(milliseconds: 100);
+
   /// 进度只用「每块历史最大字节数」汇总：重试整块重来时该块当前计数
   /// 归零，但历史最大值保留，进度条因此单调递增不会倒退；
   /// 只有每块都至少完整下过一次，汇总才会到达 total。
@@ -419,8 +465,18 @@ class _ChunkProgress {
       _maxSeen[chunkIndex] = _current[chunkIndex];
     }
     final sum = _maxSeen.fold(0, (a, b) => a + b).clamp(0, total);
-    if (!_cancelToken.isCancelled) {
-      onProgress(sum, total);
+    if (_cancelToken.isCancelled) return;
+    if (sum == _lastEmittedBytes) return;
+
+    final now = DateTime.now();
+    // 收尾时（sum == total）必须立刻回报，否则进度条会停在 99%。
+    final finished = sum >= total;
+    if (!finished &&
+        now.difference(_lastEmit) < _minEmitInterval) {
+      return;
     }
+    _lastEmit = now;
+    _lastEmittedBytes = sum;
+    onProgress(sum, total);
   }
 }

@@ -38,8 +38,17 @@ class NetworkConfig {
     return null;
   }
 
-  HttpClient createHttpClient() {
-    final client = HttpClient();
+  HttpClient createHttpClient({int? maxConnectionsPerHost}) {
+    final client = HttpClient()
+      // 默认 15 秒就回收空闲连接。图片列表滚动、连续翻页时，连接刚建好
+      // 就被丢掉，下一屏又要重做 TCP + TLS 握手。延长到 30 秒让连接真正
+      // 复用起来。
+      ..idleTimeout = const Duration(seconds: 30)
+      // dart:io 默认不设连接超时：对端不响应时会一直挂着。显式给 10 秒。
+      ..connectionTimeout = const Duration(seconds: 10);
+    if (maxConnectionsPerHost != null) {
+      client.maxConnectionsPerHost = maxConnectionsPerHost;
+    }
     if (hasProxy) {
       client.findProxy = (_) => 'PROXY $proxyHost:$proxyPort';
     } else if (Platform.isWindows) {

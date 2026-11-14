@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' show Abi;
 import 'dart:io';
@@ -245,25 +246,46 @@ class AutoUpdater {
   /// GitHub 为主源，Codeberg 为后备。
   ///
   /// 两家接口同形（`tag_name` / `body` / `html_url` / `assets[]`），
-  /// 所以同一套解析逻辑通用。GitHub 拿不到（被墙、限流、仓库不可见）时
-  /// 才去问 Codeberg，用户不会因为主源故障就检查不了更新。
+  /// 所以同一套解析逻辑通用。
+  ///
+  /// 两个源**并发**发起，谁先成功用谁。原来是串行的：GitHub 连不上时要
+  /// 先等满 8 秒超时，才去问 Codeberg，用户点「检查更新」后要干等十几秒
+  /// 才看到结果——看起来像卡住了。并发之后，正常情况下第一个响应就返回，
+  /// 最坏情况也只等于单源超时。
   Future<Map<String, dynamic>> _latestRelease() async {
     final sources = [
       ApiEndpoints.latestApp,
       ApiEndpoints.latestAppFallback,
     ];
-    Object? lastError;
+    final errors = <Object>[];
+    final completer = Completer<Map<String, dynamic>>();
+    var pending = sources.length;
+
     for (final base in sources) {
-      try {
-        final release = await _fetchRelease(base);
-        await _attachChecksums(release);
-        return release;
-      } catch (e) {
-        lastError = e;
-        KazumiLogger().w('Update: release query failed for $base', error: e);
-      }
+      unawaited(() async {
+        try {
+          final release = await _fetchRelease(base);
+          await _attachChecksums(release);
+          if (!completer.isCompleted) completer.complete(release);
+        } catch (e) {
+          errors.add(e);
+          KazumiLogger().w(
+            'Update: release query failed for $base',
+            error: e,
+          );
+        } finally {
+          pending--;
+          // 全部失败才报错，避免先失败的源把还在跑的源一起带下水。
+          if (pending <= 0 && !completer.isCompleted) {
+            completer.completeError(
+              errors.isNotEmpty ? errors.first : Exception('Update check failed'),
+            );
+          }
+        }
+      }());
     }
-    throw lastError ?? Exception('Update check failed');
+
+    return completer.future;
   }
 
   /// 加时间戳跳过中间缓存，发版后立刻生效。

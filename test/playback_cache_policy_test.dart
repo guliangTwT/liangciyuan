@@ -65,6 +65,45 @@ void main() {
     });
   });
 
+  group('拖动进度条的响应速度', () {
+    test('cache-pause-wait 不大于 mpv 默认的 1 秒', () {
+      final p = policy();
+      expect(
+        p.cachePauseWaitSecs,
+        lessThanOrEqualTo(1.0),
+        reason: '大于默认值会让每次 seek 后恢复更慢',
+      );
+    });
+
+    test('cache-pause-wait 不为 0，保留防抖余量', () {
+      final p = policy();
+      expect(
+        p.cachePauseWaitSecs,
+        greaterThan(0.0),
+        reason: '0 会让缓存刚见底就恢复，紧接着又卡，来回抖',
+      );
+    });
+
+    test('低内存模式下等待更久（网络慢，需要更多余量）', () {
+      expect(
+        policy(lowMemory: true).cachePauseWaitSecs,
+        greaterThanOrEqualTo(policy().cachePauseWaitSecs),
+      );
+    });
+
+    test('stream-buffer-size 放宽，抵消 MP4 的来回小 seek', () {
+      final p = policy();
+      // mpv 默认 128KB；放宽后才值得显式设置。
+      expect(p.streamBufferBytes, greaterThan(128 * 1024));
+      // 但也不该无节制，避免多占内存。
+      expect(p.streamBufferBytes, lessThanOrEqualTo(4 * 1024 * 1024));
+    });
+
+    test('低内存模式不额外放大 stream buffer', () {
+      expect(policy(lowMemory: true).streamBufferBytes, 0);
+    });
+  });
+
   group('低内存模式', () {
     test('低内存下预读与回看都更小，且仍满足回看更小', () {
       final p = policy(lowMemory: true);

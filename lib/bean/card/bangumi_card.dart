@@ -3,6 +3,7 @@ import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
+import 'package:kazumi/utils/bangumi_image_size.dart';
 
 // 视频卡片 - 垂直布局
 class BangumiCardV extends StatelessWidget {
@@ -42,6 +43,12 @@ class BangumiCardV extends StatelessWidget {
                 child: LayoutBuilder(builder: (context, boxConstraints) {
                   final double maxWidth = boxConstraints.maxWidth;
                   final double maxHeight = boxConstraints.maxHeight;
+                  // 卡片只有一百多像素宽，没必要下 1000px 的原图。
+                  final src = BangumiImageSize.pick(
+                    bangumiItem.images,
+                    logicalWidth: maxWidth,
+                    devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+                  );
                   return enableHero
                       ? Hero(
                           transitionOnUserGestures: true,
@@ -49,13 +56,13 @@ class BangumiCardV extends StatelessWidget {
                               NetworkImgLayer.heroFlightShuttleBuilder,
                           tag: bangumiItem.id,
                           child: NetworkImgLayer(
-                            src: bangumiItem.images['large'] ?? '',
+                            src: src,
                             width: maxWidth,
                             height: maxHeight,
                           ),
                         )
                       : NetworkImgLayer(
-                          src: bangumiItem.images['large'] ?? '',
+                          src: src,
                           width: maxWidth,
                           height: maxHeight,
                         );

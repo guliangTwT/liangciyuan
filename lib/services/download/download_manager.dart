@@ -265,7 +265,26 @@ class DownloadManager implements IDownloadManager {
   @override
   Future<void> enqueue(DownloadRequest request) async {
     final key = _taskKey(request.recordKey, request.episodeNumber);
-    if (_activeTasks.containsKey(key)) return;
+    final existing = _activeTasks[key];
+    if (existing != null) {
+      // 已暂停/已取消的旧任务不能挡住新请求。
+      //
+      // `pause()` 只置 isPaused 并 cancel token，**不把任务从 _activeTasks
+      // 移除**（要等 worker 走到 finally 才释放）。而 dio 的取消是异步生效的，
+      // 于是存在这样一个窗口：用户点暂停后立刻点「重试」，UI 调到这里时
+      // 旧任务还在表里，直接被 return 掉——什么都没发生。随后旧 worker 退场
+      // 又把状态写回 paused，最终表现为「显示下载中，但其实没在跑」，
+      // 再点几次也没用。
+      if (!existing.isPaused && !existing.cancelToken.isCancelled) {
+        return;
+      }
+      _activeTasks.remove(key);
+      _queue.removeWhere(
+        (r) =>
+            r.recordKey == request.recordKey &&
+            r.episodeNumber == request.episodeNumber,
+      );
+    }
 
     final task = DownloadTask(
       recordKey: request.recordKey,
@@ -332,30 +351,13 @@ class DownloadManager implements IDownloadManager {
   }
 
   @override
-  Future<void> resume(DownloadRequest request) async {
-    final key = _taskKey(request.recordKey, request.episodeNumber);
-    _activeTasks.remove(key);
-
-    final task = DownloadTask(
-      recordKey: request.recordKey,
-      episodeNumber: request.episodeNumber,
-    );
-    _activeTasks[key] = task;
-
-    if (_runningCount < maxParallelEpisodes) {
-      _runningCount++;
-      _runEpisodeDownload(
-        task: task,
-        bangumiId: request.bangumiId,
-        pluginName: request.pluginName,
-        m3u8Url: request.m3u8Url,
-        httpHeaders: request.httpHeaders,
-        adBlockerEnabled: request.adBlockerEnabled,
-        episode: request.episode,
-      );
-    } else {
-      _queue.add(request);
-    }
+  Future<void> resume(DownloadRequest request) {
+    // 与 enqueue 完全同义：enqueue 现在会把已暂停/已取消的旧任务摘除后
+    // 重新排队。保留这个方法只是为了接口语义，实现走同一条路径，
+    // 避免两处维护各自的队列/计数逻辑（以前 resume 会无条件
+    // `_runningCount++`，而被它顶掉的旧 worker 退场时还会再 `--`，
+    // 反复暂停恢复会把并发计数算歪，最终表现为「同时只跑一集」）。
+    return enqueue(request);
   }
 
   @override

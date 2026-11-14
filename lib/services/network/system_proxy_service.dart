@@ -15,12 +15,16 @@ class SystemProxyState {
     this.httpsProxy,
     this.bypassPatterns = const [],
     this.bypassLocal = false,
+    this.compiledBypass = const [],
   });
 
   final (String, int)? httpProxy;
   final (String, int)? httpsProxy;
   final List<String> bypassPatterns;
   final bool bypassLocal;
+
+  /// [bypassPatterns] 的预编译版本。见 `_compilePattern` 的说明。
+  final List<ProxyBypassRule> compiledBypass;
 
   bool get hasProxy => httpProxy != null || httpsProxy != null;
 
@@ -35,6 +39,24 @@ class SystemProxyState {
     }
     return true;
   }
+}
+
+/// 一条预编译的旁路规则。
+class ProxyBypassRule {
+  const ProxyBypassRule({
+    required this.pattern,
+    required this.matchPort,
+    required this.regex,
+  });
+
+  final String pattern;
+
+  /// 规则里显式带了端口时，要用 `host:port` 去匹配。
+  final bool matchPort;
+  final RegExp regex;
+
+  bool matches(String host, int port) =>
+      regex.hasMatch(matchPort ? '$host:$port' : host);
 }
 
 /// Follows the WinINET system proxy on Windows, Chrome-style.
@@ -186,8 +208,8 @@ class SystemProxyService {
     if (state.bypassLocal && !host.contains('.') && !host.contains(':')) {
       return true;
     }
-    for (final pattern in state.bypassPatterns) {
-      if (_matchesPattern(pattern, host, url.port)) return true;
+    for (final rule in state.compiledBypass) {
+      if (rule.matches(host, url.port)) return true;
     }
     return false;
   }
@@ -197,15 +219,20 @@ class SystemProxyService {
     return host.startsWith('127.');
   }
 
-  static bool _matchesPattern(String pattern, String host, int port) {
-    var target = host;
+  /// 把一条旁路规则编译成可复用的匹配器。
+  ///
+  /// 这里原来在 [findProxy] 里为**每条规则**现编译 `RegExp`。而
+  /// `findProxy` 被装在每个 `HttpClient` 上，每个请求、每次重定向都会调用，
+  /// 开着系统代理且有十几条 bypass 时就是每请求十几次正则编译。
+  /// 规则只在注册表变化时才变，编译一次存进状态即可。
+  static ProxyBypassRule _compilePattern(String pattern) {
     final colon = pattern.lastIndexOf(':');
-    if (colon > 0 && int.tryParse(pattern.substring(colon + 1)) != null) {
-      target = '$host:$port';
-    }
-    final regex =
-        RegExp('^${RegExp.escape(pattern).replaceAll(r'\*', '.*')}\$');
-    return regex.hasMatch(target);
+    final matchPort = colon > 0 && int.tryParse(pattern.substring(colon + 1)) != null;
+    return ProxyBypassRule(
+      pattern: pattern,
+      matchPort: matchPort,
+      regex: RegExp('^${RegExp.escape(pattern).replaceAll(r'\*', '.*')}\$'),
+    );
   }
 
   static SystemProxyState _buildState(
@@ -217,6 +244,8 @@ class SystemProxyService {
       httpsProxy: https,
       bypassPatterns: patterns,
       bypassLocal: bypassLocal,
+      // 规则在这一刻编译好，请求路径上不再建正则。
+      compiledBypass: [for (final pattern in patterns) _compilePattern(pattern)],
     );
   }
 

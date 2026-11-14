@@ -98,19 +98,47 @@ class ParallelDownloader {
       final partPaths = [
         for (var i = 0; i < ranges.length; i++) '${partDir.path}/part-$i.bin',
       ];
-      // eagerError：任意分块永久失败立即让整次下载失败，
-      // 其余块停下，避免继续空耗带宽、进度假前进。
-      await Future.wait([
+      // 任一分块永久失败时，让其余分块尽快收手。
+      //
+      // `Future.wait(eagerError: true)` 只影响等待：它立刻抛错，但兄弟
+      // future **仍在跑**。于是 finally 删临时目录时句柄还被占着（Windows
+      // 上删除失败并被静默吞掉，%TEMP% 里堆满 kazumi-pdl-* 目录），
+      // 未结束的分块还会继续推进度，用户看到的是「失败弹窗关掉后进度条
+      // 又在动」。
+      final abort = _AbortSignal();
+      final futures = <Future<void>>[
         for (var i = 0; i < ranges.length; i++)
           _downloadRange(
             urls: probe.orderedUrls,
             range: ranges[i],
             savePath: partPaths[i],
             cancelToken: cancelToken,
-            onBytes: (chunkBytes, {reset = false}) =>
-                progress.update(i, chunkBytes, reset: reset),
+            abort: abort,
+            onBytes: (chunkBytes, {reset = false}) {
+              if (abort.isAborted) return;
+              progress.update(i, chunkBytes, reset: reset);
+            },
           ),
-      ], eagerError: true);
+      ];
+      // 不用 eagerError：要让所有分块都真正结束后再往下走（否则删不掉目录）。
+      // 错误在下面统一抛出，优先抛第一个真实失败。
+      Object? firstError;
+      StackTrace? firstStack;
+      for (final future in futures) {
+        try {
+          await future;
+        } catch (error, stackTrace) {
+          if (firstError == null) {
+            firstError = error;
+            firstStack = stackTrace;
+            // 通知其余分块收手；它们会在下一个 await 后退出。
+            abort.abort();
+          }
+        }
+      }
+      if (firstError != null) {
+        Error.throwWithStackTrace(firstError, firstStack ?? StackTrace.current);
+      }
       if (cancelToken.isCancelled) throw cancelToken.cancelError!;
 
       // 校验各分块大小后按序拼接。
@@ -133,9 +161,16 @@ class ParallelDownloader {
         } catch (_) {}
       }
     } finally {
+      // 到这一步所有分块都已结束，目录可以被删除。仍然容忍失败
+      // （杀软扫描等瞬时占用），但不再静默——残留目录会一直占着磁盘。
       try {
         await partDir.delete(recursive: true);
-      } catch (_) {}
+      } catch (e) {
+        KazumiLogger().w(
+          'ParallelDownload: failed to clean temp dir ${partDir.path}',
+          error: e,
+        );
+      }
     }
   }
 
@@ -270,6 +305,7 @@ class ParallelDownloader {
     required (int, int) range,
     required String savePath,
     required CancelToken cancelToken,
+    required _AbortSignal abort,
     required void Function(int chunkBytes, {bool reset}) onBytes,
   }) async {
     final expected = range.$2 - range.$1 + 1;
@@ -277,6 +313,10 @@ class ParallelDownloader {
     for (final url in urls) {
       for (var attempt = 1; attempt <= _maxRetriesPerChunk; attempt++) {
         if (cancelToken.isCancelled) throw cancelToken.cancelError!;
+        // 其它分块已永久失败：立刻收手，不再消耗带宽与重试次数。
+        if (abort.isAborted) {
+          throw _AbortedException(range);
+        }
         // 进度按「本块已落盘字节」汇报；重试整块重来时先回退该块计数。
         onBytes(0, reset: true);
         try {
@@ -285,11 +325,13 @@ class ParallelDownloader {
             range: range,
             savePath: savePath,
             cancelToken: cancelToken,
+            abort: abort,
             onBytes: onBytes,
           );
           return;
         } catch (e) {
           if (cancelToken.isCancelled) rethrow;
+          if (abort.isAborted) throw _AbortedException(range);
           lastError = e;
           KazumiLogger().w(
             'ParallelDownload: $url range $range attempt $attempt failed',
@@ -329,6 +371,7 @@ class ParallelDownloader {
     required (int, int) range,
     required String savePath,
     required CancelToken cancelToken,
+    required _AbortSignal abort,
     required void Function(int chunkBytes, {bool reset}) onBytes,
   }) async {
     final response = await DownloadHttpClient.instance.getStream(
@@ -351,6 +394,7 @@ class ParallelDownloader {
     try {
       await for (final chunk in response.data!.stream) {
         if (cancelToken.isCancelled) throw cancelToken.cancelError!;
+        if (abort.isAborted) throw _AbortedException(range);
         await sink.writeFrom(chunk);
         reported += chunk.length;
         onBytes(chunk.length);
@@ -400,6 +444,29 @@ class ParallelDownloader {
     }
     throw lastError ?? Exception('下载失败');
   }
+}
+
+/// 分块之间的「停下」信号。
+///
+/// `Future.wait(eagerError: true)` 不会取消兄弟 future，所以需要一个共享标志
+/// 让其余分块在下一个检查点主动退出——否则失败后它们会继续跑几十秒，
+/// 既占带宽又让临时目录无法删除。
+class _AbortSignal {
+  bool _aborted = false;
+
+  bool get isAborted => _aborted;
+
+  void abort() => _aborted = true;
+}
+
+/// 分块因 [_AbortSignal] 中止而退出。不是真正的失败，不该出现在错误链首位。
+class _AbortedException implements Exception {
+  _AbortedException(this.range);
+
+  final (int, int) range;
+
+  @override
+  String toString() => '分块 ${range.$1}-${range.$2} 因其它分块失败而中止';
 }
 
 class _ProbeCandidate {

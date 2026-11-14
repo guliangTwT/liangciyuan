@@ -50,6 +50,14 @@ abstract class _PopularController with Store {
 
   int _trendOffset = 0;
 
+  /// 频道切换代次。每次切频道 +1。
+  ///
+  /// 网络请求是异步的：用户从「日漫」切到「国漫」时，日漫那一页可能还在路上。
+  /// 它晚到的响应如果直接写进列表，国漫频道里就会混进日本番——
+  /// 看起来像「切频道后内容不对」。这里在 await 之后比对代次，
+  /// 不一致就丢弃这次结果。
+  int _channelGeneration = 0;
+
   @observable
   String currentTag = '';
 
@@ -88,6 +96,10 @@ abstract class _PopularController with Store {
       (channel) => channel.tag == s,
       orElse: () => HomeChannel.recommend,
     );
+    // 切频道即作废所有在途请求的结果。
+    _channelGeneration++;
+    // 上一页正在加载时切走，回来时不该一直转圈。
+    isLoadingMore = false;
   }
 
   void setChannel(HomeChannel channel) => setCurrentTag(channel.tag);
@@ -152,6 +164,7 @@ abstract class _PopularController with Store {
       trendList.clear();
       _trendOffset = 0;
     }
+    final generation = _channelGeneration;
     isLoadingMore = true;
     final result = _bangumiMirrorEnabled
         ? await BangumiApi.getBangumiMirrorPopularSubjects(
@@ -162,6 +175,9 @@ abstract class _PopularController with Store {
             limit: _trendPageSize,
             offset: _trendOffset,
           );
+    // 用户已切到其它频道：这份趋势数据不属于当前视图，丢弃。
+    // 注意不能只判断 trendList 是否为空——切回来时它可能已被清空。
+    if (generation != _channelGeneration) return;
     if (result.isNotEmpty) {
       _trendOffset += _trendPageSize;
     }
@@ -176,9 +192,11 @@ abstract class _PopularController with Store {
     if (type == 'init') {
       bangumiList.clear();
     }
-    isLoadingMore = true;
+    // 记下发请求时的代次与标签；await 之后要确认世界没变。
+    final generation = _channelGeneration;
     final tag = currentTag;
     final offset = bangumiList.length;
+    isLoadingMore = true;
     final result = _bangumiMirrorEnabled
         ? await BangumiApi.getBangumiMirrorPopularSubjects(
             tag: tag,
@@ -189,6 +207,8 @@ abstract class _PopularController with Store {
             limit: _trendPageSize,
             offset: offset,
           );
+    // 期间用户切了频道：这份结果属于旧频道，丢掉。
+    if (generation != _channelGeneration) return;
     // 同一页里可能因为分页边界出现重复条目；跨页也去重，避免列表里
     // 同一部番出现两次（点开的是同一个条目，看着像加载出错）。
     final existingIds = bangumiList.map((item) => item.id).toSet();

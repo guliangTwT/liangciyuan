@@ -124,8 +124,19 @@ class _PlayerScreenshotSheetState extends State<_PlayerScreenshotSheet> {
       if (_aspectRatios.containsKey(item.id)) continue;
       _aspectRatios[item.id] = null;
       unawaited(_readAspectRatio(item));
+      // 预热必须和预览用同一个解码尺寸，否则预热出来的是一张全尺寸大图：
+      // 4K 截图单张解码后约 33 MB，3 张就吃掉 image cache 三分之一的额度，
+      // 而且真正显示时还要再按预览尺寸解一遍，白算一次。
       unawaited(
-        precacheImage(MemoryImage(item.bytes), context, onError: (_, _) {}),
+        precacheImage(
+          ResizeImage.resizeIfNeeded(
+            screenshotPreviewCacheWidth,
+            null,
+            MemoryImage(item.bytes),
+          ),
+          context,
+          onError: (_, _) {},
+        ),
       );
     }
   }
@@ -571,6 +582,7 @@ class _PlayerScreenshotSheetState extends State<_PlayerScreenshotSheet> {
               },
               child: PlayerScreenshotImage(
                 bytes: collection.candidates[index].bytes,
+                cacheWidth: screenshotPreviewCacheWidth,
                 semanticLabel:
                     '${collection.candidates[index].episode} '
                     '${collection.candidates[index].timeLabel} 截图',

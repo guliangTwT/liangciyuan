@@ -62,11 +62,11 @@ class SilentInstaller {
   /// 1. 写一个临时 .cmd，轮询等本进程 PID 消失（最多 [timeout]）；
   /// 2. 用 `start /wait` 拉起安装包并等它结束；
   /// 3. 安装完成后重新启动应用，用户不用自己再点一次。
-  static bool launchAfterExit(
+  static Future<bool> launchAfterExit(
     String installerPath, {
     Duration timeout = const Duration(seconds: 30),
     bool verySilent = false,
-  }) {
+  }) async {
     if (!Platform.isWindows) return false;
     final installer = File(installerPath);
     if (!installer.existsSync()) {
@@ -167,9 +167,13 @@ endlocal
       );
       // 等启动器写出就绪标记（最多 3 秒）。拿不到就认为它没起来，
       // 交由调用方回退到可视化安装，而不是让应用直接退出。
+      //
+      // 这里必须用异步等待：`sleep()` 会阻塞整个事件循环，而这段代码跑在
+      // UI isolate 上——用户点「立即安装」后界面会整整冻结最多 3 秒，
+      // 恰好是最需要给出反馈的时刻。
       for (var i = 0; i < 30; i++) {
         if (readyFile.existsSync()) return true;
-        sleep(const Duration(milliseconds: 100));
+        await Future<void>.delayed(const Duration(milliseconds: 100));
       }
       KazumiLogger().w('Update: launcher did not signal ready');
       return false;

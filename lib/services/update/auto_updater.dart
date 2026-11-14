@@ -728,7 +728,7 @@ class AutoUpdater {
           // 会把它按「取消」，安装器直接中止（表现为界面一闪、版本没变）。
           KazumiDialog.showToast(message: '正在安装更新，请在系统提示中允许…');
           await Future<void>.delayed(const Duration(milliseconds: 120));
-          final launched = SilentInstaller.launchAfterExit(filePath);
+          final launched = await SilentInstaller.launchAfterExit(filePath);
           if (launched) {
             // 启动器已在轮询本进程；尽快退出，让安装器通过互斥量检查。
             await Future<void>.delayed(const Duration(milliseconds: 150));

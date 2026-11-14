@@ -4,6 +4,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:kazumi/utils/utf8_stream_accumulator.dart';
+
 const double _pingMovingAverageWeight = 0.85;
 const Duration _tlsHandshakeTimeout = Duration(seconds: 10);
 const Duration _socketWriteTimeout = Duration(seconds: 10);
@@ -489,6 +491,13 @@ class SyncplayClient {
 
   void _setupSocketHandlers(RawSocket socket) {
     String buffer = '';
+    // TCP 按字节切包，不按字符切。一个汉字占 3 字节、emoji 占 4 字节，
+    // 很可能正好跨在两个包之间。以前对每个包直接 `utf8.decode(data)`，
+    // 遇到被切断的多字节字符会抛 FormatException；这一行不在任何 try 内，
+    // 异常会冲出 socket 监听回调，buffer 停在残片上，之后所有消息都解析
+    // 错位——中文聊天室会让整条 SyncPlay 连接永久失效，且没有任何提示。
+    // 详见 [Utf8StreamAccumulator]。
+    final decoder = Utf8StreamAccumulator();
 
     _socketSubscription = socket.listen(
       (event) {
@@ -510,7 +519,19 @@ class SyncplayClient {
             if (data == null || data.isEmpty) {
               break;
             }
-            buffer += utf8.decode(data);
+            final decoded = decoder.add(data);
+            if (decoder.isOverflowing) {
+              // 明显不是合法的消息流，断开重连比继续膨胀更安全。
+              _failCurrentSocket(
+                socket,
+                SyncplayConnectionException(
+                  'SyncPlay: incoming message exceeded buffer limit',
+                ),
+              );
+              return;
+            }
+            if (decoded.isEmpty) continue;
+            buffer += decoded;
             while (true) {
               final startIndex = buffer.indexOf('{');
               if (startIndex == -1) {

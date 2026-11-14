@@ -77,25 +77,24 @@ abstract class _MyController with Store {
   @observable
   ObservableList<String> shieldList = ObservableList.of([]);
 
+  /// 预编译后的屏蔽规则。
+  ///
+  /// [isDanmakuBlocked] 每秒对屏幕上每条弹幕都要调用一次，弹幕多时是
+  /// 「弹幕数 × 屏蔽词数」次判断。以前其中 `/正则/` 那类每条都要
+  /// `RegExp(pattern)` 现编译一次——全在 UI isolate 的定时器回调里。
+  /// 规则只在列表变化时变，编译一次缓存起来即可。
+  List<RegExp> _shieldRegexes = const [];
+  List<String> _shieldSubstrings = const [];
+
   StreamSubscription<DanmakuShieldChange>? _shieldSubscription;
 
   bool isDanmakuBlocked(String? danmaku) {
     if (danmaku == null || danmaku.isEmpty) return false;
-    for (String item in shieldList) {
-      if (item.isEmpty) continue;
-      if (item.startsWith('/') && item.endsWith('/')) {
-        if (item.length <= 2) continue;
-        String pattern = item.substring(1, item.length - 1);
-        try {
-          if (RegExp(pattern).hasMatch(danmaku)) return true;
-        } catch (_) {
-          KazumiLogger()
-              .e('Danmaku: invalid danmaku shield regex pattern: $pattern');
-          continue;
-        }
-      } else {
-        if (danmaku.contains(item)) return true;
-      }
+    for (final regex in _shieldRegexes) {
+      if (regex.hasMatch(danmaku)) return true;
+    }
+    for (final substring in _shieldSubstrings) {
+      if (danmaku.contains(substring)) return true;
     }
     return false;
   }
@@ -114,10 +113,32 @@ abstract class _MyController with Store {
   }
 
   void _refreshShieldList() {
+    final rules = _shieldRepository.getRules();
+    // 在这里一次性编译好，播放路径上不再建正则。
+    final regexes = <RegExp>[];
+    final substrings = <String>[];
+    for (final item in rules) {
+      if (item.isEmpty) continue;
+      if (item.startsWith('/') && item.endsWith('/') && item.length > 2) {
+        try {
+          regexes.add(RegExp(item.substring(1, item.length - 1)));
+        } catch (e) {
+          // 只报一次，不要每条弹幕都重复打日志。
+          KazumiLogger().e(
+            'Danmaku: invalid danmaku shield regex pattern: $item',
+            error: e,
+          );
+        }
+      } else {
+        substrings.add(item);
+      }
+    }
     runInAction(() {
+      _shieldRegexes = List<RegExp>.unmodifiable(regexes);
+      _shieldSubstrings = List<String>.unmodifiable(substrings);
       shieldList
         ..clear()
-        ..addAll(_shieldRepository.getRules());
+        ..addAll(rules);
     });
   }
 

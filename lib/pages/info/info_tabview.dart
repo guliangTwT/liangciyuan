@@ -76,11 +76,28 @@ class _InfoTabViewState extends State<InfoTabView> {
               Text('简介', style: TextStyle(fontSize: 18)),
               const SizedBox(height: 8),
               LayoutBuilder(builder: (context, constraints) {
-                final span = TextSpan(text: widget.bangumiItem.summary);
-                final tp =
-                    TextPainter(text: span, textDirection: TextDirection.ltr);
-                tp.layout(maxWidth: constraints.maxWidth);
-                final numLines = tp.computeLineMetrics().length;
+                // 这里要判断「简介放不下、需要折叠」，测量必须和真正渲染
+                // 时用同一套排版参数：字号缩放（无障碍大字号）与默认文字
+                // 样式。以前既不传 textScaler 也不带 style，大字号下实际
+                // 行数明显多于测量值，折叠判断不成立，长简介直接被裁掉、
+                // 连「加载更多」都不出现。
+                final style = DefaultTextStyle.of(context).style;
+                final tp = TextPainter(
+                  text: TextSpan(
+                    text: widget.bangumiItem.summary,
+                    style: style,
+                  ),
+                  textDirection: Directionality.of(context),
+                  textScaler: MediaQuery.textScalerOf(context),
+                );
+                int numLines;
+                try {
+                  tp.layout(maxWidth: constraints.maxWidth);
+                  numLines = tp.computeLineMetrics().length;
+                } finally {
+                  // TextPainter 持有引擎侧 Paragraph 句柄，必须释放。
+                  tp.dispose();
+                }
                 if (numLines > 7) {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.end,

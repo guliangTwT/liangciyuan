@@ -137,6 +137,97 @@ String getUpdateFileHashFromAsset(Map<String, dynamic> asset) {
   return '';
 }
 
+/// 多个发布源可能返回不同版本，取版本号最高的那个。
+///
+/// [available] 按源优先级排列（主源在前）。版本号相同时保留先出现的，
+/// 即优先用主源的资产地址。这解决的是「后备源还停在上一版」的情形：
+/// Forgejo 的 `/releases/latest` 跳过草稿，新版本尚未公开时它仍返回旧版本，
+/// 若按「谁先到用谁」就会让用户以为已经是最新而收不到更新。
+Map<String, dynamic> pickHighestRelease(
+  List<Map<String, dynamic>> available,
+) {
+  var best = available.first;
+  for (final candidate in available.skip(1)) {
+    if (needUpdate('${best['tag_name'] ?? ''}', '${candidate['tag_name'] ?? ''}')) {
+      best = candidate;
+    }
+  }
+  return best;
+}
+
+/// 并发查询多个发布源的结果。
+typedef ReleaseRaceResult = ({
+  /// 与 `queries` 同下标；失败或未返回的源为 null。
+  List<Map<String, dynamic>?> releases,
+  List<Object> errors,
+});
+
+/// 并发跑 [queries]（下标 0 为主源），决定什么时候可以停止等待。
+///
+/// 等待策略围绕一个事实：主源（GitHub）是发布的第一站，版本只会更新；
+/// 后备源（Codeberg）的 `/releases/latest` 会跳过草稿，因此在新版本刚上传、
+/// 还没公开的那段时间里，它返回的是**上一个**版本。
+///
+/// 于是：
+/// - 主源有了结论 → 立即返回，不等后备源。多等没有任何收益。
+/// - 主源还没回来 → 最多等 [primaryGracePeriod]；这段时间足够让正常网络下
+///   的主源跟上，又不至于让用户觉得卡住。
+/// - 宽限期过后只拿到后备源的结果时，只有当它**明确告诉用户有新版本**才
+///   用它收尾。否则必须继续等主源——否则「后备源说已是最新」会把用户
+///   永久钉死在旧版本上，且不报任何错。这是最难察觉的一种失效。
+/// - 全部失败 → 返回空列表与错误，由调用方抛出。
+///
+/// [acceptWithoutPrimary] 用来判定「这个后备结果先交差安不安全」。缺省时
+/// 认为任何结果都可接受（即退化成单纯的「主源优先 + 宽限期」）。
+Future<ReleaseRaceResult> raceReleases(
+  List<Future<Map<String, dynamic>>> queries, {
+  Duration primaryGracePeriod = const Duration(milliseconds: 1200),
+  bool Function(Map<String, dynamic> backupOnly)? acceptWithoutPrimary,
+}) async {
+  final releases = List<Map<String, dynamic>?>.filled(queries.length, null);
+  final errors = <Object>[];
+  final primarySettled = Completer<void>();
+  final allSettled = Completer<void>();
+  var pending = queries.length;
+
+  if (queries.isEmpty) {
+    return (releases: releases, errors: errors);
+  }
+
+  for (var i = 0; i < queries.length; i++) {
+    final index = i;
+    unawaited(() async {
+      try {
+        releases[index] = await queries[index];
+      } catch (e) {
+        errors.add(e);
+      } finally {
+        pending--;
+        if (index == 0 && !primarySettled.isCompleted) {
+          primarySettled.complete();
+        }
+        if (pending <= 0 && !allSettled.isCompleted) allSettled.complete();
+      }
+    }());
+  }
+
+  // 主源给出结论（成功或失败）之前，最多等一个宽限期。
+  await Future.any<void>([
+    primarySettled.future,
+    Future<void>.delayed(primaryGracePeriod),
+  ]);
+
+  if (releases[0] == null && !allSettled.isCompleted) {
+    final backupOnly = releases.whereType<Map<String, dynamic>>().toList();
+    final enough = backupOnly.isNotEmpty &&
+        (acceptWithoutPrimary == null || backupOnly.any(acceptWithoutPrimary));
+    // 后备结果不足以先交差：只能等主源，直到它也给出结论。
+    if (!enough) await allSettled.future;
+  }
+
+  return (releases: releases, errors: errors);
+}
+
 List<String> getUpdateFilePatterns(InstallationType installationType) {
   switch (installationType) {
     case InstallationType.windowsSetup:
@@ -243,49 +334,52 @@ class AutoUpdater {
     }
   }
 
+  /// 主源缺席时，给它的额外宽限时间。
+  static const Duration _primaryGracePeriod = Duration(milliseconds: 1200);
+
   /// GitHub 为主源，Codeberg 为后备。
   ///
   /// 两家接口同形（`tag_name` / `body` / `html_url` / `assets[]`），
   /// 所以同一套解析逻辑通用。
   ///
-  /// 两个源**并发**发起，谁先成功用谁。原来是串行的：GitHub 连不上时要
-  /// 先等满 8 秒超时，才去问 Codeberg，用户点「检查更新」后要干等十几秒
-  /// 才看到结果——看起来像卡住了。并发之后，正常情况下第一个响应就返回，
-  /// 最坏情况也只等于单源超时。
+  /// 两个源**并发**发起。原来这里是「谁先成功用谁」，有两个问题：
+  /// 一是 Forgejo 的 `/releases/latest` 会跳过草稿，新建版本还没公开时
+  /// 后备源仍返回上一个版本（例如 GitHub 已有 v1.0.12、Codeberg 还是
+  /// v1.0.11），先到的旧版本会让用户以为「已经是最新」而再也收不到更新；
+  /// 二是取校验值的那次请求也被算进了竞速，拖慢了先返回的那个源。
+  ///
+  /// 现在：主源先回来就直接用；只有后备源先回来时才多等主源一小会儿，
+  /// 然后取两边版本号更高的那个（见 [raceReleases]）。校验值只给最终选中
+  /// 的那份补，不再为落选源多跑一次请求。
   Future<Map<String, dynamic>> _latestRelease() async {
     final sources = [
       ApiEndpoints.latestApp,
       ApiEndpoints.latestAppFallback,
     ];
-    final errors = <Object>[];
-    final completer = Completer<Map<String, dynamic>>();
-    var pending = sources.length;
-
-    for (final base in sources) {
-      unawaited(() async {
-        try {
-          final release = await _fetchRelease(base);
-          await _attachChecksums(release);
-          if (!completer.isCompleted) completer.complete(release);
-        } catch (e) {
-          errors.add(e);
-          KazumiLogger().w(
-            'Update: release query failed for $base',
-            error: e,
-          );
-        } finally {
-          pending--;
-          // 全部失败才报错，避免先失败的源把还在跑的源一起带下水。
-          if (pending <= 0 && !completer.isCompleted) {
-            completer.completeError(
-              errors.isNotEmpty ? errors.first : Exception('Update check failed'),
-            );
-          }
-        }
-      }());
+    final raced = await raceReleases(
+      [for (final base in sources) _fetchRelease(base)],
+      primaryGracePeriod: _primaryGracePeriod,
+      // 只有后备源的版本号比本机高时才允许它先交差——那种情况下
+      // 结果一定指向「有更新」，不会把用户误判成已是最新。
+      acceptWithoutPrimary: (backup) => needUpdate(
+        ApiEndpoints.version,
+        '${backup['tag_name'] ?? ''}',
+      ),
+    );
+    for (final error in raced.errors) {
+      KazumiLogger().w('Update: release query failed', error: error);
     }
 
-    return completer.future;
+    final available = raced.releases.whereType<Map<String, dynamic>>().toList();
+    if (available.isEmpty) {
+      throw raced.errors.isNotEmpty
+          ? raced.errors.first
+          : Exception('Update check failed');
+    }
+
+    final best = pickHighestRelease(available);
+    await _attachChecksums(best);
+    return best;
   }
 
   /// 加时间戳跳过中间缓存，发版后立刻生效。

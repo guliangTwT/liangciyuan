@@ -67,6 +67,8 @@ void main() {
       ),
     );
     await tester.pump(const Duration(milliseconds: 120));
+    // 启动页的入场动画约 780ms；等它走完再截图，否则抓到的是半透明的中间帧。
+    await tester.pump(const Duration(milliseconds: 900));
 
     final boundary =
         key.currentContext!.findRenderObject() as RenderRepaintBoundary;

@@ -232,13 +232,15 @@ abstract class _PlayerPlaybackController with Store {
     }
   }
 
-  /// Android blocks network access for backgrounded apps; a prefetching
-  /// demuxer then burns through ffmpeg's reconnect/segment retries and marks
-  /// the stream EOF, leaving playback permanently stuck once foregrounded.
-  /// Suspending zeroes the readahead window so no new requests are issued
-  /// while buffered data stays available; restore values are mpv defaults,
-  /// which media_kit leaves untouched. Writes are serialized and apply the
-  /// latest requested state, so rapid lifecycle flips cannot reorder.
+  /// 切后台时暂停预读，回前台恢复。
+  ///
+  /// Android 会切断后台应用的网络：此时如果继续预读，ffmpeg 会不断重试
+  /// 直到把流标记成 EOF，回到前台后播放就永久卡住了。所以要压住预读窗口、
+  /// 又不把缓冲彻底清空。
+  ///
+  /// 具体参数由 [PlaybackCachePolicy] 统一管理——这里曾经直接写死
+  /// `cache-secs=0` + `demuxer-readahead-secs=0`，等于完全停止预读，
+  /// 恢复播放后要重新缓冲，观感上就是「切回来先卡一下」。
   Future<void> setPrefetchSuspended(bool suspended) async {
     if (!Platform.isAndroid) {
       return;
@@ -246,23 +248,7 @@ abstract class _PlayerPlaybackController with Store {
     _prefetchSuspendWanted = suspended;
     await _prefetchWrites.run(() async {
       final wanted = _prefetchSuspendWanted;
-      final player = mediaPlayer;
-      if (player == null) {
-        return;
-      }
-      try {
-        final pp = player.platform as NativePlayer;
-        await pp.setProperty('cache-secs', wanted ? '0' : '36000');
-        if (!isCurrentPlayer(player)) {
-          return;
-        }
-        await pp.setProperty('demuxer-readahead-secs', wanted ? '0' : '1');
-      } catch (e) {
-        KazumiLogger().w(
-          'PlayerController: failed to ${wanted ? 'suspend' : 'resume'} demuxer prefetch',
-          error: e,
-        );
-      }
+      await cachePolicy.setSuspended(wanted);
     });
   }
 

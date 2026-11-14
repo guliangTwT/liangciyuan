@@ -29,6 +29,8 @@ function ui_icon(string $name, int $size = 20): string
         'external' => '<path d="M13.5 4.5H20v6.5"/><path d="M20 4.5 11 13.5"/><path d="M18 14.5v4.9H4.6V6h4.9"/>',
         'refresh' => '<path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4.4v5.2h-5.2"/>',
         'logout' => '<path d="M9.5 4.5H5v15h4.5"/><path d="M13 12h7"/><path d="M17.2 8.2 21 12l-3.8 3.8"/>',
+        'chevron-down' => '<path d="M6 9.5 12 15.5 18 9.5"/>',
+        'chevron-right' => '<path d="M9.5 6 15.5 12 9.5 18"/>',
         'menu' => '<path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/>',
     ];
     $path = $paths[$name] ?? $paths['dashboard'];

@@ -110,15 +110,10 @@ class _PopularPageState extends State<PopularPage> {
   Widget _buildAppBar(BuildContext context, {required bool isRecommend}) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final compact = MediaQuery.sizeOf(context).width < 600;
-    // 手机走抽屉导航；平板/桌面已有侧边栏，不需要汉堡键。
-    final menuButton = compact
-        ? IconButton(
-            tooltip: '打开导航菜单',
-            onPressed: openAppDrawer,
-            icon: const Icon(Icons.menu_rounded),
-          )
-        : null;
+    // 首页不再放汉堡键：手机端底部已有四个标签（推荐/时间表/追番/我的），
+    // 抽屉里只是同一批入口的重复，左上角多一个按钮反而挤掉标题空间。
+    // 抽屉仍然可以从屏幕左缘滑出（rootShellScaffoldKey 的 drawer 手势），
+    // 其它页面（如设置）也保留了显式的菜单入口。
     return SliverAppBar(
       pinned: true,
       floating: false,
@@ -129,33 +124,11 @@ class _PopularPageState extends State<PopularPage> {
       toolbarHeight: 56,
       titleSpacing: 0,
       centerTitle: false,
-      leadingWidth: menuButton == null ? 0 : 56,
-      leading: menuButton,
+      automaticallyImplyLeading: false,
+      leadingWidth: 0,
       title: Padding(
-        padding: EdgeInsets.only(left: menuButton == null ? 20 : 4),
-        child: Row(
-          children: [
-            Text(
-              '凉次元',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1,
-              ),
-            ),
-            if (!isRecommend) ...[
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  popularController.currentChannel.label,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ],
-        ),
+        padding: const EdgeInsets.only(left: 20),
+        child: _HomeTitle(channel: isRecommend ? null : popularController.currentChannel),
       ),
       actions: [
         IconButton(
@@ -382,6 +355,47 @@ class _PopularPageState extends State<PopularPage> {
         ),
       ),
     ];
+  }
+}
+
+// -----------------------------------------------------------------------------
+// 标题
+// -----------------------------------------------------------------------------
+
+/// 顶栏标题。推荐频道只显示应用名；其它频道在后面补一个灰色的频道名。
+class _HomeTitle extends StatelessWidget {
+  const _HomeTitle({this.channel});
+
+  final HomeChannel? channel;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Row(
+      children: [
+        Text(
+          '凉次元',
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1,
+          ),
+        ),
+        if (channel != null) ...[
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              channel!.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
   }
 }
 
@@ -620,28 +634,30 @@ class _FeaturedBannerState extends State<_FeaturedBanner> {
                       ),
                       Positioned(
                         left: 16,
-                        // 给右下角的圆点留出位置，标题不会被压到点下面。
-                        right: 96,
+                        // 底部只留标题；指示器挪到右上角，不再和文字抢位置。
+                        right: 16,
                         bottom: 14,
                         child: _BannerCaption(
                           item: widget.items[_index.clamp(0, widget.items.length - 1)],
                         ),
                       ),
-                      Positioned(
-                        right: 14,
-                        bottom: 16,
-                        child: _Dots(
-                          count: widget.items.length,
-                          index: _index,
-                          activeColor: Colors.white,
-                          inactiveColor: Colors.white.withValues(alpha: 0.45),
-                          onTap: (i) => _pageController.animateToPage(
-                            i,
-                            duration: const Duration(milliseconds: 320),
-                            curve: Curves.easeOutCubic,
+                      // 指示器放在右上角：底部右侧原本被「白色长条 + 圆点」占据，
+                      // 压在封面人物身上既挡画面又显得突兀。
+                      // 现在是一条细进度条，长度按当前页计算，风格更克制。
+                      if (widget.items.length > 1)
+                        Positioned(
+                          right: 14,
+                          top: 12,
+                          child: _BannerProgress(
+                            count: widget.items.length,
+                            index: _index,
+                            onTap: (i) => _pageController.animateToPage(
+                              i,
+                              duration: const Duration(milliseconds: 320),
+                              curve: Curves.easeOutCubic,
+                            ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -781,46 +797,63 @@ class _BannerCaption extends StatelessWidget {
   }
 }
 
-class _Dots extends StatelessWidget {
-  const _Dots({
+/// 轮播的页码指示：一条细进度条，按页数等分成小段。
+///
+/// 取代原来的「白色长条 + 一排圆点」——那套更偏向内容密集的列表页，
+/// 放在大图上会割裂画面。这里只用半透明白色细线，选中段加亮，
+/// 既能看出共几页，又不抢封面。
+class _BannerProgress extends StatelessWidget {
+  const _BannerProgress({
     required this.count,
     required this.index,
-    required this.activeColor,
-    required this.inactiveColor,
     required this.onTap,
   });
 
   final int count;
   final int index;
-  final Color activeColor;
-  final Color inactiveColor;
   final ValueChanged<int> onTap;
+
+  static const double _segmentWidth = 14;
+  static const double _gap = 3;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (var i = 0; i < count; i++)
-          GestureDetector(
-            onTap: () => onTap(i),
-            behavior: HitTestBehavior.opaque,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 6),
-              child: AnimatedContainer(
-                duration: MediaQuery.disableAnimationsOf(context)
-                    ? Duration.zero
-                    : const Duration(milliseconds: 200),
-                width: i == index ? 18 : 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: i == index ? activeColor : inactiveColor,
-                  borderRadius: BorderRadius.circular(3),
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    return Semantics(
+      label: '第 ${index + 1} 张，共 $count 张',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          // 极轻的底衬，保证浅色封面上也能看清，同时不形成明显色块。
+          color: Colors.black.withValues(alpha: 0.22),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < count; i++) ...[
+              if (i > 0) const SizedBox(width: _gap),
+              GestureDetector(
+                onTap: () => onTap(i),
+                behavior: HitTestBehavior.opaque,
+                child: AnimatedContainer(
+                  duration: reduceMotion
+                      ? Duration.zero
+                      : const Duration(milliseconds: 200),
+                  width: _segmentWidth,
+                  height: 2,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(
+                      alpha: i == index ? 0.95 : 0.38,
+                    ),
+                    borderRadius: BorderRadius.circular(1),
+                  ),
                 ),
               ),
-            ),
-          ),
-      ],
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

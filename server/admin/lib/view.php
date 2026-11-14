@@ -809,6 +809,107 @@ function render_user_detail(int $id): void
 // 评论 / 弹幕
 // ---------------------------------------------------------------------------
 
+/// 按用户分组的列表：同一个人的发言收在一个可折叠的卡片里。
+///
+/// 之前所有评论/弹幕混在一个长列表里，同一个人的多条发言散落在不同位置，
+/// 想判断「这个人在到处刷广告吗」得逐条翻。分组后按用户看，一目了然。
+///
+/// $groups 形如：
+///   [
+///     ['user' => [...用户行], 'total' => 12, 'deleted' => 3, 'items' => [...发言行]],
+///     ...
+///   ]
+function ui_user_groups(
+    array $groups,
+    string $kind,
+    callable $renderItem
+): string {
+    if (!$groups) {
+        return '';
+    }
+    $html = '';
+    foreach ($groups as $index => $group) {
+        $user = $group['user'];
+        $id = (int) $user['id'];
+        $name = trim((string) $user['nickname']);
+        $name = $name !== '' ? $name : (string) $user['email'];
+        $total = (int) $group['total'];
+        $deleted = (int) $group['deleted'];
+        $banned = (int) ($user['banned_until'] ?? 0) > admin_now();
+        // 默认只展开发言最多的前 5 个用户，其余折叠——避免一进页面就是几千像素。
+        $open = $index < 5 ? ' open' : '';
+
+        $html .= '<details class="ugroup"' . $open . '>';
+        $html .= '<summary class="ugroup-head">';
+        $html .= '<span class="avatar-sm">' . admin_esc(mb_substr($name, 0, 1, 'UTF-8')) . '</span>';
+        $html .= '<span class="ugroup-name">' . admin_esc($name);
+        if (trim((string) ($user['title'] ?? '')) !== '') {
+            $html .= '<span class="title-chip">' . admin_esc((string) $user['title']) . '</span>';
+        }
+        $html .= '</span>';
+        if ($banned) {
+            $html .= ui_badge('封禁中', 'danger');
+        }
+        $html .= '<span class="ugroup-stat">'
+            . $total . ' 条' . $kind
+            . ($deleted > 0 ? ' · 已删 ' . $deleted : '')
+            . '</span>';
+        $html .= '<span class="ugroup-chevron">' . ui_icon('chevron-down', 16) . '</span>';
+        $html .= '</summary>';
+        $html .= '<div class="ugroup-body">';
+        foreach ($group['items'] as $item) {
+            $html .= $renderItem($item);
+        }
+        if ($total > count($group['items'])) {
+            $html .= '<div class="ugroup-more">仅显示最近 '
+                . count($group['items']) . ' 条 · '
+                . '<a class="link" href="/user/?a=user&id=' . $id . '">查看该用户全部</a>'
+                . '</div>';
+        }
+        $html .= '</div>';
+        $html .= '</details>';
+    }
+    return $html;
+}
+
+/// 把扁平的发言列表按 user_id 聚合成分组，并保持「最近发言在前」的顺序。
+///
+/// `$rows` 必须已经按时间倒序；分组内部也保持这个顺序，
+/// 分组之间按每组最新一条的时间排序。
+function admin_group_by_user(array $rows): array
+{
+    $groups = [];
+    $order = [];
+    foreach ($rows as $row) {
+        $uid = (int) $row['user_id'];
+        if (!isset($groups[$uid])) {
+            $groups[$uid] = [
+                'user' => [
+                    'id' => $uid,
+                    'nickname' => (string) ($row['nickname'] ?? ''),
+                    'email' => (string) ($row['email'] ?? ''),
+                    'title' => (string) ($row['title'] ?? ''),
+                    'banned_until' => (int) ($row['banned_until'] ?? 0),
+                ],
+                'total' => 0,
+                'deleted' => 0,
+                'items' => [],
+            ];
+            $order[] = $uid;
+        }
+        $groups[$uid]['total']++;
+        if ((int) ($row['deleted'] ?? 0) === 1) {
+            $groups[$uid]['deleted']++;
+        }
+        $groups[$uid]['items'][] = $row;
+    }
+    $result = [];
+    foreach ($order as $uid) {
+        $result[] = $groups[$uid];
+    }
+    return $result;
+}
+
 function render_comments(): void
 {
     $q = admin_q('q');
@@ -846,19 +947,29 @@ function render_comments(): void
     $countStmt->execute($args);
     $page = admin_paginate((int) $countStmt->fetchColumn(), $perPage, $pageNo);
 
+    // 多取一列 banned_until，分组头部要标出封禁状态。
     $stmt = $pdo->prepare(
-        'SELECT c.*, u.nickname, u.email, u.title
+        'SELECT c.*, u.nickname, u.email, u.title, u.banned_until
          FROM comments c JOIN users u ON u.id = c.user_id
          ' . $whereSql . '
          ORDER BY c.id DESC
          LIMIT ' . $page['perPage'] . ' OFFSET ' . $page['offset']
     );
     $stmt->execute($args);
-    $rows = $stmt->fetchAll();
+    $rows_stmt = $stmt->fetchAll();
+
+    // 未指定用户时按人归类；指定了用户就只看那一串，不必再分组。
+    $groups = $uid > 0 ? [] : admin_group_by_user($rows_stmt);
+    // 分组视图里每人的条数只统计当前页，标注清楚避免误读。
+    $rows = $rows_stmt;
 
     ob_start();
     ?>
-    <?= ui_page_head('评论', '共 ' . $page['total'] . ' 条，删除后可恢复') ?>
+    <?= ui_page_head(
+        '评论',
+        '共 ' . $page['total'] . ' 条，已按用户归类；删除后可恢复',
+        ''
+    ) ?>
 
     <form class="filters" method="get" action="/user/">
       <input type="hidden" name="a" value="comments">
@@ -891,10 +1002,42 @@ function render_comments(): void
       </div>
     <?php endif; ?>
 
-    <section class="card flush">
-      <?php if (!$rows): ?>
+    <?php if (!$rows): ?>
+      <section class="card">
         <?= ui_empty('没有评论', $q !== '' || $uid > 0 ? '换个关键词试试' : '用户在条目、集数页发表评论后会出现在这里', 'comments') ?>
-      <?php else: ?>
+      </section>
+    <?php elseif ($groups): ?>
+      <?= ui_user_groups($groups, '评论', function (array $c): string {
+          $deleted = (int) $c['deleted'] === 1;
+          $html = '<div class="cgroup-item' . ($deleted ? ' is-deleted' : '') . '">';
+          $html .= '<div class="comment-body">' . ui_excerpt((string) $c['content'], 400) . '</div>';
+          $html .= '<div class="comment-meta">';
+          $html .= '<span class="comment-target mono small">'
+              . admin_esc((string) $c['target_type']) . '#' . (int) $c['target_id'] . '</span>';
+          $html .= '<span class="muted small">' . admin_esc(ui_time((int) $c['created_at'])) . '</span>';
+          $html .= '<span class="muted small">#' . (int) $c['id'] . '</span>';
+          if ($deleted) {
+              $html .= ui_badge('已删除', 'muted');
+          }
+          $html .= '<span class="spacer"></span>';
+          $back = '/user/?a=comments' . ($c['_back'] ?? '');
+          $html .= '<form method="post" action="/user/?a='
+              . ($deleted ? 'restore-comment' : 'delete-comment') . '"'
+              . ' onsubmit="return confirm(\''
+              . ($deleted ? '恢复这条评论？' : '删除这条评论？用户端将立即看不到。')
+              . '\');">'
+              . csrf_field()
+              . '<input type="hidden" name="comment_id" value="' . (int) $c['id'] . '">'
+              . '<input type="hidden" name="back" value="' . admin_esc($back) . '">'
+              . '<button class="btn small ' . ($deleted ? '' : 'danger') . '" type="submit">'
+              . ($deleted ? ui_icon('restore', 15) . ' 恢复' : ui_icon('trash', 15) . ' 删除')
+              . '</button></form>';
+          $html .= '</div></div>';
+          return $html;
+      }) ?>
+    <?php else: ?>
+      <?php /* 指定了用户：保持原来的平铺列表 */ ?>
+      <section class="card flush">
         <ul class="comment-list padded">
         <?php foreach ($rows as $c): ?>
           <?php
@@ -937,8 +1080,8 @@ function render_comments(): void
           </li>
         <?php endforeach; ?>
         </ul>
-      <?php endif; ?>
-    </section>
+      </section>
+    <?php endif; ?>
 
     <?php if ($rows): ?>
       <div class="table-foot">
@@ -993,7 +1136,7 @@ function render_danmaku(): void
     $page = admin_paginate((int) $countStmt->fetchColumn(), $perPage, $pageNo);
 
     $stmt = $pdo->prepare(
-        'SELECT d.*, u.nickname, u.email
+        'SELECT d.*, u.nickname, u.email, u.title, u.banned_until
          FROM danmaku d JOIN users u ON u.id = d.user_id
          ' . $whereSql . '
          ORDER BY d.id DESC
@@ -1002,9 +1145,11 @@ function render_danmaku(): void
     $stmt->execute($args);
     $rows = $stmt->fetchAll();
 
+    $groups = $uid > 0 ? [] : admin_group_by_user($rows);
+
     ob_start();
     ?>
-    <?= ui_page_head('弹幕', '共 ' . $page['total'] . ' 条，按时间倒序') ?>
+    <?= ui_page_head('弹幕', '共 ' . $page['total'] . ' 条，已按用户归类') ?>
 
     <form class="filters" method="get" action="/user/">
       <input type="hidden" name="a" value="danmaku">
@@ -1031,10 +1176,41 @@ function render_danmaku(): void
       </div>
     <?php endif; ?>
 
-    <section class="card flush">
-      <?php if (!$rows): ?>
+    <?php if (!$rows): ?>
+      <section class="card">
         <?= ui_empty('没有弹幕', '用户发送弹幕后会出现在这里', 'danmaku') ?>
-      <?php else: ?>
+      </section>
+    <?php elseif ($groups): ?>
+      <?= ui_user_groups($groups, '弹幕', function (array $d): string {
+          $deleted = (int) $d['deleted'] === 1;
+          $seconds = intdiv((int) $d['position_ms'], 1000);
+          $html = '<div class="cgroup-item' . ($deleted ? ' is-deleted' : '') . '">';
+          $html .= '<div class="comment-body">' . ui_excerpt((string) $d['content'], 400) . '</div>';
+          $html .= '<div class="comment-meta">';
+          $html .= '<a class="comment-target mono small" href="/user/?a=danmaku&bid='
+              . (int) $d['bangumi_id'] . '">番剧 ' . (int) $d['bangumi_id']
+              . ' · 第 ' . (int) $d['episode'] . ' 集 · '
+              . sprintf('%02d:%02d', intdiv($seconds, 60), $seconds % 60) . '</a>';
+          $html .= '<span class="muted small">' . admin_esc(ui_time((int) $d['created_at'])) . '</span>';
+          $html .= '<span class="muted small">#' . (int) $d['id'] . '</span>';
+          if ($deleted) {
+              $html .= ui_badge('已删除', 'muted');
+          }
+          $html .= '<span class="spacer"></span>';
+          if (!$deleted) {
+              $html .= '<form method="post" action="/user/?a=delete-danmaku"'
+                  . ' onsubmit="return confirm(\'删除这条弹幕？\');">'
+                  . csrf_field()
+                  . '<input type="hidden" name="danmaku_id" value="' . (int) $d['id'] . '">'
+                  . '<input type="hidden" name="back" value="/user/?a=danmaku">'
+                  . '<button class="btn small danger" type="submit">'
+                  . ui_icon('trash', 15) . ' 删除</button></form>';
+          }
+          $html .= '</div></div>';
+          return $html;
+      }) ?>
+    <?php else: ?>
+      <section class="card flush">
         <ul class="comment-list padded">
         <?php foreach ($rows as $d): ?>
           <?php
@@ -1075,8 +1251,8 @@ function render_danmaku(): void
           </li>
         <?php endforeach; ?>
         </ul>
-      <?php endif; ?>
-    </section>
+      </section>
+    <?php endif; ?>
 
     <?php if ($rows): ?>
       <div class="table-foot">
@@ -1625,6 +1801,25 @@ input.narrow{width:120px}
 .empty .ic{opacity:.5}
 .empty-title{font-size:14.5px;font-weight:600;color:var(--text-2)}
 .empty-hint{font-size:12.5px}
+
+/* ---------- 按用户分组的列表 ---------- */
+.ugroup{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  margin-bottom:10px;overflow:hidden}
+.ugroup[open]{border-color:color-mix(in srgb,var(--accent) 32%,var(--line))}
+.ugroup-head{display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;
+  list-style:none;user-select:none;flex-wrap:wrap}
+.ugroup-head::-webkit-details-marker{display:none}
+.ugroup-head:hover{background:var(--panel-2)}
+.ugroup-name{font-weight:600;font-size:14.5px;display:inline-flex;align-items:center;
+  gap:6px;min-width:0;flex-wrap:wrap}
+.ugroup-stat{margin-left:auto;color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums}
+.ugroup-chevron{display:inline-flex;color:var(--muted);transition:transform .18s ease}
+.ugroup[open] .ugroup-chevron{transform:rotate(180deg)}
+.ugroup-body{border-top:1px solid var(--line-soft)}
+.cgroup-item{padding:12px 16px;border-bottom:1px solid var(--line-soft)}
+.cgroup-item:last-child{border-bottom:none}
+.cgroup-item.is-deleted{opacity:.6}
+.ugroup-more{padding:10px 16px;background:var(--panel-2);color:var(--muted);font-size:12.5px}
 
 /* ---------- 提示条 ---------- */
 .alert{padding:11px 15px;border-radius:12px;margin-bottom:16px;font-size:13.5px}

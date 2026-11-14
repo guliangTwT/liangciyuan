@@ -56,9 +56,38 @@ class _InitPageState extends State<InitPage> {
   /// 所以只在耗时步骤前更新，不做逐帧刷新。
   String _status = '正在读取本地数据…';
 
+  /// 是否正在播放退场动画。
+  bool _leaving = false;
+
+  /// 启动页最短展示时长。
+  ///
+  /// 初始化在多数机器上不到 300ms 就完成了，动画还没展开就跳走，
+  /// 观感上等于没有启动页。这里给一个下限，让入场动画能完整播完；
+  /// 已经够慢的机器上这段等待几乎不额外增加时间（取的是剩余时间）。
+  static const Duration _minimumSplash = Duration(milliseconds: 1100);
+
+  late final DateTime _startedAt = DateTime.now();
+
   void _setStatus(String value) {
     if (!mounted || _status == value) return;
     setState(() => _status = value);
+  }
+
+  /// 播完退场动画再跳转。
+  Future<void> _leaveTo(String route, Object? arguments) async {
+    if (!mounted) return;
+    // 让启动页至少完整展示 _minimumSplash，避免一闪而过。
+    final elapsed = DateTime.now().difference(_startedAt);
+    final remaining = _minimumSplash - elapsed;
+    if (remaining > Duration.zero) {
+      await Future<void>.delayed(remaining);
+    }
+    if (!mounted) return;
+    setState(() => _leaving = true);
+    // 等退场动画走完（含一帧余量），再交给目标页。
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+    context.navigate(route, arguments: arguments);
   }
 
   @override
@@ -93,7 +122,7 @@ class _InitPageState extends State<InitPage> {
     // first-run signal comes from the controller rather than an empty list.
     if (!GStorage.getSetting(SettingsKeys.onboardingCompleted) &&
         pluginsController.isFirstRun) {
-      context.navigate('/onboarding');
+      await _leaveTo('/onboarding', null);
       return;
     }
 
@@ -105,7 +134,10 @@ class _InitPageState extends State<InitPage> {
         checkForUpdate: () => updateController.checkUpdate(type: 'auto'),
       ),
     );
-    context.navigate(GStorage.getSetting(SettingsKeys.defaultStartupPage));
+    await _leaveTo(
+      GStorage.getSetting(SettingsKeys.defaultStartupPage),
+      null,
+    );
   }
 
   void _setupBackgroundDownloadNavigation() {
@@ -372,6 +404,6 @@ class _InitPageState extends State<InitPage> {
 
   @override
   Widget build(BuildContext context) {
-    return StartupLoadingView(status: _status);
+    return StartupLoadingView(status: _status, leaving: _leaving);
   }
 }

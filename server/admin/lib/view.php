@@ -11,11 +11,13 @@ const ADMIN_NAV = [
     'comments' => ['label' => '评论', 'icon' => 'comments'],
     'danmaku' => ['label' => '弹幕', 'icon' => 'danmaku'],
     'audit' => ['label' => '操作日志', 'icon' => 'log'],
+    'security' => ['label' => '登录安全', 'icon' => 'shield'],
 ];
 
 function render_login(?string $error = null): void
 {
     $flash = admin_take_flash();
+    $remembered = admin_has_remember_token();
     ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -46,6 +48,17 @@ function render_login(?string $error = null): void
       <span>访问密码</span>
       <input type="password" name="password" autocomplete="current-password" required autofocus>
     </label>
+    <label class="check">
+      <input type="checkbox" name="remember" value="1"<?= $remembered ? ' checked' : '' ?>>
+      <span>30 天内免密登录</span>
+    </label>
+    <p class="login-hint">
+      <?php if ($remembered): ?>
+        本设备已记住登录。换设备或清空 cookie 后需要重新输入密码。
+      <?php else: ?>
+        勾选后这台设备 30 天内不必再输密码。公共电脑请不要勾选。
+      <?php endif; ?>
+    </p>
     <button class="btn primary block" type="submit">进入后台</button>
     <p class="login-foot">仅限管理员访问 · 连续输错会临时锁定</p>
   </form>
@@ -1105,6 +1118,8 @@ function render_audit(): void
         'delete-danmaku' => ['删除弹幕', 'warn'],
         'set-title' => ['设置称号', 'muted'],
         'login' => ['登录后台', 'muted'],
+        'logout-all' => ['全部登出', 'warn'],
+        'revoke-device' => ['撤销设备', 'warn'],
     ];
 
     ob_start();
@@ -1147,6 +1162,180 @@ function render_audit(): void
     <?php endif; ?>
     <?php
     render_page('操作日志', (string) ob_get_clean(), 'audit');
+}
+
+// ---------------------------------------------------------------------------
+// 登录安全
+// ---------------------------------------------------------------------------
+
+/// 已记住的设备列表与「一键全部登出」。
+///
+/// 免密登录是个长期凭证，必须给用户一个能看到、能撤销的地方——
+/// 否则笔记本丢了只能改密码，而改密码在这个后台是改服务器配置文件。
+function render_security(): void
+{
+    $pdo = admin_db();
+    $now = admin_now();
+    // 顺手清掉过期令牌，列表里只留有效的。
+    $pdo->prepare('DELETE FROM admin_remember_tokens WHERE expires_at <= ?')->execute([$now]);
+    $tokens = $pdo->query(
+        'SELECT * FROM admin_remember_tokens ORDER BY last_used_at DESC'
+    )->fetchAll();
+
+    $currentHash = '';
+    $cookieToken = (string) ($_COOKIE[ADMIN_REMEMBER_COOKIE] ?? '');
+    if (strlen($cookieToken) === 64) {
+        $currentHash = hash('sha256', $cookieToken);
+    }
+
+    $config = admin_config();
+    $idleMinutes = (int) round(((int) $config['session_idle_seconds']) / 60);
+
+    ob_start();
+    ?>
+    <?= ui_page_head(
+        '登录安全',
+        '免密登录凭证与后台访问策略',
+        '<form method="post" action="/user/?a=logout-all" '
+        . 'onsubmit="return confirm(\'确定作废全部免密登录？所有已记住的设备都需要重新输密码。\');">'
+        . csrf_field()
+        . '<button class="btn danger" type="submit">' . ui_icon('logout', 16) . ' 全部登出</button></form>'
+    ) ?>
+
+    <div class="grid-2">
+      <section class="card">
+        <div class="card-head"><h2>当前策略</h2></div>
+        <div class="kv-rows">
+          <div class="kv-row">
+            <span class="kv-label">空闲超时</span>
+            <span class="kv-value"><?= $idleMinutes ?> 分钟</span>
+            <span class="muted small">无操作后需重新验证</span>
+          </div>
+          <div class="kv-row">
+            <span class="kv-label">免密有效期</span>
+            <span class="kv-value"><?= ADMIN_REMEMBER_DAYS ?> 天</span>
+            <span class="muted small">登录时勾选才生效</span>
+          </div>
+          <div class="kv-row">
+            <span class="kv-label">失败锁定</span>
+            <span class="kv-value"><?= (int) $config['login_max_attempts'] ?> 次</span>
+            <span class="muted small">
+              锁定 <?= (int) round(((int) $config['login_lock_seconds']) / 60) ?> 分钟
+            </span>
+          </div>
+          <div class="kv-row">
+            <span class="kv-label">已记住设备</span>
+            <span class="kv-value"><?= count($tokens) ?></span>
+            <span class="muted small">可单独撤销</span>
+          </div>
+        </div>
+        <p class="muted small" style="margin:14px 0 0">
+          免密令牌只以 SHA-256 形式存库；来源 IP 或浏览器发生变化时会自动失效，
+          需要重新输入密码。
+        </p>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>说明</h2></div>
+        <ul class="tips">
+          <li>勾选「30 天内免密登录」后，关闭浏览器再打开也能直接进入后台。</li>
+          <li>点「退出登录」只会注销当前这一台设备；「全部登出」会作废所有设备。</li>
+          <li>怀疑密码外泄时，先「全部登出」，再修改 <code>config.local.php</code> 里的密码。</li>
+          <li>公共电脑上请不要勾选免密，用完直接退出。</li>
+        </ul>
+      </section>
+    </div>
+
+    <section class="card flush">
+      <div class="card-head" style="padding:16px 20px 0">
+        <h2>已记住的设备 <span class="count"><?= count($tokens) ?> 台</span></h2>
+      </div>
+      <?php if (!$tokens): ?>
+        <?= ui_empty('没有免密登录的设备', '登录时勾选「30 天内免密登录」会出现在这里', 'shield') ?>
+      <?php else: ?>
+        <div class="table-scroll">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>设备</th>
+                <th>IP</th>
+                <th class="col-time">首次登录</th>
+                <th class="col-time">最近使用</th>
+                <th class="col-time">到期</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+            <?php foreach ($tokens as $row): ?>
+              <?php $isCurrent = $currentHash !== '' && hash_equals((string) $row['token_hash'], $currentHash); ?>
+              <tr>
+                <td>
+                  <div class="device-cell">
+                    <span class="device-name"><?= admin_esc(ui_device_label((string) $row['user_agent'])) ?></span>
+                    <?php if ($isCurrent): ?>
+                      <span class="badge ok">当前设备</span>
+                    <?php endif; ?>
+                  </div>
+                  <div class="muted small clamp-1" style="max-width:380px">
+                    <?= admin_esc((string) $row['user_agent']) ?>
+                  </div>
+                </td>
+                <td class="mono small"><?= admin_esc((string) $row['ip']) ?></td>
+                <td class="col-time mono small"><?= admin_esc(ui_time((int) $row['created_at'])) ?></td>
+                <td class="col-time mono small"><?= admin_esc(ui_ago((int) $row['last_used_at'])) ?></td>
+                <td class="col-time mono small"><?= admin_esc(ui_time((int) $row['expires_at'])) ?></td>
+                <td class="col-action">
+                  <form method="post" action="/user/?a=revoke-device"
+                        onsubmit="return confirm('撤销这台设备的免密登录？');">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="token_hash" value="<?= admin_esc((string) $row['token_hash']) ?>">
+                    <button class="btn small danger" type="submit">撤销</button>
+                  </form>
+                </td>
+              </tr>
+            <?php endforeach; ?>
+            </tbody>
+          </table>
+        </div>
+      <?php endif; ?>
+    </section>
+    <?php
+    render_page('登录安全', (string) ob_get_clean(), 'security');
+}
+
+/// 从 User-Agent 里提取一个可读的设备名，取不到就显示「未知浏览器」。
+function ui_device_label(string $userAgent): string
+{
+    $ua = strtolower($userAgent);
+    $browser = '未知浏览器';
+    foreach ([
+        'edg/' => 'Edge',
+        'opr/' => 'Opera',
+        'firefox/' => 'Firefox',
+        'chrome/' => 'Chrome',
+        'safari/' => 'Safari',
+        'curl/' => '命令行',
+    ] as $needle => $label) {
+        if (str_contains($ua, $needle)) {
+            $browser = $label;
+            break;
+        }
+    }
+    $os = '';
+    foreach ([
+        'windows' => 'Windows',
+        'android' => 'Android',
+        'iphone' => 'iPhone',
+        'ipad' => 'iPad',
+        'mac os' => 'macOS',
+        'linux' => 'Linux',
+    ] as $needle => $label) {
+        if (str_contains($ua, $needle)) {
+            $os = $label;
+            break;
+        }
+    }
+    return $os === '' ? $browser : $browser . ' · ' . $os;
 }
 
 // ---------------------------------------------------------------------------
@@ -1454,6 +1643,17 @@ input.narrow{width:120px}
 .field{display:flex;flex-direction:column;gap:7px;font-size:13.5px;color:var(--text-2)}
 .field input{width:100%}
 .login-foot{margin:2px 0 0;text-align:center;color:var(--muted);font-size:12px}
+.login-hint{margin:0;color:var(--muted);font-size:12.5px;line-height:1.6}
+.check{display:flex;align-items:center;gap:9px;font-size:14px;color:var(--text);
+  cursor:pointer;user-select:none;padding:2px 0}
+.check input{width:18px;height:18px;accent-color:var(--accent);cursor:pointer;flex:none}
+.check span{line-height:1.4}
+.device-cell{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.device-name{font-weight:600;font-size:14px}
+.tips{margin:0;padding-left:18px;color:var(--text-2);font-size:13.5px;line-height:1.9}
+.tips li{margin-bottom:4px}
+.tips code{background:var(--panel-2);border:1px solid var(--line);border-radius:5px;
+  padding:1px 6px;font-size:12.5px}
 
 /* ---------- 响应式 ---------- */
 @media (max-width:1000px){

@@ -160,3 +160,40 @@ function do_delete_danmaku(): void
     admin_flash('已删除该弹幕。');
     admin_redirect($back);
 }
+
+/// 撤销某台设备的免密登录。
+///
+/// token_hash 来自页面上的隐藏字段（是哈希，不是令牌本身），
+/// 因此即使页面被截屏也换不出可用的 cookie。
+function do_revoke_device(): void
+{
+    $hash = trim((string) ($_POST['token_hash'] ?? ''));
+    // 只接受 64 位十六进制，避免拿任意字符串去查库。
+    if (!preg_match('/^[a-f0-9]{64}$/', $hash)) {
+        admin_flash('无效的设备标识。', 'error');
+        admin_redirect('/user/?a=security');
+    }
+    $pdo = admin_db();
+    $stmt = $pdo->prepare('SELECT user_agent, ip FROM admin_remember_tokens WHERE token_hash = ?');
+    $stmt->execute([$hash]);
+    $row = $stmt->fetch();
+    if (!$row) {
+        admin_flash('该设备已不存在（可能已过期）。', 'error');
+        admin_redirect('/user/?a=security');
+    }
+    $pdo->prepare('DELETE FROM admin_remember_tokens WHERE token_hash = ?')->execute([$hash]);
+    admin_audit(
+        'revoke-device',
+        '撤销免密登录：' . ui_device_label((string) $row['user_agent'])
+        . '（' . (string) $row['ip'] . '）'
+    );
+    // 如果撤的正是当前这台，顺手把自己的 cookie 也清掉，避免状态不一致。
+    $cookieToken = (string) ($_COOKIE[ADMIN_REMEMBER_COOKIE] ?? '');
+    if (strlen($cookieToken) === 64 && hash_equals($hash, hash('sha256', $cookieToken))) {
+        admin_revoke_remember_token();
+        admin_flash('已撤销当前设备的免密登录，会话仍保持到超时。');
+        admin_redirect('/user/?a=security');
+    }
+    admin_flash('已撤销该设备的免密登录。');
+    admin_redirect('/user/?a=security');
+}

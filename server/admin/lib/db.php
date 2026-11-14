@@ -37,10 +37,10 @@ function admin_db(): PDO
 /// 与 liangciyuan-api/lib/db.php 共用同一个 SQLite 与同一个版本号，
 /// 谁先访问谁迁移，另一个看到版本达标就只多一条 SELECT。
 ///
-/// 版本 3 = 在 2 的基础上增加后台操作日志表。
+/// 版本 3 = 后台操作日志表；版本 4 = 后台免密登录令牌表。
 function admin_ensure_schema(PDO $pdo): void
 {
-    $target = 3;
+    $target = 4;
     if ((int) $pdo->query('PRAGMA user_version')->fetchColumn() >= $target) {
         return;
     }
@@ -186,6 +186,26 @@ SQL);
     $pdo->exec(
         'CREATE INDEX IF NOT EXISTS idx_admin_audit_time
          ON admin_audit_log(created_at)'
+    );
+
+    // 「30 天内免密登录」令牌。
+    //
+    // 只存令牌的 SHA-256，不存明文：数据库万一被读走，也换不出可用的 cookie。
+    // 令牌本身放在独立的 cookie 里，和 session 分开——退出登录时能精确作废
+    // 当前这一枚，而不是把所有人的都用同一个开关关掉。
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS admin_remember_tokens (
+           token_hash TEXT PRIMARY KEY,
+           ip TEXT NOT NULL DEFAULT "",
+           user_agent TEXT NOT NULL DEFAULT "",
+           created_at INTEGER NOT NULL,
+           expires_at INTEGER NOT NULL,
+           last_used_at INTEGER NOT NULL DEFAULT 0
+         )'
+    );
+    $pdo->exec(
+        'CREATE INDEX IF NOT EXISTS idx_admin_remember_expiry
+         ON admin_remember_tokens(expires_at)'
     );
 
     // users 的扩展列：老库补列，新库直接建在上面那张表里。

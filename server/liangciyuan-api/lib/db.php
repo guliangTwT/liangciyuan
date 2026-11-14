@@ -47,9 +47,10 @@ function db(): PDO
 /// 现在用 SQLite 自带的 PRAGMA user_version 做版本闸门：
 /// 版本达标时只多一条 SELECT，不再执行任何 DDL。
 /// 新增表或列时把 $target 加一即可。
+/// 版本 3 = 后台操作日志；版本 4 = 后台免密登录令牌。
 function init_schema(PDO $pdo): void
 {
-    $target = 3;
+    $target = 4;
     $current = (int) $pdo->query('PRAGMA user_version')->fetchColumn();
     if ($current >= $target) {
         return;
@@ -208,6 +209,21 @@ SQL);
     $pdo->exec(
         'CREATE INDEX IF NOT EXISTS idx_admin_audit_time
          ON admin_audit_log(created_at)'
+    );
+    // 后台「30 天内免密登录」令牌：只存哈希。
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS admin_remember_tokens (
+           token_hash TEXT PRIMARY KEY,
+           ip TEXT NOT NULL DEFAULT "",
+           user_agent TEXT NOT NULL DEFAULT "",
+           created_at INTEGER NOT NULL,
+           expires_at INTEGER NOT NULL,
+           last_used_at INTEGER NOT NULL DEFAULT 0
+         )'
+    );
+    $pdo->exec(
+        'CREATE INDEX IF NOT EXISTS idx_admin_remember_expiry
+         ON admin_remember_tokens(expires_at)'
     );
 
     // 迁移完成后再抬高版本号：万一中途有语句失败，下次请求会重跑一遍

@@ -193,11 +193,13 @@ abstract class _SearchPageController with Store {
   @action
   Future<void> setNotShowWatchedBangumis(bool value) async {
     notShowWatchedBangumis = value;
+    invalidateHiddenBangumiIds();
   }
 
   @action
   Future<void> setNotShowAbandonedBangumis(bool value) async {
     notShowAbandonedBangumis = value;
+    invalidateHiddenBangumiIds();
   }
 
   Set<int> loadWatchedBangumiIds() {
@@ -206,5 +208,56 @@ abstract class _SearchPageController with Store {
 
   Set<int> loadAbandonedBangumiIds() {
     return _collectRepository.getBangumiIdsByType(CollectType.abandoned);
+  }
+
+  /// 需要从结果里过滤掉的番剧 ID（已看过 + 已抛弃）。
+  ///
+  /// 搜索页的 build 里要用它来过滤结果，而 build 可能因任何状态变化重跑
+  /// （输入、滚动、加载态…）。以前每次都调用上面两个方法，等于**每次 build
+  /// 都遍历两遍整张收藏表**。这里按开关组合缓存一份。
+  ///
+  /// 缓存加了短有效期：收藏表没有变更通知可订阅（`CollectRepository` 只有
+  /// 直接读写），用户在别处改完收藏再回到搜索页时，最多 [hiddenIdsTtl]
+  /// 之后就会重新读一次，不会长期显示过时的过滤结果。
+  static const hiddenIdsTtl = Duration(seconds: 3);
+
+  Set<int>? _hiddenIdsCache;
+  (bool, bool)? _hiddenIdsCacheKey;
+  DateTime? _hiddenIdsCachedAt;
+
+  Set<int> hiddenBangumiIds() {
+    final watched = notShowWatchedBangumis;
+    final abandoned = notShowAbandonedBangumis;
+    if (!watched && !abandoned) return const <int>{};
+
+    final key = (watched, abandoned);
+    final cached = _hiddenIdsCache;
+    final cachedAt = _hiddenIdsCachedAt;
+    if (cached != null &&
+        _hiddenIdsCacheKey == key &&
+        cachedAt != null &&
+        DateTime.now().difference(cachedAt) < hiddenIdsTtl) {
+      return cached;
+    }
+
+    // 两个开关都要时只扫一遍表。
+    final types = <CollectType>[
+      if (watched) CollectType.watched,
+      if (abandoned) CollectType.abandoned,
+    ];
+    final result = types.length == 1
+        ? _collectRepository.getBangumiIdsByType(types.single)
+        : _collectRepository.getBangumiIdsByTypes(types);
+    _hiddenIdsCache = result;
+    _hiddenIdsCacheKey = key;
+    _hiddenIdsCachedAt = DateTime.now();
+    return result;
+  }
+
+  /// 明确知道收藏变了（例如设置页改完开关）时立即作废旧结果。
+  void invalidateHiddenBangumiIds() {
+    _hiddenIdsCache = null;
+    _hiddenIdsCacheKey = null;
+    _hiddenIdsCachedAt = null;
   }
 }

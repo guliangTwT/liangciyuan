@@ -1375,6 +1375,9 @@ class _PlayerItemState extends State<PlayerItem>
     _panelVisibilityController.dispose();
     _screenshotFeedbackController.dispose();
     _disposePlayerMenu();
+    // 进度是按间隔节流落盘的，退出前把还没写的那一次补上，
+    // 否则最后几秒的观看进度会丢。
+    unawaited(historyController.flushPendingHistory());
     if (Platform.isAndroid) {
       unawaited(_syncAndroidPIPPlayerPageState(false));
       PipUtils.disposePipHandler();

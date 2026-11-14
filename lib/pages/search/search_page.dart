@@ -252,16 +252,10 @@ class _SearchPageState extends State<SearchPage> {
 
   List<Widget> _resultSlivers(double width) {
     final allItems = _controller.bangumiList.toList();
-    final watched = _controller.notShowWatchedBangumis
-        ? _controller.loadWatchedBangumiIds()
-        : <int>{};
-    final abandoned = _controller.notShowAbandonedBangumis
-        ? _controller.loadAbandonedBangumiIds()
-        : <int>{};
-    final items = allItems
-        .where((item) =>
-            !watched.contains(item.id) && !abandoned.contains(item.id))
-        .toList();
+    // 一次拿到要隐藏的 ID（内部按开关组合缓存，避免每次 build 扫全表）。
+    final hidden = _controller.hiddenBangumiIds();
+    final items =
+        allItems.where((item) => !hidden.contains(item.id)).toList();
     final busy = _controller.isLoading;
     final failed = _controller.isTimeOut;
     final submitted = SearchParser(_submittedQuery!).toFilterState();

@@ -113,10 +113,49 @@ abstract class _PluginsController with Store {
     pluginList.clear();
     _isFirstRun = !await pluginsFile.exists();
     if (!_isFirstRun) {
-      final List<dynamic> json = jsonDecode(await pluginsFile.readAsString());
-      pluginList.addAll([for (final item in json) Plugin.fromJson(item)]);
-      KazumiLogger().i('Plugin: Current Plugin number: ${pluginList.length}');
-      return;
+      Object? decoded;
+      try {
+        decoded = jsonDecode(await pluginsFile.readAsString());
+      } catch (e) {
+        // 半截 JSON（旧版本直接覆盖写入时被中断）会让整个规则列表读不出来。
+        // 保留坏文件以便排查，然后按首次运行重装默认规则。
+        KazumiLogger().e('Plugin: plugins.json is not valid JSON', error: e);
+        try {
+          await pluginsFile.rename('${pluginsFile.path}.broken');
+        } catch (_) {}
+        _isFirstRun = true;
+      }
+      if (decoded is List) {
+        // 逐条容错：手工编辑、旧格式或第三方导入的规则里只要有一条字段
+        // 类型不对，整个列表推导都会抛异常，用户会看到「一条规则都没有」。
+        var skipped = 0;
+        for (final item in decoded) {
+          if (item is! Map) {
+            skipped++;
+            continue;
+          }
+          try {
+            pluginList.add(
+              Plugin.fromJson(Map<String, dynamic>.from(item)),
+            );
+          } catch (e) {
+            skipped++;
+            KazumiLogger().w('Plugin: skip unreadable rule $item', error: e);
+          }
+        }
+        if (skipped > 0) {
+          KazumiLogger().w('Plugin: skipped $skipped unreadable rule(s)');
+        }
+        KazumiLogger().i('Plugin: Current Plugin number: ${pluginList.length}');
+        // 注意：合法但为空（`[]`）是「用户主动删光规则」，必须保持为空；
+        // 只有「一个条目都解析不出来」才当作损坏，回退到默认规则。
+        if (pluginList.isNotEmpty || skipped == 0) return;
+        KazumiLogger().e('Plugin: every stored rule is unreadable');
+        _isFirstRun = true;
+      } else if (decoded != null) {
+        KazumiLogger().e('Plugin: plugins.json is not a JSON array');
+        _isFirstRun = true;
+      }
     }
     await _migrateLegacyPlugins(legacyDirectory);
     // Migrated rules mean this is an existing install, not a first run.
@@ -158,8 +197,18 @@ abstract class _PluginsController with Store {
         .whereType<File>()
         .where((file) => file.path.endsWith('.json'));
     for (final file in legacyFiles) {
-      pluginList.add(Plugin.fromJson(jsonDecode(await file.readAsString())));
-      await file.delete();
+      // 单个旧文件损坏不能让迁移整体中断，也不该阻止应用继续启动。
+      try {
+        pluginList.add(Plugin.fromJson(jsonDecode(await file.readAsString())));
+      } catch (e) {
+        KazumiLogger().w(
+          'Plugin: skip unreadable legacy rule ${file.path}',
+          error: e,
+        );
+      }
+      try {
+        await file.delete();
+      } catch (_) {}
     }
     await _savePlugins();
   }
@@ -280,7 +329,12 @@ abstract class _PluginsController with Store {
     if (writer != null) {
       await writer(jsonData);
     } else {
-      await _pluginsFile!.writeAsString(jsonData);
+      // 先写临时文件再 rename：直接覆盖时进程被杀会留下半截 JSON，
+      // 下次启动整个规则列表都读不出来。
+      final target = _pluginsFile!;
+      final tmp = File('${target.path}.tmp');
+      await tmp.writeAsString(jsonData, flush: true);
+      await tmp.rename(target.path);
       KazumiLogger().i('Plugin: updated plugin file $_pluginsFileName');
     }
   }

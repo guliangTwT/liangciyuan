@@ -60,6 +60,10 @@ class PlaybackCachePolicy {
   /// 128 KiB 时一半只有 64 KiB，来回 seek 很容易越过窗口重新读。
   static const int _streamBufferBytes = 1024 * 1024;
 
+  /// mpv 的默认值。低内存模式必须显式写回来：以前「0 表示跳过设置」，
+  /// 从大缓冲切到低内存时旧值会一直留在播放器上，内存并没有降下来。
+  static const int _streamBufferDefaultBytes = 128 * 1024;
+
   /// libavformat 的读缓冲，mpv 默认只有 32 KiB。
   ///
   /// 这个缓冲在解码器与协议层之间，决定 libavformat 一次能拿多少数据。
@@ -67,6 +71,8 @@ class PlaybackCachePolicy {
   /// 读取被打散成很多次小请求，每次都要等一次协议层往返。放到 1 MiB
   /// 能显著减少这种碎片化读取。
   static const int _lavfBufferBytes = 1024 * 1024;
+
+  static const int _lavfBufferDefaultBytes = 32 * 1024;
 
   /// 进入 buffering 后，缓存里要攒够多少秒的数据才恢复播放。
   ///
@@ -176,22 +182,19 @@ class PlaybackCachePolicy {
           'hr-seek-framedrop',
           _hrSeekFrameDrop ? 'yes' : 'no',
         );
-        // 0 表示交回 mpv 默认（128 KiB），只在低内存模式下走这条分支。
+        // 0 表示回落到 mpv 默认值（而不是「不设置」）。
         final streamBuffer = streamBufferBytes;
-        if (streamBuffer > 0) {
-          await pp.setProperty(
-            'stream-buffer-size',
-            streamBuffer.toString(),
-          );
-        }
+        await pp.setProperty(
+          'stream-buffer-size',
+          (streamBuffer > 0 ? streamBuffer : _streamBufferDefaultBytes)
+              .toString(),
+        );
         // libavformat 读缓冲，默认 32 KiB，对 HLS 分片太小。
         final lavfBuffer = lavfBufferBytes;
-        if (lavfBuffer > 0) {
-          await pp.setProperty(
-            'demuxer-lavf-buffersize',
-            lavfBuffer.toString(),
-          );
-        }
+        await pp.setProperty(
+          'demuxer-lavf-buffersize',
+          (lavfBuffer > 0 ? lavfBuffer : _lavfBufferDefaultBytes).toString(),
+        );
       });
     } catch (e) {
       KazumiLogger().w(

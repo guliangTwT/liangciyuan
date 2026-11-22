@@ -998,23 +998,26 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
                     onPressed: widget.showVideoInfo,
                     label: '视频详情',
                   ),
-                  KazumiMenuItem(
-                    onPressed: () {
-                      final needRestart = playerController.playback.playing;
-                      playerController.pause();
-                      RemotePlay()
-                          .castVideo(
-                            playerController.videoUrl,
-                            videoPageController.currentPlugin.referer,
-                          )
-                          .whenComplete(() {
-                            if (mounted && needRestart) {
-                              playerController.play();
-                            }
-                          });
-                    },
-                    label: '远程投屏',
-                  ),
+                  // 离线播放时没有插件上下文（currentPlugin 是 late，未赋值），
+                  // 投屏本地文件也不受支持，直接不展示该入口。
+                  if (!videoPageController.isOfflineMode)
+                    KazumiMenuItem(
+                      onPressed: () {
+                        final needRestart = playerController.playback.playing;
+                        playerController.pause();
+                        RemotePlay()
+                            .castVideo(
+                              playerController.videoUrl,
+                              videoPageController.currentPlugin.referer,
+                            )
+                            .whenComplete(() {
+                              if (mounted && needRestart) {
+                                playerController.play();
+                              }
+                            });
+                      },
+                      label: '远程投屏',
+                    ),
                   KazumiMenuItem(
                     onPressed: playerController.launchExternalPlayer,
                     label: '外部播放',

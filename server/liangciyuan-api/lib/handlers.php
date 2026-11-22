@@ -175,7 +175,10 @@ function handle_reset_password(Request $request): void
             throw new HttpException(400, '验证码已过期，请重新获取');
         }
         if (!hash_equals((string) $row['code_hash'], hash('sha256', $code))) {
-            // 按邮箱限制验证尝试次数，避免换 IP 对同一邮箱爆破 6 位码。
+            // 必须先结束外层事务再计数：rate_limit 在嵌套事务里只做 UPDATE，
+            // 异常抛出后外层的 rollBack() 会把刚加的计数一起撤销，
+            // 等于「按邮箱限制验证码尝试次数」从来没有生效过。
+            $pdo->rollBack();
             rate_limit('verify:email:' . $email, 20, 3600);
             throw new HttpException(400, '验证码不正确');
         }
@@ -253,7 +256,8 @@ function handle_register(Request $request): void
             throw new HttpException(400, '验证码已过期，请重新获取');
         }
         if (!hash_equals((string) $row['code_hash'], hash('sha256', $code))) {
-            // 按邮箱限制验证尝试次数，避免换 IP 对同一邮箱爆破 6 位码。
+            // 同 reset：计数必须在事务外提交，否则会被外层 rollBack 撤销。
+            $pdo->rollBack();
             rate_limit('verify:email:' . $email, 20, 3600);
             throw new HttpException(400, '验证码不正确');
         }

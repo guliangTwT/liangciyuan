@@ -572,6 +572,7 @@ abstract class _VideoPageController with Store implements Disposable {
       unawaited(_loadPlaybackDanmaku(playerController, params, session));
     } else if (session.isActive) {
       _playbackSessions.cancel();
+      _failLoading('播放器初始化失败，请重试');
     }
   }
 
@@ -643,6 +644,7 @@ abstract class _VideoPageController with Store implements Disposable {
       unawaited(_loadPlaybackDanmaku(playerController, params, session));
     } else if (session.isActive) {
       _playbackSessions.cancel();
+      _failLoading('播放器初始化失败，请重试');
     }
   }
 
@@ -769,6 +771,7 @@ abstract class _VideoPageController with Store implements Disposable {
         unawaited(_loadPlaybackDanmaku(playerController, params, session));
       } else if (session.isActive) {
         _playbackSessions.cancel();
+        _failLoading('播放器初始化失败，请重试');
       }
     } on VideoSourceTimeoutException {
       if (session.isStale) {

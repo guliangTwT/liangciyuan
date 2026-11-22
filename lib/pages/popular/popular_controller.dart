@@ -50,6 +50,15 @@ abstract class _PopularController with Store {
 
   int _trendOffset = 0;
 
+  /// 频道的服务端偏移与「还有下一页」标记。
+  ///
+  /// 以前直接用 `bangumiList.length` 当 offset：列表做了跨页去重，
+  /// 一旦某页里混入已存在条目，长度增长小于页大小，下次 offset 就会
+  /// 回退、反复拉同一页；极端情况下整页都是重复项，offset 永远不动。
+  /// 另外没有「到底」标记，翻到末端后每次滚动还会再发一次空请求。
+  int _tagOffset = 0;
+  bool hasMoreTags = true;
+
   /// 频道切换代次。每次切频道 +1。
   ///
   /// 网络请求是异步的：用户从「日漫」切到「国漫」时，日漫那一页可能还在路上。
@@ -189,13 +198,19 @@ abstract class _PopularController with Store {
 
   @action
   Future<void> queryBangumiByTag({String type = 'add'}) async {
-    if (type == 'init') {
+    final isInit = type == 'init';
+    if (isInit) {
       bangumiList.clear();
+      _tagOffset = 0;
+      hasMoreTags = true;
+    } else if (!hasMoreTags) {
+      // 已经到底：不再发请求，也不要把「加载中」点亮。
+      return;
     }
     // 记下发请求时的代次与标签；await 之后要确认世界没变。
     final generation = _channelGeneration;
     final tag = currentTag;
-    final offset = bangumiList.length;
+    final offset = _tagOffset;
     isLoadingMore = true;
     final result = _bangumiMirrorEnabled
         ? await BangumiApi.getBangumiMirrorPopularSubjects(
@@ -209,6 +224,12 @@ abstract class _PopularController with Store {
           );
     // 期间用户切了频道：这份结果属于旧频道，丢掉。
     if (generation != _channelGeneration) return;
+    if (result.isEmpty) {
+      // 空页就是末端（也可能是请求失败；两种情况都不该继续翻）。
+      hasMoreTags = false;
+    } else {
+      _tagOffset += result.length;
+    }
     // 同一页里可能因为分页边界出现重复条目；跨页也去重，避免列表里
     // 同一部番出现两次（点开的是同一个条目，看着像加载出错）。
     final existingIds = bangumiList.map((item) => item.id).toSet();

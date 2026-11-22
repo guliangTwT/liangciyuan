@@ -116,7 +116,10 @@ class NetworkConfig {
       sendTimeout: sendTimeout,
       proxyHost: parsed.$1,
       proxyPort: parsed.$2,
-      allowBadCertificates: true,
+      // 只对本机回环代理放行自签证书：本地抓包/代理软件会做 MITM。
+      // 远端代理不能关校验——那等于对所有站点放弃 HTTPS 保护，
+      // 账号 token 与更新安装包都可能被中间人替换。
+      allowBadCertificates: ProxyUtils.isLoopbackHost(parsed.$1),
     );
   }
 }

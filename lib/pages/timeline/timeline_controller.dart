@@ -136,8 +136,27 @@ abstract class _TimelineController with Store {
     await _collectRepository.updateTimelineOnlyShowWatchingBangumis(value);
   }
 
+  /// 收藏 id 缓存的存活时间。
+  ///
+  /// 时间表的 Observer 每次重建（加载、排序、评分预取、切筛选）都会
+  /// 调一次过滤，以前每次都全表扫 1~3 遍收藏盒子；收藏量大时切季
+  /// 会明显卡顿。这里按开关组合缓存几秒，收藏变化后稍后自动生效。
+  static const Duration _collectIdsTtl = Duration(seconds: 3);
+  final Map<CollectType, (Set<int>, DateTime)> _collectIdsCache = {};
+
+  Set<int> _collectIds(CollectType type) {
+    final cached = _collectIdsCache[type];
+    if (cached != null &&
+        DateTime.now().difference(cached.$2) < _collectIdsTtl) {
+      return cached.$1;
+    }
+    final ids = _collectRepository.getBangumiIdsByType(type);
+    _collectIdsCache[type] = (ids, DateTime.now());
+    return ids;
+  }
+
   Set<int> loadWatchingBangumiIds() {
-    return _collectRepository.getBangumiIdsByType(CollectType.watching);
+    return _collectIds(CollectType.watching);
   }
 
   int get activeFilterCount => [
@@ -148,11 +167,10 @@ abstract class _TimelineController with Store {
 
   List<List<BangumiItem>> filterCalendar(Set<int> watchingIds) {
     final abandonedIds = notShowAbandonedBangumis
-        ? _collectRepository.getBangumiIdsByType(CollectType.abandoned)
+        ? _collectIds(CollectType.abandoned)
         : <int>{};
-    final watchedIds = notShowWatchedBangumis
-        ? _collectRepository.getBangumiIdsByType(CollectType.watched)
-        : <int>{};
+    final watchedIds =
+        notShowWatchedBangumis ? _collectIds(CollectType.watched) : <int>{};
     final onlyWatching = onlyShowWatchingBangumis;
     return List.generate(7, (day) {
       if (day >= bangumiCalendar.length) return <BangumiItem>[];

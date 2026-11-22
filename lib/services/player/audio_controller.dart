@@ -199,9 +199,13 @@ class AudioController {
     await ensureInitialized();
     if (binding.isStale) return;
     await _setAudioSessionActive(playing);
-    if (binding.isStale || _artworkPending) return;
+    if (binding.isStale) return;
     final handler = _handler;
     if (handler == null) return;
+    // 首次绑定还没有任何 MediaItem：等封面就绪再一起发。
+    // 之后的切集即便封面仍在下载，也不该停止更新播放状态——否则
+    // 通知栏会停在上一集的标题/进度，最长可达 8 秒。
+    if (_artworkPending && _lastMediaItemCacheKey == null) return;
 
     final mediaItemCacheKey = [
       mediaId,
@@ -211,7 +215,7 @@ class AudioController {
       (duration ?? Duration.zero).inMilliseconds.toString(),
     ].join('|');
 
-    if (_lastMediaItemCacheKey != mediaItemCacheKey) {
+    if (!_artworkPending && _lastMediaItemCacheKey != mediaItemCacheKey) {
       _lastMediaItemCacheKey = mediaItemCacheKey;
       handler.publishMediaItem(
         MediaItem(

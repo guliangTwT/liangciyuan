@@ -160,15 +160,7 @@ class CollectCrudRepository implements ICollectCrudRepository {
   @override
   Future<void> updateCollectible(BangumiItem bangumiItem) async {
     try {
-      final collectible = _collectiblesBox.get(bangumiItem.id);
-      if (collectible == null) {
-        KazumiLogger().i(
-          'GStorage: update collectible failed. collectible not found, id=${bangumiItem.id}',
-        );
-        return;
-      }
-      collectible.bangumiItem = bangumiItem;
-      await GStorage.putCollectible(collectible);
+      await GStorage.updateCollectibleInQueue(bangumiItem);
     } catch (e, stackTrace) {
       KazumiLogger().e(
         'GStorage: update collectible failed. id=${bangumiItem.id}',

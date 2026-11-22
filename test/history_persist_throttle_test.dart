@@ -93,6 +93,43 @@ void main() {
       );
       expect(scheduler.hasPending, isFalse, reason: '取走后不应重复补写');
     });
+
+    test('立即落盘时必须丢弃挂起的旧进度，否则历史会回退', () {
+      // 真实缺陷：t0 落盘 ep1 → t1 ep1 的 tick 被节流进 pending →
+      // t2 切到 ep2，mustPersistNow 立刻写 ep2，但 pending/timer 没清 →
+      // 退出播放页时 flush 又把 ep1 的进度以**更新的时间戳**写一遍，
+      // 历史回退到上一集，并通过云同步覆盖其他设备。
+      final scheduler = HistoryPersistScheduler(
+        interval: const Duration(seconds: 5),
+      );
+      final t0 = DateTime(2026, 1, 1, 12);
+      scheduler
+        ..episode = 1
+        ..shouldPersistNow(const Duration(minutes: 10), t0);
+
+      expect(
+        scheduler.shouldPersistNow(
+          const Duration(minutes: 10, seconds: 2),
+          t0.add(const Duration(seconds: 1)),
+        ),
+        isFalse,
+      );
+      expect(scheduler.hasPending, isTrue);
+
+      scheduler.episode = 2;
+      expect(
+        scheduler.shouldPersistNow(
+          const Duration(seconds: 3),
+          t0.add(const Duration(seconds: 2)),
+        ),
+        isTrue,
+      );
+      expect(
+        scheduler.hasPending,
+        isFalse,
+        reason: '换集落盘后，旧集的挂起进度必须作废',
+      );
+    });
   });
 
   group('列表刷新', () {
@@ -142,6 +179,7 @@ class HistoryPersistScheduler {
     }
     lastPersistAt = now;
     _lastEpisode = episode;
+    // 立即落盘后旧挂起值必须作废（真实实现同时要取消 flush Timer）。
     _pending = null;
     return true;
   }

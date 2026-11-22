@@ -24,6 +24,10 @@ class RatingCache {
   final Map<int, DateTime> _fetchedAt = {};
   final Map<int, double> _bangumiScoreFallback = {};
 
+  /// 正在请求中的 id。列表页每次重建都会调 [prefetch]，没有这个集合时
+  /// 首屏渲染 + 数据落位 + 状态翻转会各发一次完全相同的请求。
+  final Set<int> _inFlight = {};
+
   /// 已缓存的评分；没有则返回 null（调用方据此决定显示什么）。
   AccountRating? ratingOf(int bangumiId) {
     final cached = _ratings[bangumiId];
@@ -63,9 +67,11 @@ class RatingCache {
       if (id <= 0) continue;
       final at = _fetchedAt[id];
       if (at != null && now.difference(at) <= _ttl) continue;
+      if (_inFlight.contains(id)) continue;
       if (!missing.contains(id)) missing.add(id);
     }
     if (missing.isEmpty) return false;
+    _inFlight.addAll(missing);
     try {
       final account = AccountService()..ensureLoaded();
       final fetched = await AccountApi.instance.getRatings(
@@ -92,6 +98,8 @@ class RatingCache {
     } catch (e) {
       KazumiLogger().w('RatingCache: prefetch failed', error: e);
       return false;
+    } finally {
+      _inFlight.removeAll(missing);
     }
   }
 
@@ -105,5 +113,6 @@ class RatingCache {
     _ratings.clear();
     _fetchedAt.clear();
     _bangumiScoreFallback.clear();
+    _inFlight.clear();
   }
 }

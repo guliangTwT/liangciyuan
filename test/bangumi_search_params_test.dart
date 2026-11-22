@@ -34,7 +34,8 @@ void main() {
       expect(params['keyword'], 'bocchi');
       expect(params['sort'], 'score');
       expect(filter['tag'], ['音乐', '漫画改']);
-      expect(filter['air_date'], [">=2022-09-01", "<2022-12-01"]);
+      // 结束日是闭区间：日期选择器与界面摘要都把 end 当作「包含当天」。
+      expect(filter['air_date'], [">=2022-09-01", "<=2022-12-01"]);
       expect(filter['rank'], [">=1", "<=1000"]);
       expect(filter['rating'], [">=8.0", "<=10.0"]);
       expect(filter['air_weekday'], [1, 6]);

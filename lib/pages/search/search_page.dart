@@ -12,6 +12,7 @@ import 'package:kazumi/bean/dialog/material_bottom_sheet.dart';
 import 'package:kazumi/bean/widget/kazumi_menu.dart';
 import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
+import 'package:kazumi/bean/widget/error_widget.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/pages/search/search_controller.dart';
@@ -258,6 +259,9 @@ class _SearchPageState extends State<SearchPage> {
         allItems.where((item) => !hidden.contains(item.id)).toList();
     final busy = _controller.isLoading;
     final failed = _controller.isTimeOut;
+    // 请求失败与「确实没有结果」要分开呈现，否则断网时用户会以为
+    // 是片名不存在，而且没有任何重试入口。
+    final requestFailed = _controller.searchFailed;
     final submitted = SearchParser(_submittedQuery!).toFilterState();
     final summary = _filterSummary(submitted);
 
@@ -308,6 +312,15 @@ class _SearchPageState extends State<SearchPage> {
       )),
       if (busy && allItems.isEmpty)
         const SliverToBoxAdapter(child: _SearchLoadingState())
+      else if (allItems.isEmpty && requestFailed)
+        SliverToBoxAdapter(
+          child: GeneralErrorWidget(
+            title: '搜索失败',
+            errMsg: '无法连接到番剧数据服务，请检查网络或加速设置后重试。',
+            onRetry: () => _controller
+                .searchBangumi(_submittedQuery!, type: 'replace'),
+          ),
+        )
       else if (allItems.isEmpty)
         const SliverToBoxAdapter(
           child: GeneralEmptyState(

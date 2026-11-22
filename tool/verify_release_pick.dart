@@ -20,6 +20,18 @@ const _sources = [
 
 var _failures = 0;
 
+/// 从 pubspec.yaml 读本机版本，避免脚本里写死版本号——
+/// 以前硬编码 1.0.11/1.0.12/1.0.13，发布下一个版本后必然假失败。
+Future<String> _readLocalVersion() async {
+  final file = File('pubspec.yaml');
+  if (!await file.exists()) return '0.0.0';
+  for (final line in await file.readAsLines()) {
+    final match = RegExp(r'^version:\s*([0-9]+(?:\.[0-9]+)*)').firstMatch(line);
+    if (match != null) return match.group(1)!;
+  }
+  return '0.0.0';
+}
+
 void _fail(String message) {
   _failures++;
   stderr.writeln('  x $message');
@@ -131,9 +143,9 @@ Future<Map<String, dynamic>> _fetch(HttpClient client, String url) async {
 }
 
 Future<void> main() async {
-  final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
-  try {
-    stdout.writeln('真实双源验证（复刻生产逻辑）');
+  final localVersion = await _readLocalVersion();
+  final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);  try {
+    stdout.writeln('真实双源验证（复刻生产逻辑），本机版本 $localVersion');
 
     // 1. 分别查询，展示两边的真实版本。
     for (final url in _sources) {
@@ -152,7 +164,7 @@ Future<void> main() async {
       [for (final url in _sources) _fetch(client, url)],
       primaryGracePeriod: const Duration(milliseconds: 1200),
       acceptWithoutPrimary: (backup) =>
-          needUpdate('1.0.12', '${backup['tag_name'] ?? ''}'),
+          needUpdate(localVersion, '${backup['tag_name'] ?? ''}'),
     );
     final available = raced.releases.whereType<Map<String, dynamic>>().toList();
     if (available.isEmpty) {
@@ -160,20 +172,37 @@ Future<void> main() async {
     } else {
       final best = pickHighest(available);
       final tag = '${best['tag_name']}';
+      final remote = normalizeTag(tag);
       _ok('从 ${available.length} 个可用源中选出 $tag');
 
-      if (available.length == 2) {
-        for (final local in ['1.0.11', '1.0.12']) {
-          if (needUpdate(local, tag)) {
-            _ok('$local 用户会被提示更新到 $tag');
-          } else {
-            _fail('$local 用户判定「无需更新」——正是本次要修的缺陷');
-          }
-        }
-        if (needUpdate('1.0.13', tag)) {
-          _fail('1.0.13 用户仍提示有更新');
+      // 只有主源（GitHub）成功时才能断言「已是最新」；主源失败、
+      // 后备源又停在旧版时必须报错（应用侧同样如此）。
+      if (raced.releases[0] == null) {
+        if (needUpdate(localVersion, tag)) {
+          _ok('主源不可用，但后备源给出更高版本 $tag，可以推更新');
         } else {
-          _ok('1.0.13 用户判定已是最新');
+          _fail('主源不可用且后备源未给出更高版本——应用会报「检查更新失败」，'
+              '这正是期望行为；此处仅提示发布状态不完整');
+        }
+      } else if (needUpdate(localVersion, tag)) {
+        _fail('本机 $localVersion 仍会被告知有更新 $tag（发布状态与本机版本不一致）');
+      } else {
+        _ok('本机 $localVersion 判定已是最新（$remote）');
+      }
+
+      // 逐级回退：比当前版本低的每个版本都应被提示更新。
+      final segments = remote.split('.');
+      if (segments.length >= 3) {
+        final patch = int.tryParse(segments[2]) ?? 0;
+        final older = patch > 0
+            ? '${segments[0]}.${segments[1]}.${patch - 1}'
+            : null;
+        if (older != null) {
+          if (needUpdate(older, tag)) {
+            _ok('$older 用户会被提示更新到 $tag');
+          } else {
+            _fail('$older 用户判定「无需更新」——正是本次要修的缺陷');
+          }
         }
       }
 

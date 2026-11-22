@@ -241,10 +241,23 @@ class SearchParser {
   }
 
   String parseKeywords() {
-    return query
-        .replaceAll(_tokenRegExp(), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
+    // 逐次剥离：每剥掉一个 token，紧邻它的下一个 token 就落到了词边界上，
+    // 因此 `tag:xxx sort:rank` 与 `tag:xxxsort:rank` 两种写法都能处理。
+    // 不能一次性 replaceAll：token 正则要求前导词边界（^ 或空白），
+    // 而 `rapid:x`、`grid:abc` 这类普通搜索词里恰好含有字段名子串，
+    // 若允许「无边界」匹配就会被削掉一段（以前 `id:abc` 甚至会把
+    // 关键词清空，直接退化成「浏览全部」）。
+    final pattern = _tokenRegExp();
+    var text = query;
+    // 每轮至少缩短一个字符，正常情况下几十轮内必然结束；上限只是防御。
+    for (var guard = 0; guard < 200; guard++) {
+      final match = pattern.firstMatch(text);
+      if (match == null) break;
+      final replaced = text.replaceRange(match.start, match.end, ' ');
+      if (replaced == text) break;
+      text = replaced;
+    }
+    return text.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
   SearchFilterState toFilterState() {
@@ -302,7 +315,9 @@ class SearchParser {
     final quarter = int.parse(match.group(2)!);
     final startMonth = (quarter - 1) * 3 + 1;
     final start = DateTime(year, startMonth - 1, 1);
-    final end = DateTime(year, startMonth + 2, 1);
+    // 结束日是闭区间（含当天）。day 传 0 表示上个月最后一天，
+    // 于是 Q1 = 12/1..2/28（闰年 2/29），与搜索接口的 `<=end` 对齐。
+    final end = DateTime(year, startMonth + 2, 0);
     return SearchDateRange(
       start: formatDateTime(start),
       end: formatDateTime(end),
@@ -311,7 +326,9 @@ class SearchParser {
 
   static RegExp _tokenRegExp() {
     return RegExp(
-      r'(?:^|\s)?(?:' +
+      // 前缀 (^|\s) **必需**：否则 token 会匹配到单词中间。剥离是逐次进行的
+      // （见 [parseKeywords]），所以紧邻的第二个 token 会在下一轮落到词边界上。
+      r'(?:^|\s)(?:' +
           _fieldNames +
           r'):[^\s]*?(?=(?:\s|$)|(?:' +
           _fieldNames +

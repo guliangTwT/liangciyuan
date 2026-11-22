@@ -70,6 +70,7 @@ class _PopularPageState extends State<PopularPage> {
       return;
     }
     if (popularController.isLoadingMore) return;
+    if (!popularController.hasMoreTags) return;
     KazumiLogger().i('PopularPage: fetching next batch');
     popularController.queryBangumiByTag();
   }

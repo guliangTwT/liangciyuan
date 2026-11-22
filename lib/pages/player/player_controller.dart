@@ -107,8 +107,13 @@ class PlayerController implements Disposable {
   double _preMuteVolume = 100;
 
   Future<void> toggleMute() async {
-    if (!muted && playback.volume > 0) {
-      _preMuteVolume = playback.volume;
+    // 以 preciseVolume 为准：音量从 0 用滚轮上调不足 1 个单位时，
+    // volume（取整显示值）仍是 0，但设备音量已经不是 0 了。
+    final current = playback.preciseVolume >= 0
+        ? playback.preciseVolume
+        : playback.volume;
+    if (!muted && current > 0) {
+      _preMuteVolume = current;
       muted = true;
       _persistMuteState();
       await setVolume(0);

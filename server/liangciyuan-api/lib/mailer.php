@@ -85,11 +85,22 @@ final class SmtpMailer
     }
 }
 
-function verification_mail_html(string $code): string
+function verification_mail_html(string $code, string $purpose = 'register'): string
 {
     $safe = htmlspecialchars($code, ENT_QUOTES, 'UTF-8');
     $year = date('Y');
     $font = "-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif";
+
+    // 注册与重置密码要分开写：以前两者共用注册文案，重置密码的用户
+    // 收到「你正在注册」的信，容易当成钓鱼邮件直接忽略。
+    $isReset = $purpose === 'reset';
+    $heading = $isReset ? '重置密码验证' : '验证你的邮箱';
+    $intro = $isReset
+        ? '你好，你正在重置凉次元账号的密码。请在应用内输入下面的验证码完成验证：'
+        : '你好，你正在注册凉次元账号。请在应用内输入下面的验证码完成验证：';
+    $footer = $isReset
+        ? '如果这不是你本人操作，请忽略本邮件，你的密码不会被修改。'
+        : '如果这不是你本人操作，请忽略本邮件，该邮箱不会被注册。';
 
     return '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">'
         . '<meta name="viewport" content="width=device-width,initial-scale=1"></head>'
@@ -108,10 +119,9 @@ function verification_mail_html(string $code): string
         // 正文
         . '<tr><td style="padding:34px 32px 8px;">'
         . '<div style="font-family:' . $font . ';font-size:18px;font-weight:600;color:#1f1a26;">'
-        . '验证你的邮箱</div>'
+        . $heading . '</div>'
         . '<div style="font-family:' . $font . ';margin-top:12px;font-size:14px;'
-        . 'line-height:1.8;color:#6b6575;">你好，你正在注册凉次元账号。'
-        . '请在应用内输入下面的验证码完成验证：</div>'
+        . 'line-height:1.8;color:#6b6575;">' . $intro . '</div>'
         . '<div style="margin:26px 0;padding:22px 12px;text-align:center;'
         . 'background:#f7f4fb;border:1px dashed #d9cfea;border-radius:14px;">'
         . '<span style="font-family:' . $font . ';display:inline-block;font-size:34px;'
@@ -125,7 +135,7 @@ function verification_mail_html(string $code): string
         // 页脚
         . '<tr><td style="padding:18px 32px 28px;border-radius:0 0 18px 18px;">'
         . '<div style="font-family:' . $font . ';font-size:12px;line-height:1.8;color:#9a94a6;">'
-        . '如果这不是你本人操作，请忽略本邮件，该邮箱不会被注册。</div>'
+        . $footer . '</div>'
         . '<div style="font-family:' . $font . ';margin-top:6px;font-size:12px;color:#9a94a6;">'
         . '此邮件由系统自动发送，请勿直接回复。</div>'
         . '</td></tr></table>'

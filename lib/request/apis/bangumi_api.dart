@@ -297,7 +297,8 @@ class BangumiApi {
     };
 
     if (dateRange?.isValid == true) {
-      filter["air_date"] = [">=${dateRange!.start}", "<${dateRange.end}"];
+      // 闭区间：界面摘要与日期选择器都把结束日当作「包含当天」。
+      filter["air_date"] = [">=${dateRange!.start}", "<=${dateRange.end}"];
     }
     if (scoreRange?.isValid == true) {
       filter["rating"] = _buildNumberFilter<double>(

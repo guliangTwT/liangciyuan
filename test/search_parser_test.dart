@@ -32,8 +32,19 @@ void main() {
       final state = parser.toFilterState();
 
       expect(state.season, '2026Q1');
+      // 结束日是闭区间（含当天），与搜索接口的 `<=end` 一致。
       expect(state.effectiveDateRange,
-          const SearchDateRange(start: '2025-12-01', end: '2026-03-01'));
+          const SearchDateRange(start: '2025-12-01', end: '2026-02-28'));
+    });
+
+    test('does not strip field-like text inside a keyword', () {
+      // 以前 token 正则的前缀是可选的，`rapid:x` 会被当成 `id:...`
+      // 剥掉一部分，关键词变成 `rap`；`grid:abc` 变成 `gr`。
+      expect(SearchParser('rapid:x').parseKeywords(), 'rapid:x');
+      expect(SearchParser('grid:abc').parseKeywords(), 'grid:abc');
+      expect(SearchParser('the id:12 show').parseKeywords(), 'the show');
+      // 真正的 token 仍然要能识别。
+      expect(SearchParser('凉次元 id:123').parseKeywords(), '凉次元');
     });
 
     test('parses custom date range', () {

@@ -12,7 +12,11 @@ abstract class IDownloadRepository {
   Future<void> putRecord(DownloadRecord record);
   Future<void> deleteRecord(String key);
   Future<void> updateEpisode(
-      String recordKey, int episodeNumber, DownloadEpisode episode);
+    String recordKey,
+    int episodeNumber,
+    DownloadEpisode episode, {
+    bool forcePersist = false,
+  });
   Future<void> deleteEpisode(String recordKey, int episodeNumber);
   bool getForceAdBlocker();
 
@@ -144,17 +148,24 @@ class DownloadRepository implements IDownloadRepository {
 
   @override
   Future<void> updateEpisode(
-      String recordKey, int episodeNumber, DownloadEpisode episode) async {
+    String recordKey,
+    int episodeNumber,
+    DownloadEpisode episode, {
+    bool forcePersist = false,
+  }) async {
     try {
       // Update in-memory cache
       _progressCache.putIfAbsent(recordKey, () => {});
       _progressCache[recordKey]![episodeNumber] = episode;
 
       // Only persist to Hive when status changes (not on every progress update)
-      // This dramatically reduces disk I/O and prevents corruption on crash
+      // This dramatically reduces disk I/O and prevents corruption on crash.
+      // 例外：目录/URL 这类「一旦丢失就无法恢复」的字段必须立刻落盘
+      // （见 [forcePersist]）——以前它们在 downloading 状态下永远等不到
+      // 状态变化，进程被杀后下载目录就丢了。
       final statusKey = '${recordKey}_$episodeNumber';
       final lastStatus = _lastPersistedStatus[statusKey];
-      final shouldPersist = lastStatus != episode.status;
+      final shouldPersist = forcePersist || lastStatus != episode.status;
 
       if (shouldPersist) {
         final record = _downloadsBox.get(recordKey);

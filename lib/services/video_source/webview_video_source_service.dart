@@ -12,6 +12,15 @@ class WebViewVideoSourceService implements IVideoSourceService {
   VideoWebviewController? _webview;
   StreamSubscription? _logSubscription;
 
+  /// 当前 WebView 注册 handler / 注入脚本时使用的解析模式。
+  ///
+  /// handler 名与注入脚本只在首次 loadUrl 时按当时的 [useLegacyParser]
+  /// 注册一次，之后不可逆。解析器池按「空闲」复用 worker、不区分插件，
+  /// 于是「先下载 A 插件（现代解析）再下载 B 插件（legacy）」会复用到
+  /// 只注册了 VideoBridgeDebug 的 WebView：JSBridgeDebug 回调永远收不到，
+  /// 只能等 30 秒超时。模式变化时重建 WebView 是唯一可靠的修法。
+  bool? _webviewLegacyMode;
+
   // 单个服务实例持有一个 WebView，因此解析任务按实例串行执行。
   // 下载并行通过多个服务实例实现。
   Future<void>? _resolveTail = Future<void>.value();
@@ -60,9 +69,13 @@ class WebViewVideoSourceService implements IVideoSourceService {
   }) async {
     request.throwIfNotCurrent(_activeRequest);
 
+    if (_webview != null && _webviewLegacyMode != useLegacyParser) {
+      await _disposeWebview();
+    }
     if (_webview == null) {
       _webview = VideoWebviewControllerFactory.getController();
       await _webview!.init();
+      _webviewLegacyMode = useLegacyParser;
 
       _logSubscription = _webview!.onLog.listen((log) {
         if (!_logController.isClosed) {
@@ -131,13 +144,18 @@ class WebViewVideoSourceService implements IVideoSourceService {
     cancel();
     await resolveTail;
     _activeRequest = null;
-    await _logSubscription?.cancel();
-    _logSubscription = null;
     if (!_logController.isClosed) {
       await _logController.close();
     }
+    await _disposeWebview();
+  }
+
+  Future<void> _disposeWebview() async {
+    await _logSubscription?.cancel();
+    _logSubscription = null;
     await _webview?.dispose();
     _webview = null;
+    _webviewLegacyMode = null;
   }
 }
 

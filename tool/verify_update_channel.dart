@@ -42,11 +42,15 @@ Future<void> main(List<String> args) async {
     // 发布 tag 习惯带 `v` 前缀（v1.0.10），应用侧用 normalizeVersionTag()
     // 去掉它再比较。这里必须做同样的归一化，否则每次带 v 的发布都会被
     // 误判成「不是纯数字版本」——这是验收脚本的缺陷，不是发布的问题。
-    final normalized = tag.startsWith('v') ? tag.substring(1) : tag;
-    if (!RegExp(r'^\d+(\.\d+)*$').hasMatch(normalized)) {
+    // 与应用侧的 normalizeVersionTag 保持一致：大小写 `v` 都要去掉，
+    // 并且允许 `1.0.13+build` 这类元数据后缀。
+    final normalized = tag.trim().replaceFirst(RegExp(r'^[vV]'), '');
+    final versionPart =
+        RegExp(r'^\d+(?:\.\d+)*').firstMatch(normalized)?.group(0) ?? '';
+    if (versionPart.isEmpty) {
       _fail('tag_name 不是纯数字版本：$tag');
     } else {
-      _ok('latest = $normalized');
+      _ok('latest = $versionPart');
     }
 
     final assets = (release['assets'] as List<dynamic>?) ?? const [];
@@ -159,7 +163,6 @@ Future<({bool supportsRange, int totalLength})> _probeRange(
   request.headers.set(HttpHeaders.userAgentHeader, 'liangciyuan-verify/1.0');
   request.headers.set(HttpHeaders.rangeHeader, 'bytes=0-1023');
   final response = await request.close();
-  final acceptRanges = response.headers.value('accept-ranges') ?? '';
   // 206 的 contentLength 是「本次分块」的长度（这里是 1024），不是文件总长。
   // 文件总长只在 content-range 的 `/` 后面，例如 `bytes 0-1023/32917843`。
   // 之前直接读 contentLength，所以每次验收都打印 0.00 MB。
@@ -167,12 +170,13 @@ Future<({bool supportsRange, int totalLength})> _probeRange(
   final totalMatch = RegExp(r'/(\d+)\s*$').firstMatch(contentRange);
   final total =
       totalMatch == null ? 0 : int.tryParse(totalMatch.group(1)!) ?? 0;
-  final ok = response.statusCode == HttpStatus.partialContent;
+  // 与应用自身的判据保持一致：RFC 不要求 206 必须回 Accept-Ranges，
+  // 应用只要求「206 + 可解析的 content-range」。多要求一个头会在
+  // 正常服务器上把发布判成「不支持 Range」，属假失败。
+  final ok = response.statusCode == HttpStatus.partialContent &&
+      total > 0;
   await response.drain<void>();
-  return (
-    supportsRange: ok && acceptRanges.contains('bytes'),
-    totalLength: total,
-  );
+  return (supportsRange: ok, totalLength: total);
 }
 
 Future<String> _downloadHash(HttpClient client, String url) async {

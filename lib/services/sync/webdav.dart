@@ -74,6 +74,11 @@ class WebDav {
       KazumiLogger().i('CloudSync: account storage ready');
     } catch (e) {
       KazumiLogger().e('CloudSync: account storage ping failed', error: e);
+      // 令牌在会话中途过期/被吊销：清掉本地登录态，否则界面一直显示
+      // 「已登录」，而每次自动同步都在 401 上静默失败。
+      if (e is AccountException && e.statusCode == 401) {
+        await AccountService().logout();
+      }
       rethrow;
     }
   }

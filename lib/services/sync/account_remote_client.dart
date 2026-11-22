@@ -44,7 +44,16 @@ class AccountRemoteClient implements webdav.Client {
 
   @override
   Future<void> ping([CancelToken? cancelToken]) async {
-    if (!await _api.health()) {
+    // 必须用带 token 的接口：/v1/health 是公开的，token 已过期/被吊销
+    // 时它照样返回 200，同步初始化看起来成功，之后每次同步都 401，
+    // 而个人页仍显示「已登录」。
+    try {
+      await _api.me(token);
+    } on AccountException catch (e) {
+      if (e.statusCode == 401) {
+        rethrow;
+      }
+      // 其它错误（网络、5xx）仍按「服务暂时不可用」处理。
       throw const AccountException('账号服务暂时不可用');
     }
   }

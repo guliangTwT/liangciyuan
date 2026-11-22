@@ -43,4 +43,17 @@ class ProxyUtils {
   static bool isValidProxyUrl(String url) {
     return parseProxyUrl(url) != null;
   }
+
+  /// 代理是否指向本机回环地址。
+  ///
+  /// 本地代理软件（Clash / V2Ray / mitmproxy 等）可能对 HTTPS 做中间人
+  /// 解密并出示自签证书，这时必须放行证书校验；但把这条放宽用在**远端**
+  /// 代理上等于对所有站点关闭 TLS 校验，账号 token 与更新包都可能被截获。
+  static bool isLoopbackHost(String host) {
+    final normalized = host.trim().toLowerCase();
+    return normalized == 'localhost' ||
+        normalized == '::1' ||
+        normalized == '[::1]' ||
+        normalized.startsWith('127.');
+  }
 }

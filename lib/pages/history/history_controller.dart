@@ -72,7 +72,8 @@ abstract class _HistoryController with Store {
     final mustPersistNow = progress == Duration.zero ||
         (_pending != null &&
             (_pending!.identity.episodeNumber != identity.episodeNumber ||
-                _pending!.identity.pluginName != identity.pluginName));
+                _pending!.identity.pluginName != identity.pluginName ||
+                _pending!.identity.bangumiItem.id != identity.bangumiItem.id));
 
     if (tooSoon && !mustPersistNow) {
       // 先记住最新的进度，等节流窗口结束再写一次。
@@ -81,6 +82,11 @@ abstract class _HistoryController with Store {
       return;
     }
 
+    // 立刻落盘时要把挂起的旧进度一并作废：否则定时器/退出时的 flush
+    // 会把「上一集」的进度以更新的时间戳再写一遍，历史回退到旧集。
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    _pending = null;
     await _persist(identity, progress, duration, now);
   }
 

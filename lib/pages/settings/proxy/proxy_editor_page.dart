@@ -67,7 +67,8 @@ class _ProxyEditorPageState extends State<ProxyEditorPage> {
           sendTimeout: const Duration(seconds: 10),
           proxyHost: parsed.$1,
           proxyPort: parsed.$2,
-          allowBadCertificates: true,
+          // 与运行时策略保持一致：只有本机代理才放行自签证书。
+          allowBadCertificates: ProxyUtils.isLoopbackHost(parsed.$1),
           enableLog: false,
         ),
       );

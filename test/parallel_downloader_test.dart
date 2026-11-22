@@ -311,8 +311,81 @@ void main() {
       lessThan(200),
       reason: '回调过多会让下载界面不停重建',
     );
-    expect(callbacks, greaterThan(0));
+expect(callbacks, greaterThan(0));
     expect(lastProgress, data.length, reason: '最终进度必须到 100%');
+  });
+
+  test('Content-Range 起点与请求不一致时换源，不会拼出错文件', () async {
+    // 镜像返回 206，但 Content-Range 的起点永远是 0（缓存错位/上游改写）。
+    // 以前只校验 206，这种响应会被当成「请求的那一段」拼进去，
+    // 最终哈希必然不匹配且重试无效。
+    final data = List<int>.generate(
+      2 * 1024 * 1024,
+      (i) => (i * 13 + 5) % 256,
+    );
+    final bad = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => bad.close(force: true));
+    bad.listen((request) async {
+      final range = request.headers.value(HttpHeaders.rangeHeader) ?? '';
+      final match = RegExp(r'bytes=(\d+)-(\d*)').firstMatch(range);
+      final requestedLength = match == null
+          ? data.length
+          : (match.group(2)!.isEmpty
+              ? data.length
+              : int.parse(match.group(2)!) + 1);
+      request.response.statusCode = 206;
+      // 起点谎报为 0，字节数却是请求的长度。
+      request.response.headers.set(
+        HttpHeaders.contentRangeHeader,
+        'bytes 0-${requestedLength - 1}/${data.length}',
+      );
+      request.response.contentLength = requestedLength;
+      request.response.add(data.sublist(0, requestedLength));
+      await request.response.close();
+    });
+
+    final good = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => good.close(force: true));
+    good.listen((request) async {
+      final range = request.headers.value(HttpHeaders.rangeHeader);
+      if (range == null) {
+        request.response.statusCode = 200;
+        request.response.contentLength = data.length;
+        request.response.add(data);
+      } else {
+        final match = RegExp(r'bytes=(\d+)-(\d*)').firstMatch(range)!;
+        final start = int.parse(match.group(1)!);
+        final end = match.group(2)!.isEmpty
+            ? data.length - 1
+            : int.parse(match.group(2)!);
+        request.response.statusCode = 206;
+        request.response.headers.set(
+          HttpHeaders.contentRangeHeader,
+          'bytes $start-$end/${data.length}',
+        );
+        request.response.contentLength = end - start + 1;
+        request.response.add(data.sublist(start, end + 1));
+      }
+      await request.response.close();
+    });
+
+    final savePath = '${tempDir.path}/wrong-range.bin';
+    await ParallelDownloader(chunks: 4).download(
+      urls: [
+        'http://127.0.0.1:${bad.port}/f.bin',
+        'http://127.0.0.1:${good.port}/f.bin',
+      ],
+      savePath: savePath,
+      cancelToken: CancelToken(),
+      onProgress: (received, total) {},
+    );
+
+    final downloaded = await File(savePath).readAsBytes();
+    expect(
+      downloaded,
+      equals(data),
+      reason: '起点错误的 206 必须被拒绝，改用能正确响应的源',
+    );
   });
 }
 class _TestPaths extends PathProviderPlatform {

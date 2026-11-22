@@ -97,6 +97,8 @@ class _SearchFilterSheetState extends State<_SearchFilterSheet> {
     setState(() {
       _draft = _draft.copyWith(
         season: '',
+        // 结束日按闭区间保存（与选择器、界面摘要一致）；请求侧也用 `<=`，
+        // 以前请求侧是 `< end`，导致选同一天必然搜不到、任意区间漏掉最后一天。
         dateRange: SearchDateRange(
           start: formatDateTime(result.start),
           end: formatDateTime(result.end),

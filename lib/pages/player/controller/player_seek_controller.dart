@@ -149,7 +149,9 @@ class PlayerSeekController {
           return false;
         }
       }
-      if (!cancelled || session.wasPlaying) {
+      // 只有拖动前本来就在播放才恢复播放；暂停状态下拖动进度条后
+      // 不应自己播起来（以前 !cancelled 恒为真，导致每次松手都开始播放）。
+      if (session.wasPlaying) {
         await _play(enableSync: false);
       }
       return _isCurrent(session);

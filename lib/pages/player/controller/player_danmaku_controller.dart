@@ -115,6 +115,12 @@ abstract class _PlayerDanmakuController with Store {
     _canvasAttached = true;
   }
 
+  /// 画布销毁时调用。切集会把整个 [DanmakuScreen] 卸载重建，而本控制器
+  /// 是路由级、跨集存活的；不复位就会继续向已 dispose 的画布发指令。
+  void detachCanvasController() {
+    _canvasAttached = false;
+  }
+
   /// 画布就绪时执行；未就绪静默跳过。
   void withCanvas(void Function(canvas.DanmakuController controller) action) {
     if (!_canvasAttached) return;
@@ -210,12 +216,37 @@ abstract class _PlayerDanmakuController with Store {
     );
   }
 
+  /// 上一次已经发射过弹幕的「源时间轴」秒。
+  ///
+  /// 播放器每秒采样一次位置，但倍速下每秒推进的源时间不止一秒：
+  /// 0.5x 时同一秒会被重复采样（弹幕重复出现），2x/3x 时中间整秒被跳过
+  /// （大量弹幕丢失）。这里记录上一次发射到哪一秒，每次把区间内所有秒桶
+  /// 按顺序补齐。向后跳转由 [clearAndInvalidateScheduledDanmakus] 复位。
+  int? _lastEmittedSecond;
+
   List<DanmakuEntry> danmakusForPlaybackPosition(Duration playbackPosition) {
     final danmakuSecond = resolveDanmakuSecond(playbackPosition);
     if (danmakuSecond == null) {
+      _lastEmittedSecond = null;
       return const [];
     }
-    return danDanmakus[danmakuSecond] ?? const [];
+    final last = _lastEmittedSecond;
+    _lastEmittedSecond = danmakuSecond;
+    if (last == null) {
+      // 首次采样（起播/跳转后）：只发当前秒，避免从 20:00 续播时
+      // 把前面二十分钟的弹幕一次性倒出来。
+      return danDanmakus[danmakuSecond] ?? const [];
+    }
+    if (danmakuSecond <= last) {
+      // 位置没有前进（暂停、缓冲、同一秒内多次 tick）：不重复发射。
+      return const [];
+    }
+    final result = <DanmakuEntry>[];
+    for (var second = last + 1; second <= danmakuSecond; second++) {
+      final bucket = danDanmakus[second];
+      if (bucket != null && bucket.isNotEmpty) result.addAll(bucket);
+    }
+    return result;
   }
 
   @action
@@ -225,6 +256,9 @@ abstract class _PlayerDanmakuController with Store {
 
   void clearAndInvalidateScheduledDanmakus() {
     _scheduledDanmakuGeneration++;
+    // 跳转后重新从目标秒开始采样，否则向后跳会因「当前秒 <= 上次秒」
+    // 而跳过目标秒的弹幕。
+    _lastEmittedSecond = null;
     withCanvas((controller) => controller.clear());
   }
 
@@ -250,6 +284,9 @@ abstract class _PlayerDanmakuController with Store {
   @action
   void beginDanmakuLoad() {
     danDanmakus.clear();
+    // 换集：上一集的「已发射秒」对新集毫无意义，不清掉会让新集开头
+    // 若干秒的弹幕被「位置没有前进」的判断吞掉。
+    _lastEmittedSecond = null;
     danmakuLoading = true;
   }
 

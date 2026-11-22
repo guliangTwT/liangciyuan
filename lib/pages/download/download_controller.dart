@@ -137,12 +137,17 @@ abstract class _DownloadController with Store {
   static const _uiUpdateInterval = Duration(milliseconds: 500);
 
   void _onDownloadProgress(String recordKey, int episodeNumber,
-      DownloadEpisode episode, double speed) {
+      DownloadEpisode episode, double speed, bool forcePersist) {
     final record = _repository.getRecord(recordKey);
     if (record == null || !record.episodes.containsKey(episodeNumber)) {
       return;
     }
-    _repository.updateEpisode(recordKey, episodeNumber, episode);
+    _repository.updateEpisode(
+      recordKey,
+      episodeNumber,
+      episode,
+      forcePersist: forcePersist,
+    );
 
     final key = '${recordKey}_$episodeNumber';
 

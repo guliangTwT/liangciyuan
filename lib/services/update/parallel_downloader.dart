@@ -386,6 +386,28 @@ class ParallelDownloader {
       await _drain(response);
       throw Exception('range 请求返回 ${response.statusCode}，期望 206（$range）');
     }
+    // 206 只说明「是部分内容」，不保证是**请求的**那一段。镜像/缓存层
+    // 偶尔会返回起点错位的 206，若直接拼接，最终哈希必然不匹配，且
+    // 同一组镜像重试多少次都一样失败。这里核对 Content-Range 的起止。
+    //
+    // 头部缺失时仍放行：个别 CDN/代理会裁掉这个头，只靠 206 +
+    // 「字节数与请求区间一致」兜底，避免把可用的源判死。
+    final contentRange = response.headers.value('content-range')?.trim() ?? '';
+    final rangeMatch = RegExp(
+      r'^bytes\s+(\d+)-(\d+)/(\d+|\*)$',
+      caseSensitive: false,
+    ).firstMatch(contentRange);
+    if (rangeMatch != null) {
+      final start = int.parse(rangeMatch.group(1)!);
+      final end = int.parse(rangeMatch.group(2)!);
+      if (start != range.$1 || end != range.$2) {
+        await _drain(response);
+        throw Exception(
+          'Content-Range 与请求不一致：期望 ${range.$1}-${range.$2}，'
+          '实际 $start-$end',
+        );
+      }
+    }
     final expected = range.$2 - range.$1 + 1;
     var reported = 0;
     // 每次尝试从块头重下整块并覆盖块文件；避免「已写字节与

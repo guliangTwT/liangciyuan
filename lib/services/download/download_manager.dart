@@ -36,6 +36,11 @@ class DownloadTask {
   CancelToken cancelToken;
   bool isPaused;
 
+  /// 下一次进度回调必须强制写盘（而不是等状态变化）。
+  ///
+  /// 用于「目录/URL 刚确定」这类丢了就无法恢复的字段。
+  bool forcePersistOnce = false;
+
   DownloadTask({
     required this.recordKey,
     required this.episodeNumber,
@@ -44,8 +49,8 @@ class DownloadTask {
   }) : cancelToken = cancelToken ?? CancelToken();
 }
 
-typedef ProgressCallback = void Function(
-    String recordKey, int episodeNumber, DownloadEpisode episode, double speed);
+typedef ProgressCallback = void Function(String recordKey, int episodeNumber,
+    DownloadEpisode episode, double speed, bool forcePersist);
 
 final _m3u8SegmentFileNamePattern = RegExp(r'^seg_\d+\.ts$');
 
@@ -214,6 +219,19 @@ class DownloadManager implements IDownloadManager {
   double getSpeed(String recordKey, int episodeNumber) {
     final key = _taskKey(recordKey, episodeNumber);
     return _speedTrackers[key]?.currentSpeed ?? 0.0;
+  }
+
+  /// 解析 `Content-Range` 的起始偏移；无法解析时返回 null。
+  ///
+  /// 只用于续传前的核对：服务器若忽略请求的起点（从 0 开始）或返回
+  /// 错位的段，直接 append 会把视频拼坏却仍然标记「已完成」。
+  static int? _contentRangeStart(String? contentRange) {
+    if (contentRange == null) return null;
+    final match = RegExp(
+      r'^\s*bytes\s+(\d+)-(\d+)/',
+      caseSensitive: false,
+    ).firstMatch(contentRange);
+    return match != null ? int.tryParse(match.group(1)!) : null;
   }
 
   String _taskKey(String recordKey, int episodeNumber) =>
@@ -418,6 +436,10 @@ class DownloadManager implements IDownloadManager {
 
       episode.status = DownloadStatus.downloading;
       episode.networkM3u8Url = m3u8Url;
+      // 目录刚刚解析出来（可能是自定义下载目录），必须立刻落盘：
+      // 之后每帧进度都只是内存更新，进程被杀就会丢掉这条记录，
+      // 于是删除/续传会作用到默认目录，旧分片变成永久孤儿。
+      task.forcePersistOnce = true;
       _notifyProgress(task, episode);
 
       // A direct file link (MP4 and friends) needs no playlist probe. Fetching
@@ -745,9 +767,30 @@ class DownloadManager implements IDownloadManager {
       final contentLength = int.tryParse(
               response.headers.value(Headers.contentLengthHeader) ?? '') ??
           0;
+      // 反爬页/登录页/软 404 通常返回 200 + text/html，把这种响应写成
+      // video.mp4 会被标记「已完成」，播放时才发现根本放不了。
+      final contentType =
+          response.headers.value('content-type')?.toLowerCase() ?? '';
+      if (contentType.contains('text/html') ||
+          contentType.contains('application/json')) {
+        throw Exception('直链返回的是网页/JSON 而不是视频（$contentType）');
+      }
+
       // A server may ignore Range and reply 200 with the whole file. Appending
       // that to the partial file would corrupt it, so restart from zero.
-      final rangeHonored = contentRange != null || response.statusCode == 206;
+      var rangeHonored = contentRange != null;
+      if (existingBytes > 0 && rangeHonored) {
+        // Content-Range 也可能从 0 开始（服务器忽略了起点）。必须核对
+        // 起点，否则全量数据会追加到旧前缀后面，文件内容错位。
+        final start = _contentRangeStart(contentRange);
+        if (start == null || start != existingBytes) {
+          KazumiLogger().w(
+            'DownloadManager: server returned a wrong range start '
+            '($start != $existingBytes), restarting direct download',
+          );
+          rangeHonored = false;
+        }
+      }
       if (existingBytes > 0 && !rangeHonored) {
         KazumiLogger().w(
           'DownloadManager: server ignored Range, restarting direct download',
@@ -787,6 +830,15 @@ class DownloadManager implements IDownloadManager {
         if (task.isPaused) {
           episode.status = DownloadStatus.paused;
         }
+        _notifyProgress(task, episode);
+        return;
+      }
+
+      // 连接被对端提前关闭时流可能正常结束而不报错，短读却会被改名成
+      // 「已完成」。有总长度时先核对，长度一致才落成正式文件。
+      if (totalSize > 0 && received != totalSize) {
+        episode.status = DownloadStatus.failed;
+        episode.errorMessage = '下载不完整（$received/$totalSize 字节）';
         _notifyProgress(task, episode);
         return;
       }
@@ -851,7 +903,15 @@ class DownloadManager implements IDownloadManager {
     // Cancelled or superseded tasks no longer own the episode.
     if (!identical(_activeTasks[key], task)) return;
     final speed = _speedTrackers[key]?.currentSpeed ?? 0.0;
-    onProgress?.call(task.recordKey, task.episodeNumber, episode, speed);
+    final forcePersist = task.forcePersistOnce;
+    task.forcePersistOnce = false;
+    onProgress?.call(
+      task.recordKey,
+      task.episodeNumber,
+      episode,
+      speed,
+      forcePersist,
+    );
   }
 
   Future<String> _fetchM3u8(

@@ -147,6 +147,53 @@ void main() {
     });
   });
 
+  group('selectLatestRelease 结果选择', () {
+    test('主源失败且后备源停在旧版本时抛错，而不是判定已是最新', () {
+      final raced = (
+        releases: <Map<String, dynamic>?>[null, releaseJson('v1.0.12')],
+        errors: <Object>[Exception('github down')],
+      );
+      expect(
+        () => selectLatestRelease(raced, localVersion: '1.0.13'),
+        throwsA(isA<Exception>()),
+        reason: '无法确认最新版本时必须报错，不能静默显示已是最新',
+      );
+    });
+
+    test('主源失败但后备源给出更高版本时仍然采用', () {
+      final raced = (
+        releases: <Map<String, dynamic>?>[null, releaseJson('v1.0.14')],
+        errors: <Object>[Exception('github down')],
+      );
+      final picked = selectLatestRelease(raced, localVersion: '1.0.13');
+      expect(picked['tag_name'], 'v1.0.14');
+    });
+
+    test('主源成功时即使版本更低也以两边更高的为准', () {
+      final raced = (
+        releases: <Map<String, dynamic>?>[
+          releaseJson('v1.0.12'),
+          releaseJson('v1.0.13'),
+        ],
+        errors: <Object>[],
+      );
+      final picked = selectLatestRelease(raced, localVersion: '1.0.13');
+      expect(picked['tag_name'], 'v1.0.13');
+    });
+
+    test('两个源都失败时抛出原始错误', () {
+      final error = Exception('both down');
+      final raced = (
+        releases: <Map<String, dynamic>?>[null, null],
+        errors: <Object>[error],
+      );
+      expect(
+        () => selectLatestRelease(raced, localVersion: '1.0.13'),
+        throwsA(same(error)),
+      );
+    });
+  });
+
   group('pickHighestRelease 与等待策略合起来', () {
     test('典型的草稿期场景：GitHub v1.0.12 + Codeberg v1.0.11', () {
       // 这是 v1.0.12 发布时的真实数据：Codeberg 那条还是 draft，

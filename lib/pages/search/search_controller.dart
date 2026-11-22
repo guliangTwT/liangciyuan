@@ -53,6 +53,13 @@ abstract class _SearchPageController with Store {
   @observable
   bool isImageSearching = false;
 
+  /// 上一次搜索是否因网络/接口失败（区别于「确实没有结果」）。
+  ///
+  /// 以前两者都表现成「没有找到番剧」，断网时用户会以为片名不存在，
+  /// 也没有重试入口。
+  @observable
+  bool searchFailed = false;
+
   @observable
   String imageSearchError = '';
 
@@ -72,6 +79,7 @@ abstract class _SearchPageController with Store {
     final generation = type == 'add' ? _searchGeneration : ++_searchGeneration;
     isLoading = true;
     isTimeOut = false;
+    searchFailed = false;
     if (type != 'add') {
       bangumiList.clear();
       _searchOffset = 0;
@@ -113,6 +121,8 @@ abstract class _SearchPageController with Store {
       // Discard stale responses before mutating the current search.
       if (generation != _searchGeneration) return;
       if (page == null) {
+        // 请求失败：与「零结果」区分开，界面显示错误态并提供重试。
+        if (bangumiList.isEmpty) searchFailed = true;
         break;
       }
       pagesFetched++;
@@ -129,6 +139,7 @@ abstract class _SearchPageController with Store {
     isLoading = false;
     isTimeOut =
         bangumiList.isEmpty && (pagesFetched == 0 || !hasMoreSearchResults);
+    if (searchFailed) isTimeOut = false;
   }
 
   @action

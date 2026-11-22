@@ -228,6 +228,31 @@ Future<ReleaseRaceResult> raceReleases(
   return (releases: releases, errors: errors);
 }
 
+/// 从竞速结果里选出最终要用的发布信息。
+///
+/// 主源失败时只剩后备源的结果。Forgejo 的 `/releases/latest` 会跳过草稿，
+/// 新版本尚未公开时它仍返回上一版；若把这份旧版本当成「已是最新」，
+/// 用户会被永久钉在旧版本上且不报任何错。因此主源缺席时，只有后备源
+/// 明确给出更高版本才接受，否则抛错让界面显示「检查更新失败」。
+Map<String, dynamic> selectLatestRelease(
+  ReleaseRaceResult raced, {
+  required String localVersion,
+}) {
+  final available = raced.releases.whereType<Map<String, dynamic>>().toList();
+  if (available.isEmpty) {
+    throw raced.errors.isNotEmpty
+        ? raced.errors.first
+        : Exception('Update check failed');
+  }
+
+  final best = pickHighestRelease(available);
+  if (raced.releases[0] == null &&
+      !needUpdate(localVersion, '${best['tag_name'] ?? ''}')) {
+    throw Exception('主源不可用，后备源未提供更高版本，无法确认最新版本');
+  }
+  return best;
+}
+
 List<String> getUpdateFilePatterns(InstallationType installationType) {
   switch (installationType) {
     case InstallationType.windowsSetup:
@@ -370,14 +395,10 @@ class AutoUpdater {
       KazumiLogger().w('Update: release query failed', error: error);
     }
 
-    final available = raced.releases.whereType<Map<String, dynamic>>().toList();
-    if (available.isEmpty) {
-      throw raced.errors.isNotEmpty
-          ? raced.errors.first
-          : Exception('Update check failed');
-    }
-
-    final best = pickHighestRelease(available);
+    final best = selectLatestRelease(
+      raced,
+      localVersion: ApiEndpoints.version,
+    );
     await _attachChecksums(best);
     return best;
   }
@@ -797,6 +818,13 @@ class AutoUpdater {
   }) async {
     try {
       await for (final entity in dir.list()) {
+        // 下载过程中的临时目录（kazumi-update-*）只有正常结束才会删除；
+        // 进程被杀/断电后它会连同半包一起留下。这里在每次成功下载后
+        // 一并清理，避免残留几份完整安装包的空间。
+        if (entity is Directory) {
+          await entity.delete(recursive: true);
+          continue;
+        }
         if (entity is! File) continue;
         if (entity.path.split(Platform.pathSeparator).last == keepFileName) {
           continue;

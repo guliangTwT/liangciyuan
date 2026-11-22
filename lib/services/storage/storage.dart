@@ -182,6 +182,28 @@ class GStorage {
     });
   }
 
+  /// 在收藏写队列内更新某条的番剧信息。
+  ///
+  /// 以前调用方在队列外 `get` 到 Hive 对象、原地改字段再 put：若此时
+  /// 同步合并（`patchCollectibles`）正在 clear+重建，会读到旧对象，
+  /// 随后 put 又把已被远端删除的收藏写回来。读-改-写必须整体入队。
+  static Future<void> updateCollectibleInQueue(BangumiItem bangumiItem) {
+    return _runCollectChangesWriteExclusive(() async {
+      final collectible = collectibles.get(bangumiItem.id);
+      if (collectible == null) {
+        KazumiLogger().i(
+          'GStorage: update collectible skipped, not found. id=${bangumiItem.id}',
+        );
+        return;
+      }
+      await collectibles.put(
+        bangumiItem.id,
+        CollectedBangumi(bangumiItem, collectible.time, collectible.type),
+      );
+      await collectibles.flush();
+    });
+  }
+
   static Future init() async {
     _hivePath = '${(await getApplicationSupportDirectory()).path}/hive';
 

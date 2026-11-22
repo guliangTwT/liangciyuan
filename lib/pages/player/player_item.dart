@@ -13,7 +13,6 @@ import 'package:kazumi/pages/player/syncplay_sheet.dart';
 import 'package:kazumi/utils/constants.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/player/pip_utils.dart';
-import 'package:kazumi/services/sync/webdav.dart';
 import 'package:flutter/gestures.dart';
 import 'package:kazumi/pages/player/player_controller.dart';
 import 'package:flutter/material.dart';
@@ -82,9 +81,6 @@ class _PlayerItemState extends State<PlayerItem>
   late final Map<String, PlayerShortcutAction> keyboardActions;
   late final Map<String, PlayerLongPressShortcutActions>
   keyboardLongPressActions;
-
-  late bool webDavEnable;
-  late bool webDavEnableHistory;
 
   final _danmuKey = GlobalKey();
   final _videoSurfaceKey = GlobalKey();
@@ -583,17 +579,6 @@ class _PlayerItemState extends State<PlayerItem>
     unawaited(_updateAndroidPIPActions(force: true));
   }
 
-  Future<void> _syncHistoryWithWebDav() async {
-    if (webDavEnable && webDavEnableHistory) {
-      try {
-        var webDav = WebDav();
-        await webDav.syncHistory();
-      } catch (e) {
-        KazumiLogger().w('WebDav: auto history sync failed', error: e);
-      }
-    }
-  }
-
   Future<void> _bindAudioService() async {
     try {
       await _audioController.bindCallbacks(
@@ -670,7 +655,10 @@ class _PlayerItemState extends State<PlayerItem>
     playerController.danmaku.clearCanvas();
     _scheduleAndroidPIPSourceRectSync();
 
-    await _syncHistoryWithWebDav();
+    // 这里只补写本地进度。以前每次进出全屏都跑一轮完整的 WebDAV
+    // 「下载远端变更 + 合并 + 上传」，桌面端最大化窗口也会触发，
+    // 与全屏毫无关系；云端同步交给按间隔运行的自动同步。
+    unawaited(historyController.flushPendingHistory());
   }
 
   void handleProgressBarDragStart() {
@@ -1110,6 +1098,13 @@ class _PlayerItemState extends State<PlayerItem>
     hideTimer = null;
   }
 
+  /// 从头重播：走正常的 seek 路径，清掉画布上残留的弹幕与已排期的
+  /// 发射任务，避免重播时结尾弹幕再出现一次。
+  Future<void> _restartFromBeginning() async {
+    playerController.danmaku.clearAndInvalidateScheduledDanmakus();
+    await playerController.playback.restartFromBeginning();
+  }
+
   DanmakuItemType _danmakuItemType(DanmakuEntry danmaku) {
     if (danmaku.type == 4) {
       return DanmakuItemType.bottom;
@@ -1201,10 +1196,15 @@ class _PlayerItemState extends State<PlayerItem>
         }
       }
       if (!isDesktop() && !playerController.panel.brightnessSeeking) {
-        ScreenBrightnessPlatform.instance.application.then((value) {
-          if (!mounted) return;
-          playerController.panel.brightness = value;
-        });
+        // 插件在 activity 解绑等情况下会抛 PlatformException；以前每秒
+        // 一次且无人 catch，会持续产生未处理异步异常。
+        ScreenBrightnessPlatform.instance.application.then(
+          (value) {
+            if (!mounted) return;
+            playerController.panel.brightness = value;
+          },
+          onError: (Object _) {},
+        );
       }
       final historyIdentity = videoPageController.currentHistoryIdentity;
       if (playerController.playback.playerPlaying &&
@@ -1223,7 +1223,7 @@ class _PlayerItemState extends State<PlayerItem>
       if (playerController.playback.completed && !videoPageController.loading) {
         if (playerController.playback.resumedNearEnd) {
           // Replay stale near-end resumes instead of advancing to the next episode.
-          unawaited(playerController.playback.restartFromBeginning());
+          unawaited(_restartFromBeginning());
         } else if (playingSelection.episode < playingRoadData.data.length &&
             autoPlayNext) {
           final nextSelection = VideoEpisodeSelection(
@@ -1325,8 +1325,6 @@ class _PlayerItemState extends State<PlayerItem>
       parent: _screenshotFeedbackController,
       curve: Curves.linear,
     );
-    webDavEnable = GStorage.getSetting(SettingsKeys.accountSyncEnable);
-    webDavEnableHistory = GStorage.getSetting(SettingsKeys.webDavEnableHistory);
     playerController.danmaku.setDanmakuEnabled(
       GStorage.getSetting(SettingsKeys.danmakuEnabledByDefault),
     );
@@ -1363,6 +1361,7 @@ class _PlayerItemState extends State<PlayerItem>
   @override
   void dispose() {
     // The route-scoped PlayerController owns playback disposal.
+    playerController.danmaku.detachCanvasController();
     _fullscreenListener();
     _playerSizeListener();
     WidgetsBinding.instance.removeObserver(this);

@@ -63,7 +63,14 @@ class _TimelinePageState extends State<TimelinePage> {
       // 预取可能在 build 期间完成，必须等这一帧结束再 setState。
       if (!updated || !mounted) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() {});
+        if (!mounted) return;
+        // 评分刚到位：若当前是按评分排序，必须重新排一次。以前这里只
+        // setState 刷新卡片上的分数，列表顺序仍是「全部 -1」的旧序，
+        // 用户得再手动点一次「评分优先」才对。
+        if (_controller.sort == TimelineSort.rating) {
+          _controller.changeSort(TimelineSort.rating);
+        }
+        setState(() {});
       });
     });
   }
